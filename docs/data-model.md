@@ -1,1062 +1,1541 @@
 # Логическая модель данных Nexus-ARSEO
 
-Статус документа: черновик для последующей реализации в PostgreSQL. Документ описывает **логическую** модель (сущности, поля, связи, статусы, правила архивирования и аудита), без готовых SQL-миграций.
+Статус документа: черновик для реализации в Supabase (PostgreSQL). Документ описывает **логическую** модель: сущности, поля, связи, статусы, архивирование и аудит. SQL-миграций здесь нет.
 
-Все неопределённые правила, требующие подтверждения ARSEO, отмечены пометкой **«Требует подтверждения ARSEO»**. Полный список открытых вопросов — в [`docs/open-questions.md`](./open-questions.md).
+Модель учитывает уже реализованную часть — миграцию [`supabase/migrations/202609260001_identity_and_access.sql`](../supabase/migrations/202609260001_identity_and_access.sql) и авторизацию через Supabase Auth. Реализованные таблицы не заменяются: для них описаны только предлагаемые расширения.
 
-## Общие принципы
+Связанные документы: [роли и права](./roles-permissions.md) · [процесс RVI](./process-rvi.md) · [соответствие таблицам и фазам](./database-mapping.md) · [план MVP](./mvp-implementation-plan.md) · [критерии приёмки](./mvp-acceptance-criteria.md) · [открытые вопросы](./open-questions.md).
 
-- **Первичные ключи** — `id: uuid`, генерируется приложением или БД (`gen_random_uuid()`), если не указано иное.
-- **Служебные поля** — у каждой таблицы есть `created_at: timestamptz` и `updated_at: timestamptz`; у справочных и связующих таблиц может быть только `created_at`.
-- **Архивирование** — по умолчанию используется «мягкое» архивирование: поле `is_archived: boolean` (по умолчанию `false`) + `archived_at: timestamptz` + `archived_by: uuid → employees.id`. Физическое удаление строк не предусмотрено для сущностей, участвующих в истории (движения, документы, финансы, аудит). Точные правила архивирования указаны для каждой сущности отдельно.
-- **Журналы (append-only)** — `inventory_movements`, `shipment_stage_history`, `exchange_rates`, `synchronization_runs`, `audit_log` — записи не редактируются и не удаляются; исправления оформляются новой (сторнирующей) записью.
-- **Хранение файлов** — бинарные файлы хранятся в объектном хранилище (S3-совместимом); в PostgreSQL хранятся только метаданные и ссылка (`storage_key` / `storage_url`). Sanity как транзакционная база не используется.
-- **Мультивалютность** — везде, где есть денежная сумма, рядом хранится `currency_id → currencies.id`; курсы — в `exchange_rates`.
-- **Полиморфные связи** (например, `entity_type` + `entity_id` в `comments`, `notifications`, `approvals`, `audit_log`) реализуются без физического FK-ограничения на уровне БД (проверка целостности — на уровне приложения). Это единственное осознанное отступление от строгих внешних ключей ради простоты модели.
-- **Права доступа** — точечные ограничения/расширения прав для отдельного сотрудника (сверх роли) реализуются без отдельной сущности: полем `permissions_override: jsonb` в `employee_roles` (см. также [`docs/roles-permissions.md`](./roles-permissions.md)). Это решение принято, чтобы не выходить за рамки согласованного списка из 47 сущностей.
-- **Идентификаторы товара** — внутренний артикул хранится в `products.internal_sku`; артикул поставщика, GTIN, штрихкод единицы и штрихкод короба — в `product_identifiers` (несколько значений на товар).
-- **Единицы учёта** — шт / короб / слой паллеты / паллета / фура моделируются в `product_packaging` как коэффициенты пересчёта на товар.
-- **Отчёты и прогнозы** не имеют собственных таблиц в этой версии модели: они рассчитываются из `sales`, `inventory_movements`, `inventory_balances`, `expenses` и `receivables`. Таблицы для сохранённых отчётов и утверждённых прогнозов добавляются, когда ARSEO определит их формат (см. `open-questions.md`, 7.3–7.4).
+Все допущения, которые ARSEO ещё не подтвердила, помечены **«Требует подтверждения ARSEO»**.
+
+## Состояние реализации
+
+| Отметка | Значение |
+|---|---|
+| **Реализовано** | таблица есть в миграции `202609260001_identity_and_access.sql` |
+| **Расширение** | таблица реализована, предлагается добавить поля или ограничения отдельной миграцией |
+| **Новая (фаза N)** | таблица ещё не создана; фаза — по [`mvp-implementation-plan.md`](./mvp-implementation-plan.md) |
 
 ---
 
-## 1. Управление доступом
+## 0. Термины
 
-### users
+Эти определения одинаковы во всех документах.
 
-Назначение: учётная запись для входа в систему (аутентификация). Может отсутствовать у сотрудника, если ему не нужен доступ.
+| Термин | Определение | Где хранится |
+|---|---|---|
+| **Сотрудник** | работник ARSEO с учётной записью в Nexus | `auth.users` + `profiles` (`user_type = employee`) |
+| **Внешний пользователь** | представитель клиента, а в будущем брокера или перевозчика, с ограниченным доступом | `auth.users` + `profiles` (`user_type = external`, `counterparty_id`) |
+| **Роль доступа** | набор прав в системе; не равна должности | `app_roles`, `user_roles` |
+| **Должность** | запись в профиле сотрудника, на права не влияет | `profiles.job_title` |
+| **Проект** | коммерческий код сделки, например Leib7-x. В пилоте один проект соответствует одной поставке — **«Требует подтверждения ARSEO»** | `shipments.project_code` |
+| **Заказ поставщику** | согласованный перечень товаров, количеств и цен, который ARSEO заказывает у производителя или поставщика. Отдельной таблицы нет: это позиции поставки (`ordered_quantity`, `unit_price`) + согласование + документ заказа | `shipment_items`, `approvals`, `documents` |
+| **Поставка** | сквозной процесс по одному заказу поставщику: от запроса до закрытия. Может ехать одним или несколькими автомобилями | `shipments` |
+| **Перевозка** | один автомобиль или рейс внутри поставки (в пилоте их два) | `shipment_transports` |
+| **Партия** | количество одного товара с одной серией производителя и одним сроком годности, принятое в рамках одной поставки | `batches` |
+| **Серия** | номер серии (лота) производителя, указанный на упаковке | `batches.supplier_batch_number` |
+| **ОСГ** | остаточный срок годности в процентах от полного срока. Формула — в разделе «Партии» | вычисляется из `batches` |
+| **FEFO** | First Expired, First Out: сначала отгружается партия с ближайшим сроком годности | правило резервирования |
+| **Клиентский заказ / продажа** | отгрузка товара клиенту с позициями по партиям | `sales`, `sale_items` |
+| **Гарантийное письмо** | письмо клиенту, если ОСГ товара ниже условий клиента | `guarantee_letters` |
+| **Карта ввода / вывода** | клиентская форма для ввода товара в ассортимент клиента или вывода из него | `product_listing_cards` |
+| **Макет стикера** | согласованная версия содержимого и вида стикера для товара | `sticker_templates`, `sticker_template_versions` |
+
+## 1. Общие принципы
+
+- **Аутентификация — Supabase Auth.** Учётные записи хранятся в `auth.users` (схема `auth` управляется Supabase). Сотрудник входит по корпоративной почте и паролю; пароль задаётся и восстанавливается через Supabase Auth (страницы `/login`, `/forgot-password`, `/update-password`). В схеме `public` нет таблицы `users` и нет паролей или их хэшей.
+- **Профиль.** Для каждой записи `auth.users` триггер `on_auth_user_created` создаёт строку `profiles` с тем же `id`. Все ссылки на людей в бизнес-таблицах ведут на `profiles.id` (поля `*_user_id`, `created_by`, `updated_by`).
+- **Первичные ключи** — `id uuid` (`gen_random_uuid()`); исключение — `audit_log.id bigint identity` (уже реализовано).
+- **Служебные поля** — `created_at timestamptz`, `updated_at timestamptz`, при необходимости `created_by`, `updated_by` → `profiles.id`.
+- **Архивирование.** В реализованных таблицах используются `is_active` (`profiles`) и `is_enabled` (`app_roles`). В новых таблицах — `archived_at timestamptz` + `archived_by uuid → profiles.id`; пустое `archived_at` означает активную запись. Физическое удаление бизнес-данных не предусмотрено.
+- **Журналы (append-only)**: `audit_log`, `inventory_movements`, `shipment_stage_history`, `exchange_rates`, `synchronization_runs`, `synchronization_errors`, `document_versions`. Записи не меняются и не удаляются; ошибки исправляются новой (сторнирующей) записью.
+- **Статусы** хранятся как `text` с `check`-ограничением (так же, как `profiles.locale` в текущей миграции).
+- **Срок хранения.** Документы и история хранятся ориентировочно 2–3 года. Точный срок и порядок удаления по его истечении — **«Требует подтверждения ARSEO»**.
+- **Языки** — русский, английский, казахский (`ru`, `en`, `kk`; поле `profiles.locale` уже реализовано). Переводимые названия хранятся в `jsonb`-полях вида `{"ru": "...", "en": "...", "kk": "..."}`.
+- **Валюты** — KZT, RUB, EUR. У каждой суммы есть `currency_id`; курсы (официальный и банковский) — в `exchange_rates`.
+- **Полиморфные ссылки** (`entity_type` + `entity_id` в `audit_log`, `comments`, `notifications`, `approvals`, `documents`) не имеют FK в БД; целостность проверяет приложение.
+- **Персональные данные** (телефоны, данные водителей) хранятся в минимальном объёме, доступ ограничен правами. В GitHub персональные данные не попадают.
+
+### Файлы и документы
+
+| Уровень | Что хранит | Состояние |
+|---|---|---|
+| Supabase / PostgreSQL | структурированные данные, метаданные документов, версии, связи, результаты проверки, согласования | целевое решение |
+| Google Drive | действующий источник документов ARSEO на сегодня | используется |
+| Google Drive или Supabase Storage | файлы, загружаемые и создаваемые в Nexus | **выбор не сделан** |
+
+Основное хранилище файлов Nexus выбирается отдельно (см. [`open-questions.md`](./open-questions.md), вопрос М5). Поэтому модель поддерживает оба варианта: у версии документа есть `storage_provider` (`google_drive` или `supabase_storage`) и соответствующие ссылки (`external_file_id` или `storage_path`).
+
+### Внешние пользователи
+
+Внутренние сотрудники и внешние пользователи различаются полем `profiles.user_type`.
+
+- Внешний пользователь привязан к контрагенту (`profiles.counterparty_id`) и видит только данные своего контрагента, явно открытые для внешнего доступа (`documents.visibility = shared_with_counterparty`).
+- Клиенту по разрешению администратора можно открыть просмотр, загрузку и выгрузку документов. Менять статусы клиент не может.
+- Позже такой же ограниченный доступ может понадобиться брокерам и перевозчикам.
+- Подробности — в [`roles-permissions.md`](./roles-permissions.md), раздел «Внешние пользователи».
+
+---
+
+## 2. Доступ и аудит
+
+### auth.users — Реализовано (Supabase Auth)
+
+Учётная запись. Таблицей управляет Supabase; приложение не пишет в неё напрямую.
+
+- **Используемые поля**: `id` (uuid, PK), `email` (корпоративная почта, логин), служебные поля Supabase (подтверждение почты, время входа, `raw_user_meta_data.full_name`).
+- **Пароль** хранит и проверяет Supabase Auth. Минимальная длина: 8 символов при входе, 12 при смене (текущий код).
+- **Создание**: администратор создаёт пользователя в Supabase Auth; триггер создаёт `profiles`. Самостоятельная регистрация должна быть отключена в настройках Supabase.
+- **Архивирование**: учётная запись не удаляется, чтобы не терять историю (`profiles` удаляется каскадно вместе с `auth.users`). Доступ закрывается через `profiles.is_active = false` и, при необходимости, блокировку пользователя в Supabase Auth.
+- **audit_log**: вход и выход фиксирует журнал Supabase Auth. Создание, блокировка и разблокировка пользователя пишутся в `audit_log` как действия над `profiles`.
+
+### profiles — Расширение
+
+Профиль сотрудника или внешнего пользователя, 1–1 с `auth.users`.
+
+**Реализованные поля**
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
-| id | uuid | да | PK |
-| employee_id | uuid | нет | FK → employees.id, владелец учётной записи |
-| email | text | да | логин |
-| phone | text | нет | доп. контакт |
-| password_hash | text | да* | хэш пароля (*не требуется, если вход только через SSO — «Требует подтверждения ARSEO») |
-| is_service_account | boolean | да | признак технической учётной записи (для интеграций) |
-| is_active | boolean | да | статус доступа |
-| last_login_at | timestamptz | нет | последний вход |
-
-- **PK**: id
-- **FK**: employee_id → employees.id
-- **Уникальные ограничения**: email
-- **Статусы**: active, disabled, locked
-- **Связи**: 1–1 с employees; через employees — к employee_roles
-- **Архивирование**: не удаляется; при увольнении — is_active = false, employee.status = dismissed
-- **audit_log**: create, login_success, login_failed, password_changed, status_changed
-
-### employees
-
-Назначение: карточка сотрудника ARSEO (без привязки к наличию логина).
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
+| id | uuid | да | PK, FK → `auth.users.id` (on delete cascade) |
 | full_name | text | да | ФИО |
-| position_title | text | нет | должность (свободный текст, может не совпадать с ролью) |
-| phone | text | нет | |
-| email | text | нет | |
-| primary_warehouse_id | uuid | нет | FK → warehouses.id, основной склад |
-| hire_date | date | нет | |
-| status | enum | да | active / on_leave / dismissed |
-| notes | text | нет | |
+| job_title | text | нет | должность (например, «Старший менеджер по логистике») |
+| locale | text | да | `ru` / `kk` / `en`, по умолчанию `ru` |
+| is_active | boolean | да | активен ли доступ |
+| created_at / updated_at | timestamptz | да | |
+
+**Предлагаемые поля**
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| user_type | text | да | `employee` (по умолчанию) / `external` |
+| counterparty_id | uuid | для `external` | FK → `counterparties.id` |
+| phone | text | нет | рабочий телефон |
+| whatsapp_phone | text | нет | номер для уведомлений WhatsApp |
+| notification_preferences | jsonb | нет | каналы по типам уведомлений: `in_app`, `email`, `whatsapp` |
+| primary_warehouse_id | uuid | нет | FK → `warehouses.id` |
+| deactivated_at | timestamptz | нет | когда отключён доступ |
+| deactivated_by | uuid | нет | FK → `profiles.id` |
 
 - **PK**: id
-- **FK**: primary_warehouse_id → warehouses.id
-- **Уникальные ограничения**: email (если указан)
-- **Статусы**: active, on_leave, dismissed
-- **Связи**: users (1–1), employee_roles (1–N), tasks.assignee, shipments.responsible_employee_id и др.
-- **Архивирование**: status = dismissed + is_archived = true; исторические ссылки (задачи, поставки, документы) не переносятся и не удаляются
-- **audit_log**: create, update, status_changed
+- **Ограничения**: `check (user_type = 'employee' or counterparty_id is not null)`
+- **Статусы**: активен (`is_active = true`) / отключён
+- **Связи**: `user_roles`, `user_permission_overrides`, ссылки `*_user_id` во всех бизнес-таблицах
+- **Архивирование**: `is_active = false`; строка не удаляется, пока жива учётная запись
+- **audit_log**: create, update (с before/after), deactivate, reactivate
+- **Пример**: Рафия — `job_title` «Старший менеджер по логистике», роль доступа `administrator` (см. `user_roles`).
 
-### roles
+### app_roles — Реализовано
 
-Назначение: справочник ролей. Базовые 9 ролей — системные (`is_system = true`), администратор может добавлять собственные роли.
+Роли доступа.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| code | text | да | машинное имя (например `logistics_manager`) |
-| name_ru | text | да | «Менеджер по логистике» и т.п. |
+| code | text | да | уникальный код |
+| name | text | да | название на русском |
 | description | text | нет | |
-| is_system | boolean | да | нельзя удалить/переименовать базовые роли |
-| is_archived | boolean | да | |
+| is_system | boolean | да | системная роль (по умолчанию true) |
+| is_enabled | boolean | да | роль действует |
+| created_at / updated_at | timestamptz | да | |
 
-- **PK**: id
 - **Уникальные ограничения**: code
-- **Статусы**: active, archived
-- **Связи**: role_permissions (1–N), employee_roles (1–N)
-- **Архивирование**: нельзя архивировать роль, если есть активные employee_roles; is_system-роли не архивируются
-- **audit_log**: create, update, archive
+- **Роли в базе**: `director`, `executive_director`, `commercial_director`, `logistics_director`, `senior_logistics_manager`, `logistics_specialist`, `accountant`, `marketer`, `administrator`.
+- **Предлагаемые роли для внешних пользователей** (пока не созданы): `external_client` (фаза 8), позже `external_broker`, `external_carrier` — **«Требует подтверждения ARSEO»**.
+- **Предлагаемое поле**: `audience text` — `internal` / `external`, чтобы роль внешнего пользователя нельзя было назначить сотруднику и наоборот.
+- **Статусы**: включена (`is_enabled = true`) / отключена
+- **Архивирование**: `is_enabled = false`. Системные роли не удаляются: у `user_roles.role_id` стоит `on delete restrict`.
+- **audit_log**: create, update, enable, disable
 
-### permissions
+### permissions — Реализовано
 
-Назначение: атомарные права доступа — комбинация «раздел + действие» (см. разделы и действия в `roles-permissions.md`).
+Атомарные права «модуль + действие».
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| resource | enum | да | раздел доступа (users, roles, customers, suppliers, products, warehouses, inventory, shipments, import, export, documents, templates, finance, cost, receivables, reports, forecasts, integrations, audit_log, system_settings) |
-| action | enum | да | view, create, edit, delete_archive, approve, export, upload, change_status, manage_access |
-| code | text | да | сгенерировано как `resource.action` |
+| code | text | да | `module.action`, уникальный |
+| module | text | да | модуль (раздел доступа) |
+| action | text | да | действие |
+| name | text | да | название на русском |
 | description | text | нет | |
 
-- **PK**: id
-- **Уникальные ограничения**: (resource, action)
-- **Связи**: role_permissions (1–N)
-- **Архивирование**: справочник не архивируется (меняется только через релиз кода)
-- **audit_log**: create, update (изменение состава прав — редкое системное событие)
+- **Уникальные ограничения**: code; (module, action)
+- **Права в базе (12)**: `users.view`, `users.manage`, `roles.manage`, `shipments.view`, `shipments.create`, `shipments.update`, `shipments.approve`, `documents.view`, `documents.manage`, `finance.view`, `finance.manage`, `audit.view`.
+- **Целевой набор** модулей и действий (добавляется миграциями фаз 0–8) — в [`roles-permissions.md`](./roles-permissions.md), раздел «Коды прав». Существующие коды не переименовываются.
+- **Архивирование**: не применяется; справочник меняется только миграциями
+- **audit_log**: изменения через миграции фиксируются в истории миграций, а не в `audit_log`
 
-### role_permissions
+### role_permissions — Расширение
 
-Назначение: матрица «роль × право» с уровнем доступа.
+Права ролей.
 
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| role_id | uuid | да | FK → roles.id |
-| permission_id | uuid | да | FK → permissions.id |
-| access_level | enum | да | allowed / denied / restricted / by_grant |
-| updated_by | uuid | нет | FK → employees.id |
+**Реализованные поля**: `role_id` (FK → `app_roles.id`), `permission_id` (FK → `permissions.id`), `granted boolean` (по умолчанию true). PK — (role_id, permission_id).
 
-- **PK**: id
-- **FK**: role_id, permission_id, updated_by
-- **Уникальные ограничения**: (role_id, permission_id)
-- **Архивирование**: не применимо (обновляется в месте)
-- **audit_log**: create, update — критично для безопасности, логируется всегда, включая `before_state`/`after_state`
-
-### employee_roles
-
-Назначение: назначение ролей сотрудникам (M2M) + точечные исключения для конкретного сотрудника.
+**Предлагаемое поле**
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
-| id | uuid | да | PK |
-| employee_id | uuid | да | FK → employees.id |
-| role_id | uuid | да | FK → roles.id |
-| assigned_by | uuid | да | FK → employees.id |
+| scope | text[] | нет | ограничения области; все условия должны выполняться. Значения: `own` (свои записи), `assigned` (где сотрудник ответственный или исполнитель), `own_warehouse`, `summary` (только сводные показатели), `import` / `export` (тип поставки), `no_prices` (без цен), `own_counterparty` (для внешних), `shared_only` (только открытые для внешнего доступа). Пусто = без ограничения |
+
+- **Соответствие значениям матрицы прав**: «разрешено» — `granted = true`, `scope` пусто; «ограничено» — `granted = true` + `scope`; «запрещено» — строки нет или `granted = false`; «по отдельному разрешению» — строки для роли нет, разрешение выдаётся сотруднику через `user_permission_overrides`.
+- **Текущее состояние**: все 12 прав выданы только роли `administrator`. Права остальных ролей задаются в фазе 0.
+- **audit_log**: grant, revoke, scope_changed — всегда с before/after
+
+### user_roles — Реализовано
+
+Назначение ролей пользователям. Поддерживает несколько ролей у одного пользователя.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| user_id | uuid | да | FK → `profiles.id` (on delete cascade) |
+| role_id | uuid | да | FK → `app_roles.id` (on delete restrict) |
+| assigned_by | uuid | нет | FK → `profiles.id` |
 | assigned_at | timestamptz | да | |
-| expires_at | timestamptz | нет | временная роль |
-| is_active | boolean | да | |
-| permissions_override | jsonb | нет | точечные allow/deny поверх роли, см. «Общие принципы» |
 
-- **PK**: id
-- **FK**: employee_id, role_id, assigned_by
-- **Уникальные ограничения**: (employee_id, role_id) где is_active = true
-- **Архивирование**: is_active = false вместо удаления (нужна история назначений)
-- **audit_log**: assign, revoke, override_changed
+- **PK**: (user_id, role_id)
+- **Предлагаемое поле**: `expires_at timestamptz` — временная роль (**«Требует подтверждения ARSEO»**, нужна ли).
+- **Архивирование**: снятие роли — удаление строки; история сохраняется в `audit_log`.
+- **audit_log**: assign, revoke (удаление строки обязательно записывается в `audit_log`, иначе история теряется)
 
-**Пример**: администратор пилота Рафия (роль «Старший менеджер по логистике») получает дополнительную запись `employee_roles` с ролью «Администратор системы», что даёт ей административные права без создания отдельной сущности.
+### user_permission_overrides — Новая (фаза 0)
+
+Индивидуальные разрешения и запреты поверх ролей. Реализует «по отдельному разрешению» и точечные ограничения администратора; используется и для внешних пользователей.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| user_id | uuid | да | FK → `profiles.id` |
+| permission_id | uuid | да | FK → `permissions.id` |
+| effect | text | да | `allow` / `deny` |
+| scope | text[] | нет | как в `role_permissions.scope` |
+| reason | text | да | основание |
+| granted_by | uuid | да | FK → `profiles.id` |
+| granted_at | timestamptz | да | |
+| expires_at | timestamptz | нет | |
+| revoked_at / revoked_by | timestamptz / uuid | нет | отзыв |
+
+- **Уникальные ограничения**: (user_id, permission_id) среди неотозванных
+- **Статусы**: действует / истёк / отозван
+- **Архивирование**: отзыв через `revoked_at`, строка не удаляется
+- **audit_log**: grant, deny, revoke
+
+### audit_log — Реализовано
+
+Единый неизменяемый журнал действий.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | bigint identity | да | PK |
+| actor_user_id | uuid | нет | FK → `profiles.id` (on delete set null); пусто — системное действие |
+| action | text | да | `create`, `update`, `status_changed`, `approved`, `skipped` и т.д. |
+| entity_type | text | да | имя таблицы или сущности |
+| entity_id | text | нет | идентификатор записи (text, чтобы хранить и uuid, и bigint) |
+| before_data | jsonb | нет | состояние до |
+| after_data | jsonb | нет | состояние после |
+| metadata | jsonb | да | контекст: причина, IP, источник (`ui`, `integration`, `system`), `on_behalf_of` |
+| created_at | timestamptz | да | |
+
+- **Индексы**: (actor_user_id, created_at desc); (entity_type, entity_id, created_at desc)
+- **Права в текущей миграции**: UPDATE и DELETE не выданы никому. Добавлять записи может сам пользователь от своего имени. Читают свои записи — все, все записи — `administrator` и `director`.
+- **Рекомендация**: критичные события (права, статусы, финансы, остатки) писать триггерами БД или серверным кодом, а не только из браузера — см. [`database-mapping.md`](./database-mapping.md).
+- **Архивирование**: не удаляется в течение срока хранения (2–3 года, точный срок уточняется)
+- **Что пишется**: указано в описании каждой сущности ниже
 
 ---
 
-## 2. Контрагенты и договоры
+## 3. Контрагенты и договоры
 
-### counterparties
+### counterparties — Новая (фаза 1)
 
-Назначение: единый справочник контрагентов (производители, поставщики, клиенты, перевозчики, брокеры). Тип определяет базовую роль контрагента; расширенные атрибуты — в `carriers` / `brokers`.
+Единый справочник: производители, поставщики, клиенты, перевозчики, брокеры, типографии.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| type | enum | да | manufacturer / supplier / customer / carrier / broker / other |
+| roles | text[] | да | одна или несколько ролей: `manufacturer`, `supplier`, `customer`, `carrier`, `broker`, `printing_house`, `other` |
 | legal_name | text | да | |
-| country | text | да | |
-| tax_id | text | нет | ИНН/БИН/VAT — формат по стране **«Требует подтверждения ARSEO»** |
+| short_name | text | нет | |
+| country | text | да | код страны ISO 3166-1 |
+| tax_id | text | нет | БИН / ИНН / VAT; формат по стране не проверяется до подтверждения |
 | registration_number | text | нет | |
 | website | text | нет | |
-| default_currency_id | uuid | нет | FK → currencies.id |
-| status | enum | да | |
+| default_currency_id | uuid | нет | FK → `currencies.id` |
+| preferred_locale | text | нет | `ru` / `en` / `kk` для документов и писем |
+| min_remaining_shelf_life_pct | numeric(5,2) | нет | требование клиента к ОСГ по умолчанию (для `customer`); место хранения — **«Требует подтверждения ARSEO»** |
+| status | text | да | |
 | notes | text | нет | |
 
-- **PK**: id
-- **FK**: default_currency_id → currencies.id
-- **Уникальные ограничения**: рекомендуется (legal_name, country); дедупликация по tax_id — **«Требует подтверждения ARSEO»**
-- **Статусы**: active, on_hold, archived
-- **Связи**: counterparties_contacts, contracts, shipments, carriers, brokers, product_identifiers.counterparty_id
-- **Архивирование**: нельзя архивировать при открытых contracts/shipments со статусом, отличным от закрытого/отменённого
+- **PK**: id · **FK**: default_currency_id
+- **Уникальные ограничения**: (country, tax_id), если tax_id заполнен; иначе предупреждение о возможном дубле по (legal_name, country)
+- **Статусы**: `active`, `on_hold`, `archived`
+- **Связи**: counterparties_contacts, contracts, shipments (поставщик / клиент), carriers, brokers, product_identifiers (артикул поставщика), sales, profiles (внешние пользователи), integration_mappings (коды 1С)
+- **Архивирование**: `archived_at`; нельзя, пока есть незакрытые поставки, продажи или задолженность
 - **audit_log**: create, update, status_changed, archive
+- Несколько ролей у одного контрагента разрешены (например, поставщик и клиент).
 
-### counterparties_contacts
-
-Назначение: контактные лица контрагента.
+### counterparties_contacts — Новая (фаза 1)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| counterparty_id | uuid | да | FK → counterparties.id |
+| counterparty_id | uuid | да | FK → `counterparties.id` |
 | full_name | text | да | |
 | position | text | нет | |
 | phone | text | нет | |
+| whatsapp_phone | text | нет | |
 | email | text | нет | |
 | is_primary | boolean | да | |
+| archived_at | timestamptz | нет | |
 
 - **PK**: id · **FK**: counterparty_id
-- **Архивирование**: физическое удаление допустимо (не участвует в истории операций)
-- **audit_log**: create, update, delete
+- **Архивирование**: `archived_at` (персональные данные удаляются по окончании срока хранения)
+- **audit_log**: create, update, archive
 
-### contracts
-
-Назначение: договоры с контрагентами.
+### contracts — Новая (фаза 1)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| counterparty_id | uuid | да | FK → counterparties.id |
+| counterparty_id | uuid | да | FK → `counterparties.id` |
 | number | text | да | |
-| type | enum | да | supply / service / agency / nda / other |
-| currency_id | uuid | нет | FK → currencies.id |
-| sign_date | date | нет | |
-| valid_from | date | нет | |
-| valid_to | date | нет | |
-| incoterms | text | нет | **«Требует подтверждения ARSEO»** — перечень Incoterms, используемый ARSEO |
-| status | enum | да | |
-| document_id | uuid | нет | FK → documents.id (скан договора) |
+| type | text | да | `supply`, `sale`, `service`, `agency`, `nda`, `other` |
+| currency_id | uuid | нет | FK → `currencies.id` |
+| sign_date / valid_from / valid_to | date | нет | |
+| incoterms | text | нет | перечень — **«Требует подтверждения ARSEO»** |
+| status | text | да | |
+| document_id | uuid | нет | FK → `documents.id` (файл договора) |
 | notes | text | нет | |
 
-- **PK**: id · **FK**: counterparty_id, currency_id, document_id
 - **Уникальные ограничения**: (counterparty_id, number)
-- **Статусы**: draft, active, expired, terminated
-- **Связи**: contract_terms (1–N), shipments.contract_id
-- **Архивирование**: не удаляется; переход в terminated/expired + is_archived после подтверждения
+- **Статусы**: `draft`, `active`, `expired`, `terminated`
+- **Связи**: contract_terms, shipments, sales
+- **Архивирование**: `archived_at` после `expired` или `terminated`
 - **audit_log**: create, update, status_changed
 
-### contract_terms
+### contract_terms — Новая (фаза 1)
 
-Назначение: конкретные условия договора (цены, сроки оплаты, штрафы и т.п.), в т.ч. по отдельным товарам.
+Условия договора, в том числе требования клиента к ОСГ, условия возвратов и промо.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| contract_id | uuid | да | FK → contracts.id |
-| term_type | enum | да | price / payment_terms / delivery_terms / penalty / other |
-| product_id | uuid | нет | FK → products.id |
-| description | text | нет | |
+| contract_id | uuid | да | FK → `contracts.id` |
+| term_type | text | да | `price`, `payment_terms`, `delivery_terms`, `min_remaining_shelf_life_pct`, `return_terms`, `promo_terms`, `penalty`, `other` |
+| product_id | uuid | нет | FK → `products.id` — условие по конкретному товару |
 | value_numeric | numeric(14,4) | нет | |
 | value_text | text | нет | |
-| valid_from | date | нет | |
-| valid_to | date | нет | |
+| valid_from / valid_to | date | нет | |
 
-- **PK**: id · **FK**: contract_id, product_id
-- **audit_log**: create, update, delete
+- **Правило**: требование к ОСГ ищется так: товар в договоре → договор → `counterparties.min_remaining_shelf_life_pct` (**«Требует подтверждения ARSEO»**)
+- **audit_log**: create, update, archive
 
 ---
 
-## 3. Товары
+## 4. Товары
 
-### products
+### products — Новая (фаза 1)
 
-Назначение: карточка товара.
+Карточка товара.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | internal_sku | text | да | внутренний артикул |
-| name | text | да | наименование |
-| manufacturer_id | uuid | да | FK → counterparties.id |
+| name | jsonb | да | наименование: `ru` — обязательно, `en` и `kk` — по мере заполнения |
+| manufacturer_id | uuid | да | FK → `counterparties.id` |
+| brand | text | нет | |
 | country_of_origin | text | нет | |
-| composition | text | нет | состав |
-| nutrition_facts | jsonb | нет | КБЖУ |
-| hs_code | text | нет | код ТН ВЭД — **«Требует подтверждения ARSEO»** обязательность |
-| temperature_regime | enum | нет | frozen / chilled / ambient |
-| shelf_life_days | integer | нет | срок годности (в днях от даты производства) |
-| base_uom | enum | да | piece / box / layer / pallet / truck |
-| default_currency_id | uuid | нет | FK → currencies.id |
-| base_price | numeric(14,4) | нет | |
-| status | enum | да | |
-| notes | text | нет | |
+| composition | jsonb | нет | состав на языках |
+| nutrition_facts | jsonb | нет | КБЖУ на 100 г |
+| hs_code | text | нет | код ТН ВЭД |
+| temperature_regime | text | нет | `frozen`, `chilled`, `ambient`; диапазон — в `temperature_range` |
+| temperature_range | text | нет | например «+2…+6 °C» |
+| shelf_life_days | integer | нет | полный срок годности |
+| base_uom | text | да | `piece`, `box`, `layer`, `pallet`, `truck` |
+| default_currency_id | uuid | нет | FK → `currencies.id` |
+| base_purchase_price | numeric(14,4) | нет | видимость — по правам |
+| requires_marking | boolean | да | нужна маркировка «Честный знак» (для поставок российским партнёрам) |
+| requires_sticker | boolean | да | нужна стикеровка для продажи в Казахстане |
+| status | text | да | |
 
-- **PK**: id · **FK**: manufacturer_id, default_currency_id
 - **Уникальные ограничения**: internal_sku
-- **Статусы**: draft, active, discontinued, archived
-- **Связи**: product_identifiers, product_packaging, batches, shipment_items
-- **Архивирование**: нельзя архивировать при inventory_balances.quantity_on_hand > 0
-- **audit_log**: create, update, price_changed, status_changed
+- **Статусы**: `draft`, `active`, `discontinued`, `archived`
+- **Связи**: product_identifiers, product_packaging, batches, shipment_items, sale_items, sticker_templates, forecast_lines, promo_plan_items, product_listing_card_items
+- **Изображения, сертификаты, спецификации** — записи `documents` с `entity_type = product`
+- **Обязательные поля для пилота** — **«Требует подтверждения ARSEO»** (вопрос М3)
+- **Архивирование**: нельзя при ненулевом остатке или активных резервах
+- **audit_log**: create, update, price_changed, status_changed, archive
 
-Изображения, документы и сертификаты товара хранятся как записи `documents` с `related_entity_type = 'product'` (см. раздел «Документы»); отдельная сущность для этого не создаётся, чтобы не дублировать модель документов.
+### product_identifiers — Новая (фаза 1)
 
-### product_identifiers
-
-Назначение: артикул поставщика, GTIN, штрихкод единицы, штрихкод короба.
+Артикул поставщика, GTIN, штрихкоды. **Артикул поставщика и GTIN — основные ключи сопоставления с 1С и документами поставщиков.**
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| product_id | uuid | да | FK → products.id |
-| identifier_type | enum | да | supplier_sku / gtin / unit_barcode / box_barcode |
+| product_id | uuid | да | FK → `products.id` |
+| identifier_type | text | да | `supplier_sku`, `gtin`, `unit_barcode`, `box_barcode` |
 | value | text | да | |
-| counterparty_id | uuid | нет | FK → counterparties.id (для supplier_sku) |
+| counterparty_id | uuid | для `supplier_sku` | FK → `counterparties.id` |
+| packaging_uom | text | нет | уровень упаковки для штрихкода |
 | is_primary | boolean | да | |
 
-- **PK**: id · **FK**: product_id, counterparty_id
-- **Уникальные ограничения**: (identifier_type, value) для gtin/unit_barcode/box_barcode; (product_id, counterparty_id, identifier_type) для supplier_sku
-- **audit_log**: create, update, delete
+- **Уникальные ограничения**: (identifier_type, value) для `gtin`, `unit_barcode`, `box_barcode`; (counterparty_id, value) для `supplier_sku`
+- **audit_log**: create, update, archive
 
-### product_packaging
+### product_packaging — Новая (фаза 1)
 
-Назначение: логистическая упаковка — коэффициенты пересчёта единиц и физические параметры.
+Упаковка и пересчёт единиц: штука → короб → слой → паллета → фура.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| product_id | uuid | да | FK → products.id |
-| uom | enum | да | piece / box / layer / pallet / truck |
-| units_per_parent | integer | да | сколько единиц предыдущего уровня входит в эту |
-| gross_weight_kg | numeric(10,3) | нет | |
-| net_weight_kg | numeric(10,3) | нет | |
+| product_id | uuid | да | FK → `products.id` |
+| uom | text | да | `piece`, `box`, `layer`, `pallet`, `truck` |
+| units_per_parent | numeric(12,3) | да | сколько единиц предыдущего уровня в этой (штук в коробе, коробов в слое, слоёв в паллете, паллет в фуре) |
+| gross_weight_kg / net_weight_kg | numeric(10,3) | нет | |
 | volume_m3 | numeric(10,4) | нет | |
 | length_cm / width_cm / height_cm | numeric(8,2) | нет | |
 
-- **PK**: id · **FK**: product_id
 - **Уникальные ограничения**: (product_id, uom)
-- **audit_log**: create, update, delete
+- **audit_log**: create, update, archive
 
 ---
 
-## 4. Склады и остатки
+## 5. Склады, партии и остатки
 
-### warehouses
+### warehouses — Новая (фаза 1)
 
-Назначение: справочник складов (Актобе — основной хаб, Астана, Алматы).
+Склады: Актобе (основной хаб: приёмка европейских грузов, стикеровка), Астана, Алматы; служебный склад «В пути».
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| code | text | да | |
-| name | text | да | |
-| city | text | нет | обязательно для физических складов |
-| country | text | нет | обязательно для физических складов |
-| is_main_hub | boolean | да | признак основного хаба (Актобе) |
-| is_virtual | boolean | да | служебный склад без физического адреса (например, `IN_TRANSIT`) |
+| code | text | да | например `AKT`, `AST`, `ALA`, `IN_TRANSIT` |
+| name | jsonb | да | |
+| city / country | text | для физических | |
 | address | text | нет | |
-| status | enum | да | |
+| is_main_hub | boolean | да | Актобе = true |
+| is_virtual | boolean | да | служебный склад без адреса |
+| head_user_id | uuid | нет | FK → `profiles.id` — заведующий складом, если у него есть учётная запись |
+| head_name | text | нет | ФИО заведующего складом, если он не пользователь Nexus |
+| status | text | да | `active`, `archived` |
 
-- **PK**: id · **Уникальные ограничения**: code
-- **Статусы**: active, archived
-- **Связи**: warehouse_locations, inventory_balances, inventory_movements
+- **Уникальные ограничения**: code
 - **audit_log**: create, update, status_changed
 
-### warehouse_locations
-
-Назначение: ячейки/зоны хранения на складе.
+### warehouse_locations — Новая (фаза 1)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| warehouse_id | uuid | да | FK → warehouses.id |
+| warehouse_id | uuid | да | FK → `warehouses.id` |
 | code | text | да | |
-| zone | enum | да | receiving / storage / picking / quarantine / shipping |
-| temperature_regime | enum | нет | |
-| status | enum | да | |
+| zone | text | да | `receiving`, `storage`, `picking`, `quarantine`, `stickering`, `shipping` |
+| temperature_regime | text | нет | |
+| status | text | да | `active`, `blocked`, `archived` |
 
-- **PK**: id · **FK**: warehouse_id
 - **Уникальные ограничения**: (warehouse_id, code)
+- Нужны ли ячейки на каждом складе — вопрос П14; на пилоте достаточно зон.
 - **audit_log**: create, update, status_changed
 
-### batches
+### batches — Новая (фаза 4)
 
-Назначение: партии/серии товара со сроком годности — основа для FEFO и трассируемости.
+Партии. Основа FEFO, контроля ОСГ и прослеживаемости.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| product_id | uuid | да | FK → products.id |
-| batch_number | text | да | внутренний номер партии |
-| supplier_batch_number | text | нет | номер серии производителя |
+| product_id | uuid | да | FK → `products.id` |
+| batch_number | text | да | номер партии в Nexus; правило формирования — вопрос М7 |
+| supplier_batch_number | text | нет | серия производителя |
 | manufacture_date | date | нет | |
 | expiry_date | date | да | |
-| quantity_received | numeric(14,3) | да | в base_uom |
-| incoming_shipment_id | uuid | нет | FK → shipments.id |
-| status | enum | да | |
+| shipment_id | uuid | нет | FK → `shipments.id` (входящая поставка) |
+| shipment_item_id | uuid | нет | FK → `shipment_items.id` |
+| quantity_received | numeric(14,3) | да | в `products.base_uom` |
+| unit_landed_cost | numeric(14,4) | нет | себестоимость единицы после утверждения (фаза 5) |
+| cost_currency_id | uuid | нет | FK → `currencies.id` |
+| status | text | да | |
+| status_reason | text | нет | причина блокировки или карантина |
 | quality_notes | text | нет | |
 
-- **PK**: id · **FK**: product_id, incoming_shipment_id
-- **Уникальные ограничения**: (product_id, batch_number, incoming_shipment_id)
-- **Статусы**: active, quarantined, blocked (ручная блокировка), expired, depleted
-- **Связи**: inventory_balances, inventory_movements, marking_codes, sticker_orders
-- **Архивирование**: партии не архивируются — хранятся бессрочно для прослеживаемости; жизненный цикл отражается статусом
-- **audit_log**: create, status_changed (особенно blocked/quarantined), expiry_updated
+- **Уникальные ограничения**: (product_id, batch_number)
+- **Статусы**: `active`, `quarantined`, `blocked` (ручная блокировка), `expired`, `depleted`
+- **ОСГ (формула-допущение, «Требует подтверждения ARSEO», вопрос М8)**: `ОСГ % = (expiry_date − дата расчёта) / (expiry_date − manufacture_date) × 100`. Если `manufacture_date` неизвестна — знаменатель `products.shelf_life_days`. Дата расчёта по умолчанию — плановая дата отгрузки клиенту. ОСГ не хранится, а вычисляется (представление `batch_shelf_life`).
+- **Известно**: многие клиенты не принимают товар с ОСГ около 20–30%; если ОСГ ниже условий клиента, нужно гарантийное письмо.
+- **Связи**: inventory_balances, inventory_movements, inventory_reservations, sale_items, sticker_order_items, marking_codes, guarantee_letter_items, customer_return_items, promo_plan_items (распродажа)
+- **Архивирование**: не архивируется; жизненный цикл — через статус
+- **audit_log**: create, status_changed (с причиной), expiry_changed, cost_approved
 
-### inventory_balances
+### inventory_balances — Новая (фаза 4)
 
-Назначение: агрегированный остаток по складу / ячейке / партии (производная таблица, пересчитывается на основе `inventory_movements`).
+Производная таблица остатков по складу, ячейке и партии. Пересчитывается из `inventory_movements`.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| warehouse_id | uuid | да | FK → warehouses.id |
-| location_id | uuid | нет | FK → warehouse_locations.id |
-| product_id | uuid | да | FK → products.id |
-| batch_id | uuid | да | FK → batches.id |
+| warehouse_id | uuid | да | FK → `warehouses.id` |
+| location_id | uuid | нет | FK → `warehouse_locations.id` |
+| product_id | uuid | да | FK → `products.id` |
+| batch_id | uuid | да | FK → `batches.id` |
 | quantity_on_hand | numeric(14,3) | да | |
 | quantity_reserved | numeric(14,3) | да | |
-| uom | enum | да | base_uom товара |
+| quantity_blocked | numeric(14,3) | да | |
 | last_movement_at | timestamptz | нет | |
 
-- **PK**: id · **FK**: warehouse_id, location_id, product_id, batch_id
-- **Уникальные ограничения**: (warehouse_id, location_id, batch_id)
-- **Архивирование**: не применимо (производная таблица; строки с нулевым остатком не удаляются, чтобы сохранить историю последнего движения)
-- **audit_log**: не пишет напрямую — источник записей `inventory_movements`
+- **Уникальные ограничения**: (warehouse_id, location_id, batch_id), пустая ячейка считается значением
+- **Доступно к отгрузке** = on_hand − reserved − blocked
+- **audit_log**: нет (источник — движения)
 
-### inventory_movements
+### inventory_movements — Новая (фаза 4)
 
-Назначение: журнал складских движений (приход, расход, перемещение, списание, товар в пути и т.д.). Append-only.
+Журнал складских движений. Append-only.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| movement_type | enum | да | receipt / issue / transfer / write_off / return / adjustment / in_transit_start / in_transit_end |
-| warehouse_id | uuid | да | FK → warehouses.id |
-| location_id | uuid | нет | FK → warehouse_locations.id |
-| product_id | uuid | да | FK → products.id |
-| batch_id | uuid | да | FK → batches.id |
-| quantity | numeric(14,3) | да | со знаком (приход +/ расход −) |
-| uom | enum | да | |
-| related_shipment_id | uuid | нет | FK → shipments.id |
-| related_sale_id | uuid | нет | FK → sales.id |
-| reason | text | нет | |
-| performed_by | uuid | да | FK → employees.id |
+| movement_type | text | да | `receipt`, `issue`, `transfer`, `write_off`, `return`, `adjustment`, `in_transit_start`, `in_transit_end` |
+| warehouse_id | uuid | да | FK → `warehouses.id` |
+| location_id | uuid | нет | FK → `warehouse_locations.id` |
+| product_id / batch_id | uuid | да | FK |
+| quantity | numeric(14,3) | да | со знаком: приход +, расход − |
+| shipment_id / shipment_transport_id | uuid | нет | FK |
+| sale_item_id | uuid | нет | FK → `sale_items.id` |
+| customer_return_item_id | uuid | нет | FK → `customer_return_items.id` |
+| transfer_group_id | uuid | нет | связывает две записи перемещения |
+| reversal_of_id | uuid | нет | FK → `inventory_movements.id` (сторно) |
+| reason | text | для списания и корректировки | |
+| recorded_by | uuid | да | FK → `profiles.id` — кто внёс в Nexus |
+| performed_by_name | text | нет | кто физически выполнил (работник склада), если он не пользователь |
 | occurred_at | timestamptz | да | |
-| reversal_of_id | uuid | нет | FK → inventory_movements.id (сторно) |
-| transfer_group_id | uuid | нет | связывает две записи перемещения (расход со склада A + приход на склад B) |
 
-- **PK**: id · **FK**: warehouse_id, location_id, product_id, batch_id, related_shipment_id, related_sale_id, performed_by, reversal_of_id
-- **Перемещение**: оформляется парой записей (`transfer` с минусом на складе-отправителе и `transfer` с плюсом на складе-получателе) с общим `transfer_group_id`.
-- **Товар в пути**: для него используется служебный склад `IN_TRANSIT` (запись в `warehouses` с отдельным кодом); `in_transit_start` переводит остаток на него, `in_transit_end` — на склад назначения. Так остатки «в пути» видны в тех же отчётах без отдельной таблицы.
-- **Архивирование**: не удаляется никогда; исправление ошибок — только сторнирующей записью
-- **audit_log**: создание движения фиксируется в audit_log как отдельное событие (create)
+- **Перемещение** — пара записей с общим `transfer_group_id`.
+- **Товар в пути** — служебный склад `IN_TRANSIT`: `in_transit_start` переносит количество туда, `in_transit_end` — на склад назначения.
+- **Архивирование**: не удаляется; исправление — сторно
+- **audit_log**: create (каждое движение), reversal
 
-### inventory_reservations
+### inventory_reservations — Новая (фаза 4)
 
-Назначение: резервирование товара под заказ/отгрузку, включая логику FEFO (резерв может не быть привязан к конкретной партии — партия подбирается при отгрузке).
+Резервы и ручные блокировки количества.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| product_id | uuid | да | FK → products.id |
-| batch_id | uuid | нет | FK → batches.id |
-| warehouse_id | uuid | да | FK → warehouses.id |
+| product_id | uuid | да | FK |
+| batch_id | uuid | нет | FK; подбирается по FEFO |
+| warehouse_id | uuid | да | FK |
 | quantity | numeric(14,3) | да | |
-| reserved_for_type | enum | да | sale / shipment / manual_block |
-| reserved_for_id | uuid | да | полиморфная ссылка (без FK-ограничения) |
-| status | enum | да | |
+| reserved_for_type | text | да | `sale_item`, `transfer`, `promo`, `manual_block` |
+| reserved_for_id | uuid | нет | полиморфная ссылка |
+| is_fefo_override | boolean | да | выбрана не та партия, которую предлагает FEFO |
+| override_reason | text | если override | |
+| override_approved_by | uuid | нет | FK → `profiles.id` |
+| status | text | да | `active`, `fulfilled`, `cancelled`, `expired` |
 | expires_at | timestamptz | нет | |
-| created_by | uuid | да | FK → employees.id |
+| created_by | uuid | да | FK |
 
-- **PK**: id · **FK**: product_id, batch_id, warehouse_id, created_by
-- **Статусы**: active, fulfilled, cancelled, expired
-- **audit_log**: create, fulfilled, cancelled
+- **audit_log**: create, fefo_override, fulfilled, cancelled
 
 ---
 
-## 5. Поставки и логистика
+## 6. Поставки и процесс
 
-### shipments
+### process_templates — Новая (фаза 2)
 
-Назначение: центральная сущность процесса — поставка от заказа производителю до закрытия (см. [`docs/process-rvi.md`](./process-rvi.md)).
+Шаблон процесса поставки. Базовый шаблон — 18 этапов RVI (см. [`process-rvi.md`](./process-rvi.md)).
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| code | text | да | например `import_eu_kz` |
+| version | integer | да | |
+| name | jsonb | да | |
+| shipment_type | text | нет | `import`, `export`, `domestic_transfer`; пусто = любой |
+| route_id | uuid | нет | FK → `routes.id`; пусто = любой маршрут |
+| enforcement_mode | text | да | `advisory` — нарушение порядка разрешено с причиной и предупреждением; `strict` — запрещено. На пилоте `advisory` |
+| is_default | boolean | да | |
+| status | text | да | `draft`, `active`, `archived` |
+
+- **Уникальные ограничения**: (code, version)
+- **audit_log**: create, update, activated, archived
+
+### shipment_stages — Новая (фаза 2)
+
+Этапы шаблона процесса и правила их применения.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| process_template_id | uuid | да | FK → `process_templates.id` |
+| code | text | да | например `warehouse_receiving` |
+| name | jsonb | да | |
+| sequence_order | integer | да | рекомендуемый порядок |
+| requirement | text | да | `required`, `optional`, `conditional` |
+| condition_rules | jsonb | нет | когда этап обязателен или не нужен: по маршруту, стране клиента, признакам товара (`requires_marking`, `requires_sticker`), типу поставки |
+| predecessor_codes | text[] | нет | этапы, которые желательно завершить раньше |
+| parallel_group | text | нет | этапы одной группы можно вести одновременно |
+| scope | text | да | `shipment` или `transport` (для каждой перевозки отдельно) |
+| default_responsible_role | text | нет | код роли из `app_roles` |
+| sla_days | integer | нет | контрольный срок; значения — после пилота (вопрос П1) |
+| status_category | text | да | общий статус поставки для этого этапа (см. `shipments.status`) |
+| is_active | boolean | да | |
+
+- **Уникальные ограничения**: (process_template_id, code)
+- **audit_log**: create, update
+
+### shipments — Новая (фаза 2)
+
+Поставка.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | shipment_number | text | да | |
-| project_code | text | нет | код проекта для группировки (например, Leib4-x); **«Требует подтверждения ARSEO»** |
-| type | enum | да | import / export / domestic_transfer |
-| carrier_id | uuid | нет | FK → carriers.id |
-| vehicle_id | uuid | нет | FK → vehicles.id |
-| supplier_id | uuid | условно | FK → counterparties.id (производитель/поставщик); обязательно для import |
-| customer_id | uuid | условно | FK → counterparties.id; обязательно для export |
-| route_id | uuid | да | FK → routes.id |
-| contract_id | uuid | нет | FK → contracts.id |
-| status | enum | да | высокоуровневый статус (см. process-rvi.md) |
-| current_stage_id | uuid | нет | FK → shipment_stages.id |
-| currency_id | uuid | да | FK → currencies.id |
+| project_code | text | нет | код проекта, например Leib7-x |
+| type | text | да | `import`, `export`, `domestic_transfer` |
+| supplier_id | uuid | для `import` | FK → `counterparties.id` |
+| customer_id | uuid | для `export` | FK → `counterparties.id` |
+| route_id | uuid | да | FK → `routes.id` |
+| contract_id | uuid | нет | FK → `contracts.id` |
+| process_template_id | uuid | да | FK → `process_templates.id` |
+| status | text | да | общий статус, вычисляется из этапов |
+| leading_stage_id | uuid | нет | FK → `shipment_stages.id` — ведущий этап (см. ниже) |
+| currency_id | uuid | да | FK → `currencies.id` |
 | incoterms | text | нет | |
-| planned_departure_date / planned_arrival_date | date | нет | |
-| actual_departure_date / actual_arrival_date | date | нет | |
-| destination_warehouse_id | uuid | да | FK → warehouses.id |
-| responsible_employee_id | uuid | да | FK → employees.id |
-| is_locked | boolean | да | закрытые/отменённые поставки блокируются от изменений |
-| notes | text | нет | |
+| destination_warehouse_id | uuid | да | FK → `warehouses.id` |
+| responsible_user_id | uuid | да | FK → `profiles.id` |
+| planned_ready_date / planned_arrival_date | date | нет | |
+| hold_reason / cancel_reason | text | нет | |
+| is_locked | boolean | да | true после закрытия |
+| closed_at / closed_by | timestamptz / uuid | нет | |
 
-- **Правило**: одна запись `shipments` = одна перевозка (один автомобиль). Если заказ везут два автомобиля (как в пилоте), создаются две поставки с общим `project_code`. Так не нужна отдельная связующая таблица.
-- **PK**: id · **FK**: supplier_id, customer_id, carrier_id, vehicle_id, route_id, contract_id, current_stage_id, currency_id, destination_warehouse_id, responsible_employee_id
 - **Уникальные ограничения**: shipment_number
-- **Статусы**: высокоуровневый `status` выводится из текущего этапа (`current_stage_id`) — planning, in_production, preparing_transport, in_transit, customs, receiving, sales, closed, а также on_hold и cancelled. Соответствие этапам и таблица переходов — в `process-rvi.md`.
-- **Связи**: shipment_items, shipment_stage_history, expenses, documents (related_entity), batches.incoming_shipment_id
-- **Архивирование**: closed/cancelled → is_locked = true, редактирование запрещено (кроме записи новых документов/комментариев)
-- **audit_log**: create, update, status_changed, stage_changed, locked
+- **Статусы** (`status`): `planning`, `in_production`, `preparing_transport`, `in_transit`, `customs`, `receiving`, `sales`, `closed`, `on_hold`, `cancelled`. Русские названия и соответствие этапам — в `process-rvi.md`.
+- **Ведущий этап** — самый ранний по `sequence_order` этап, который обязателен и ещё не завершён. `status` = `status_category` ведущего этапа. Так статус однозначен и при параллельных этапах. `on_hold` и `cancelled` имеют приоритет.
+- **Связи**: shipment_transports, shipment_items, shipment_stage_runs, customs_clearances, expenses, documents, batches, approvals, tasks
+- **Архивирование**: закрытая поставка блокируется (`is_locked`). Открыть её повторно могут `director` и `logistics_director` с указанием причины (**«Требует подтверждения ARSEO»**).
+- **audit_log**: create, update, status_changed, hold, resume, cancelled, closed, reopened
 
-### shipment_items
+### shipment_transports — Новая (фаза 2)
 
-Назначение: позиции поставки.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| shipment_id | uuid | да | FK → shipments.id |
-| product_id | uuid | да | FK → products.id |
-| ordered_quantity | numeric(14,3) | да | |
-| uom | enum | да | |
-| unit_price | numeric(14,4) | нет | |
-| currency_id | uuid | нет | FK → currencies.id |
-| received_quantity | numeric(14,3) | нет | заполняется при приёмке |
-| discrepancy_reason | text | нет | |
-| batch_id | uuid | нет | FK → batches.id, после регистрации партии |
-
-- **PK**: id · **FK**: shipment_id, product_id, currency_id, batch_id
-- **Уникальные ограничения**: **«Требует подтверждения ARSEO»** — допустимы ли несколько строк на один товар в одной поставке (например, разные партии/цены)
-- **audit_log**: create, update, receiving_updated
-
-### shipment_stages
-
-Назначение: справочник/шаблон этапов процесса (18 этапов пилота RVI, см. `process-rvi.md`); может быть специализирован по маршруту.
+Перевозка — один автомобиль или рейс поставки.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| code | text | да | системный код этапа |
-| name_ru | text | да | |
-| sequence_order | integer | да | |
-| route_id | uuid | нет | FK → routes.id (null = общий этап) |
-| sla_days | integer | нет | контрольный срок |
-| is_active | boolean | да | |
-
-- **PK**: id · **FK**: route_id
-- **Уникальные ограничения**: (code, route_id)
-- **audit_log**: create, update
-
-### shipment_stage_history
-
-Назначение: журнал фактических переходов поставки между этапами. Append-only.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| shipment_id | uuid | да | FK → shipments.id |
-| stage_id | uuid | да | FK → shipment_stages.id |
-| status | enum | да | entered / completed / skipped / blocked |
-| entered_at | timestamptz | да | |
-| completed_at | timestamptz | нет | |
-| responsible_employee_id | uuid | да | FK → employees.id |
-| comment | text | нет | |
-
-- **PK**: id · **FK**: shipment_id, stage_id, responsible_employee_id
-- **Архивирование**: не удаляется
-- **audit_log**: каждая запись дублируется как событие в audit_log (stage_changed)
-
-### routes
-
-Назначение: справочник маршрутов.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| origin_country | text | да | |
-| destination_country | text | да | |
-| name | text | да | например «Финляндия → Казахстан» |
-| typical_transit_days | integer | нет | |
-| default_carrier_id | uuid | нет | FK → carriers.id |
-| status | enum | да | |
-
-- **PK**: id · **FK**: default_carrier_id
-- **Уникальные ограничения**: (origin_country, destination_country) — **«Требует подтверждения ARSEO»**, если нужны несколько вариантов одного направления
-- **audit_log**: create, update, status_changed
-
-### carriers
-
-Назначение: перевозчики — расширение `counterparties` для транспортных компаний.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| counterparty_id | uuid | да | FK → counterparties.id |
-| transport_types | enum[] | нет | truck / rail / sea / air |
-| license_number | text | нет | |
+| shipment_id | uuid | да | FK → `shipments.id` |
+| sequence_no | integer | да | 1, 2… |
+| carrier_id | uuid | нет | FK → `carriers.id` |
+| vehicle_id | uuid | нет | FK → `vehicles.id` |
+| driver_name / driver_phone | text | нет | персональные данные, доступ ограничен |
+| temperature_setpoint | text | нет | |
+| planned_loading_date / actual_loading_date | date | нет | |
+| planned_arrival_date / actual_arrival_date | date | нет | |
+| status | text | да | `planned`, `loading`, `in_transit`, `at_customs`, `arrived`, `unloaded`, `cancelled` |
 | notes | text | нет | |
 
-- **PK**: id · **FK**: counterparty_id (1–1)
-- **audit_log**: create, update
-
-### vehicles
-
-Назначение: транспортные средства для контроля температурного режима и перевозки.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| carrier_id | uuid | да | FK → carriers.id |
-| plate_number | text | да | |
-| vehicle_type | enum | да | truck / trailer / refrigerator |
-| temperature_capability | text | нет | |
-| driver_full_name | text | нет | **«Требует подтверждения ARSEO»** — допустимость хранения персональных данных водителя |
-| driver_phone | text | нет | |
-| status | enum | да | |
-
-- **PK**: id · **FK**: carrier_id
-- **Уникальные ограничения**: plate_number
+- **Уникальные ограничения**: (shipment_id, sequence_no)
 - **audit_log**: create, update, status_changed
 
-### brokers
+### shipment_items — Новая (фаза 2)
 
-Назначение: таможенные брокеры — расширение `counterparties`.
+Позиции поставки: и заказ поставщику, и фактически принятый товар.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| counterparty_id | uuid | да | FK → counterparties.id |
-| license_number | text | нет | |
+| shipment_id | uuid | да | FK → `shipments.id` |
+| shipment_transport_id | uuid | нет | FK → `shipment_transports.id` — в каком автомобиле |
+| product_id | uuid | да | FK → `products.id` |
+| uom | text | да | |
+| ordered_quantity | numeric(14,3) | да | заказано |
+| confirmed_quantity | numeric(14,3) | нет | подтверждено поставщиком |
+| shipped_quantity | numeric(14,3) | нет | по упаковочному листу |
+| received_quantity | numeric(14,3) | нет | принято по факту |
+| unit_price | numeric(14,4) | нет | |
+| currency_id | uuid | нет | FK |
+| discrepancy_reason | text | если есть расхождение | |
+| discrepancy_accepted_by | uuid | нет | FK → `profiles.id` |
+
+- **Уникальные ограничения**: (shipment_id, shipment_transport_id, product_id). Один товар может занимать несколько строк — по одной на автомобиль.
+- **Связи**: batches (через `batches.shipment_item_id`), expense_allocations
+- **audit_log**: create, update, quantity_changed, discrepancy_accepted
+
+### shipment_stage_runs — Новая (фаза 2)
+
+Состояние каждого этапа по конкретной поставке (или перевозке). Позволяет вести этапы параллельно и пропускать их.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| shipment_id | uuid | да | FK |
+| stage_id | uuid | да | FK → `shipment_stages.id` |
+| shipment_transport_id | uuid | для этапов со `scope = transport` | FK |
+| is_required | boolean | да | вычисляется по правилам шаблона, может быть изменено с причиной |
+| status | text | да | |
+| responsible_user_id | uuid | нет | FK → `profiles.id` |
+| performed_by_name | text | нет | фактический исполнитель, если он не пользователь (например, работник склада) |
+| due_at | timestamptz | нет | из `sla_days` |
+| started_at / completed_at | timestamptz | нет | |
+| status_reason | text | для `skipped`, `not_applicable`, `blocked`, изменения `is_required` | |
+
+- **Уникальные ограничения**: (shipment_id, stage_id, shipment_transport_id)
+- **Статусы**: `pending`, `in_progress`, `blocked`, `completed`, `skipped`, `not_applicable`
+- **audit_log**: каждое изменение статуса и `is_required` (с причиной) — дублируется в `shipment_stage_history`
+
+### shipment_stage_history — Новая (фаза 2)
+
+Журнал переходов этапов. Append-only.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| stage_run_id | uuid | да | FK → `shipment_stage_runs.id` |
+| shipment_id | uuid | да | FK |
+| from_status / to_status | text | да | |
+| changed_by | uuid | да | FK → `profiles.id` |
+| performed_by_name | text | нет | от чьего имени (например, заведующий складом) |
+| reason | text | для пропуска и нарушений порядка | |
+| warnings | jsonb | нет | предупреждения, которые пользователь подтвердил (этап раньше предшественника, пропуск обязательного этапа) |
+| created_at | timestamptz | да | |
+
+- **Архивирование**: не удаляется
+- **audit_log**: запись `stage_status_changed` со ссылкой на строку истории
+
+### routes — Новая (фаза 1)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| origin_country / destination_country | text | да | |
+| name | jsonb | да | например «Финляндия → Казахстан» |
+| via_countries | text[] | нет | транзит |
+| typical_transit_days | integer | нет | |
+| default_process_template_id | uuid | нет | FK |
+| status | text | да | `active`, `archived` |
+
+- **Маршруты**: Финляндия, Нидерланды, Германия, Бельгия, Турция → Казахстан; Турция → Грузия; Грузия → Россия; Казахстан → Россия; Казахстан → Кыргызстан.
+- **Уникальные ограничения**: (origin_country, destination_country, name) — допускает несколько вариантов одного направления
+- **audit_log**: create, update, status_changed
+
+### carriers — Новая (фаза 1)
+
+Расширение контрагента-перевозчика.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| counterparty_id | uuid | да | FK → `counterparties.id`, уникально |
+| transport_types | text[] | нет | `truck`, `rail`, `sea`, `air` |
+| has_refrigerated_fleet | boolean | нет | |
+| notes | text | нет | |
+
+- **audit_log**: create, update
+
+### vehicles — Новая (фаза 1)
+
+Автомобили перевозчиков. Водители указываются в конкретной перевозке (`shipment_transports`), потому что меняются от рейса к рейсу.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| carrier_id | uuid | да | FK → `carriers.id` |
+| plate_number | text | да | |
+| trailer_plate_number | text | нет | |
+| vehicle_type | text | да | `truck`, `trailer`, `refrigerator` |
+| temperature_capability | text | нет | |
+| status | text | да | `active`, `archived` |
+
+- **Уникальные ограничения**: plate_number
+- **audit_log**: create, update
+
+### brokers — Новая (фаза 1)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| counterparty_id | uuid | да | FK, уникально |
 | countries_serviced | text[] | нет | |
 | notes | text | нет | |
 
-- **PK**: id · **FK**: counterparty_id (1–1)
 - **audit_log**: create, update
 
-### customs_clearances
-
-Назначение: таможенное оформление конкретной поставки.
+### customs_clearances — Новая (фаза 2)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| shipment_id | uuid | да | FK → shipments.id |
-| broker_id | uuid | да | FK → brokers.id |
-| declaration_number | text | нет | |
+| shipment_id | uuid | да | FK |
+| shipment_transport_id | uuid | нет | FK — если оформление по автомобилю |
+| broker_id | uuid | нет | FK → `brokers.id` |
 | country | text | да | |
-| status | enum | да | |
-| submitted_at | timestamptz | нет | |
-| cleared_at | timestamptz | нет | |
+| declaration_number | text | нет | |
+| status | text | да | |
+| submitted_at / cleared_at | timestamptz | нет | |
 | customs_value | numeric(14,2) | нет | |
-| currency_id | uuid | нет | FK → currencies.id |
 | duties_amount / fees_amount | numeric(14,2) | нет | |
+| currency_id | uuid | нет | FK |
 
-- **PK**: id · **FK**: shipment_id, broker_id, currency_id
-- **Статусы**: pending, submitted, in_progress, cleared, rejected, on_hold
+- **Статусы**: `pending`, `submitted`, `in_progress`, `cleared`, `rejected`, `on_hold`
 - **audit_log**: create, update, status_changed
 
 ---
 
-## 6. Документы
+## 7. Документы и согласования
 
-### documents
+### documents — Новая (фаза 3)
 
-Назначение: метаданные документа; бинарный файл — в объектном хранилище.
+Метаданные документа. Файл — в Google Drive или Supabase Storage (см. «Файлы и документы»).
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| doc_type | enum | да | invoice / cmr / ttn / snt / waybill / packing_list / specification / contract / guarantee_letter / customs_doc / client_input_card / client_output_card / other |
+| doc_type | text | да | `invoice`, `cmr`, `ttn`, `snt`, `waybill` (накладная), `packing_list`, `specification`, `contract`, `purchase_order`, `order_confirmation`, `guarantee_letter`, `customs_doc`, `client_input_card`, `client_output_card`, `discrepancy_act`, `certificate`, `product_image`, `sticker_layout`, `marking_codes_file`, `other` |
 | doc_number | text | нет | |
 | doc_date | date | нет | |
-| related_entity_type | enum | нет | shipment / contract / product / counterparty / customs_clearance |
-| related_entity_id | uuid | нет | полиморфная ссылка |
-| current_version_id | uuid | нет | FK → document_versions.id |
-| status | enum | да | |
-| created_by | uuid | да | FK → employees.id |
+| entity_type | text | нет | `shipment`, `shipment_transport`, `contract`, `product`, `counterparty`, `customs_clearance`, `sale`, `guarantee_letter`, `customer_return`, `product_listing_card`, `sticker_template_version`, `marking_code_order`, `promo_plan` |
+| entity_id | uuid | нет | |
+| counterparty_id | uuid | нет | FK → `counterparties.id` |
+| language | text | нет | `ru`, `en`, `kk` |
+| source | text | да | `manual_upload`, `external_upload`, `google_drive_import`, `generated` |
+| template_id | uuid | нет | FK → `document_templates.id` |
+| visibility | text | да | `internal` (по умолчанию) / `shared_with_counterparty` |
+| current_version_id | uuid | нет | FK → `document_versions.id` |
+| status | text | да | |
+| created_by | uuid | да | FK → `profiles.id` |
 
-- **PK**: id · **FK**: current_version_id, created_by
-- **Статусы**: draft, uploaded, under_review, approved, rejected, expired
-- **Связи**: document_versions (1–N), approvals, document_templates (если сгенерирован по шаблону)
-- **Архивирование**: не удаляется; is_archived после закрытия связанной поставки
-- **audit_log**: create, upload_version, status_changed, approved, rejected, downloaded
+- **Статусы**: `draft`, `uploaded`, `under_review`, `approved`, `rejected`, `expired`
+- **Внешний пользователь** видит документ, только если `visibility = shared_with_counterparty` и `counterparty_id` — его контрагент. Загруженный им документ получает статус `uploaded` и проверяется сотрудником.
+- **Архивирование**: `archived_at` после закрытия связанной поставки; не удаляется в течение срока хранения
+- **audit_log**: create, new_version, status_changed, approved, rejected, visibility_changed, downloaded (для внешних пользователей — обязательно)
 
-### document_versions
+### document_versions — Новая (фаза 3)
 
-Назначение: версии файла документа.
+Версии файла. Append-only.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| document_id | uuid | да | FK → documents.id |
+| document_id | uuid | да | FK |
 | version_number | integer | да | |
-| file_name | text | да | |
+| storage_provider | text | да | `google_drive`, `supabase_storage` |
+| external_file_id | text | для Drive | ID файла в Google Drive |
+| storage_path | text | для Storage | путь в Supabase Storage |
+| file_name | text | да | исходное имя |
 | mime_type | text | да | |
-| storage_key | text | да | ключ в объектном хранилище |
+| source_format | text | да | `pdf`, `xlsx`, `xls`, `csv`, `docx`, `image`, `other` |
 | file_size_bytes | bigint | нет | |
-| checksum | text | нет | |
-| validation_result | jsonb | нет | результат автоматической проверки |
-| uploaded_by | uuid | да | FK → employees.id |
+| checksum_sha256 | text | нет | контроль дублей и целостности |
+| extracted_data | jsonb | нет | данные, распознанные из файла (номер, дата, позиции) |
+| validation_result | jsonb | нет | результат проверки против поставки |
+| uploaded_by | uuid | да | FK → `profiles.id` |
 | uploaded_at | timestamptz | да | |
 
-- **PK**: id · **FK**: document_id, uploaded_by
 - **Уникальные ограничения**: (document_id, version_number)
-- **Архивирование**: append-only, не удаляется
 - **audit_log**: uploaded, downloaded
 
-### document_templates
-
-Назначение: шаблоны для автозаполнения документов.
+### document_templates — Новая (фаза 3)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| doc_type | enum | да | |
+| doc_type | text | да | |
 | name | text | да | |
-| storage_key | text | да | |
-| variables_schema | jsonb | да | список полей для подстановки |
-| is_active | boolean | да | |
-| created_by | uuid | да | FK → employees.id |
+| language | text | да | `ru`, `en`, `kk` |
+| counterparty_id | uuid | нет | шаблон под конкретного клиента (например, его карта ввода) |
+| file_ref | jsonb | да | где лежит файл шаблона (Drive или Storage) |
+| variables_schema | jsonb | да | поля для подстановки |
+| version | integer | да | |
+| status | text | да | `draft`, `approved`, `archived` |
+| approved_by | uuid | нет | FK |
 
-- **PK**: id · **FK**: created_by
-- **Уникальные ограничения**: (doc_type, name)
-- **audit_log**: create, update, deactivated
+- **Уникальные ограничения**: (doc_type, name, language, version)
+- **audit_log**: create, update, approved, archived
 
-### approvals
+### approvals — Новая (фаза 2)
 
-Назначение: универсальные согласования (документов, поставок, расходов и т.д.).
+Согласования любых объектов.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| entity_type | enum | да | document / shipment / contract / expense / other |
-| entity_id | uuid | да | полиморфная ссылка |
-| approver_employee_id | uuid | да | FK → employees.id |
-| requested_by | uuid | да | FK → employees.id |
-| status | enum | да | |
-| requested_at | timestamptz | да | |
-| decided_at | timestamptz | нет | |
-| comment | text | нет | |
+| entity_type | text | да | `shipment_order`, `document`, `discrepancy`, `fefo_override`, `sticker_template_version`, `guarantee_letter`, `expense`, `cost_calculation`, `forecast`, `purchase_plan`, `promo_plan`, `customer_return`, `other` |
+| entity_id | uuid | да | |
+| approver_user_id | uuid | нет | FK → `profiles.id` |
+| approver_role | text | нет | код роли, если согласует любой сотрудник роли |
+| requested_by | uuid | да | FK |
+| status | text | да | `pending`, `approved`, `rejected`, `cancelled` |
+| requested_at / decided_at | timestamptz | | |
+| comment | text | для `rejected` | |
 
-- **PK**: id · **FK**: approver_employee_id, requested_by
-- **Статусы**: pending, approved, rejected, cancelled
+- Кто согласует каждый тип — вопрос М6.
 - **audit_log**: requested, approved, rejected, cancelled
 
 ---
 
-## 7. Задачи и коммуникация
+## 8. Задачи и уведомления
 
-### tasks
-
-Назначение: задачи/поручения, панель контроля задач и расхождений.
+### tasks — Новая (фаза 2)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | title | text | да | |
 | description | text | нет | |
-| related_entity_type | text | нет | |
-| related_entity_id | uuid | нет | |
-| assignee_id | uuid | да | FK → employees.id |
-| created_by | uuid | да | FK → employees.id |
-| priority | enum | да | low / normal / high / urgent |
-| due_date | date | нет | |
-| status | enum | да | |
+| entity_type / entity_id | text / uuid | нет | |
+| assignee_user_id | uuid | да | FK |
+| created_by | uuid | нет | пусто — создана системой |
+| priority | text | да | `low`, `normal`, `high`, `urgent` |
+| due_at | timestamptz | нет | |
+| status | text | да | `open`, `in_progress`, `done`, `cancelled` |
 
-- **PK**: id · **FK**: assignee_id, created_by
-- **Статусы**: open, in_progress, done, cancelled
-- **audit_log**: create, update, status_changed, reassigned
+- **audit_log**: create, status_changed, reassigned
 
-### comments
-
-Назначение: комментарии к сущностям (поставки, документы, задачи).
+### comments — Новая (фаза 2)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| entity_type | text | да | |
-| entity_id | uuid | да | |
-| author_id | uuid | да | FK → employees.id |
+| entity_type / entity_id | text / uuid | да | |
+| author_user_id | uuid | да | FK |
 | body | text | да | |
-| edited_at | timestamptz | нет | |
+| visibility | text | да | `internal` / `shared_with_counterparty` |
+| edited_at / archived_at | timestamptz | нет | |
 
-- **PK**: id · **FK**: author_id
-- **audit_log**: create, edited, deleted
+- **audit_log**: create, edited, archived
 
-### notifications
+### notifications — Новая (фаза 2)
 
-Назначение: уведомления сотрудникам (сроки, согласования, расхождения).
+Уведомление получателю. Каналы: внутри системы, электронная почта, WhatsApp.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| recipient_employee_id | uuid | да | FK → employees.id |
-| type | enum | да | deadline / approval_request / status_change / discrepancy / system |
-| title | text | да | |
-| body | text | нет | |
-| related_entity_type | text | нет | |
-| related_entity_id | uuid | нет | |
-| channel | enum | да | in_app / email / other — **«Требует подтверждения ARSEO»** какие каналы нужны |
-| is_read | boolean | да | |
-| read_at | timestamptz | нет | |
+| recipient_user_id | uuid | да | FK → `profiles.id` |
+| type | text | да | `deadline`, `overdue`, `approval_request`, `approval_decision`, `status_change`, `discrepancy`, `low_shelf_life`, `document_uploaded`, `sync_error`, `system` |
+| title / body | text | да / нет | на языке получателя (`profiles.locale`) |
+| entity_type / entity_id | text / uuid | нет | |
+| is_read / read_at | boolean / timestamptz | | |
+| created_at | timestamptz | да | |
 
-- **PK**: id · **FK**: recipient_employee_id
-- **audit_log**: create (массовое чтение не логируется отдельно)
+- **audit_log**: не пишется (массовые события); доставки — в `notification_deliveries`
+
+### notification_deliveries — Новая (фаза 2)
+
+Отправка уведомления по каналу.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| notification_id | uuid | да | FK |
+| channel | text | да | `in_app`, `email`, `whatsapp` |
+| status | text | да | `queued`, `sent`, `delivered`, `failed`, `skipped` |
+| provider_message_id | text | нет | |
+| attempts | integer | да | |
+| error | text | нет | |
+| sent_at | timestamptz | нет | |
+
+- Каналы `in_app` и `email` — фаза 2; `whatsapp` — после выбора провайдера (фаза 6).
+- **audit_log**: нет; ошибки видны администратору
 
 ---
 
-## 8. Финансы
+## 9. Финансы
 
-### currencies
+### currencies — Новая (фаза 1)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| code | text | да | ISO 4217: KZT, RUB, EUR |
-| name | text | да | |
-| symbol | text | нет | |
+| code | text | да | ISO 4217: `KZT`, `RUB`, `EUR` |
+| name | jsonb | да | |
 | is_active | boolean | да | |
 
 - **Уникальные ограничения**: code · **audit_log**: create, update
 
-### exchange_rates
+### exchange_rates — Новая (фаза 5)
 
-Назначение: курсы валют по датам и источникам (официальный / банковский). Append-only.
+Append-only.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| base_currency_id | uuid | да | FK → currencies.id |
-| quote_currency_id | uuid | да | FK → currencies.id |
+| base_currency_id / quote_currency_id | uuid | да | FK |
 | rate | numeric(18,6) | да | |
-| source | enum | да | official / bank |
+| source | text | да | `official`, `bank` |
+| source_name | text | нет | название банка или источника |
 | rate_date | date | да | |
 
 - **Уникальные ограничения**: (base_currency_id, quote_currency_id, source, rate_date)
-- **Архивирование**: исторические курсы не удаляются
 - **audit_log**: create
 
-### expenses
-
-Назначение: расходы, формирующие себестоимость.
+### expenses — Новая (фаза 5)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| shipment_id | uuid | нет | FK → shipments.id |
-| expense_type | enum | да | goods_cost / transport / logistics / broker_fee / customs_duty / tax / stickering / marking / bank_fee / other |
+| shipment_id | uuid | нет | FK |
+| attributed_customer_id | uuid | нет | FK → `counterparties.id` — расход относится к клиенту (промо, доставка клиенту, возврат) |
+| promo_plan_id | uuid | нет | FK → `promo_plans.id` |
+| expense_type | text | да | `goods_cost`, `transport`, `logistics`, `broker_fee`, `customs_duty`, `tax`, `stickering`, `marking`, `bank_fee`, `promo`, `return`, `other` |
+| payee_counterparty_id | uuid | нет | FK |
 | amount | numeric(14,2) | да | |
-| currency_id | uuid | да | FK → currencies.id |
-| exchange_rate_id | uuid | нет | FK → exchange_rates.id |
-| counterparty_id | uuid | нет | FK → counterparties.id |
-| document_id | uuid | нет | FK → documents.id |
+| currency_id | uuid | да | FK |
+| exchange_rate_id | uuid | нет | FK |
+| document_id | uuid | нет | FK |
 | incurred_at | date | да | |
-| status | enum | да | |
+| is_planned | boolean | да | плановый (до счёта) или фактический |
+| status | text | да | `draft`, `confirmed`, `allocated`, `paid` |
 
-- **PK**: id · **FK**: shipment_id, currency_id, exchange_rate_id, counterparty_id, document_id
-- **Статусы**: draft, confirmed, allocated, paid
 - **audit_log**: create, update, status_changed
 
-### expense_allocations
-
-Назначение: распределение расхода между товарами/партиями поставки.
+### expense_allocations — Новая (фаза 5)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| expense_id | uuid | да | FK → expenses.id |
-| shipment_item_id | uuid | нет | FK → shipment_items.id |
-| product_id | uuid | нет | FK → products.id |
-| batch_id | uuid | нет | FK → batches.id |
-| allocation_method | enum | да | by_quantity / by_weight / by_volume / by_value / manual |
+| expense_id | uuid | да | FK |
+| shipment_item_id | uuid | нет | FK |
+| batch_id | uuid | нет | FK |
+| allocation_method | text | да | `by_quantity`, `by_weight`, `by_volume`, `by_value`, `manual` |
 | allocated_amount | numeric(14,2) | да | |
-| currency_id | uuid | да | FK → currencies.id |
+| currency_id | uuid | да | FK |
 
-- **PK**: id · **FK**: expense_id, shipment_item_id, product_id, batch_id, currency_id
-- **audit_log**: create, update, recalculated
+- **audit_log**: create, recalculated
 
-### sales
+### sales — Новая (фаза 4)
 
-Назначение: клиентские отгрузки (выручка + база для себестоимости и дебиторки).
+Клиентский заказ / продажа.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | sale_number | text | да | |
-| customer_id | uuid | да | FK → counterparties.id |
-| shipment_id | uuid | нет | FK → shipments.id |
-| currency_id | uuid | да | FK → currencies.id |
-| sale_date | date | да | |
-| status | enum | да | |
-| total_amount | numeric(14,2) | да | |
-| cost_amount | numeric(14,2) | нет | вычисляется из expense_allocations |
+| customer_id | uuid | да | FK → `counterparties.id` |
+| contract_id | uuid | нет | FK |
+| warehouse_id | uuid | да | склад отгрузки |
+| sale_date / planned_shipment_date | date | да | |
+| currency_id | uuid | да | FK |
+| status | text | да | `draft`, `confirmed`, `reserved`, `shipped`, `invoiced`, `paid`, `cancelled` |
+| total_amount | numeric(14,2) | нет | |
+| source | text | да | `nexus`, `onec` |
 
-- **PK**: id · **FK**: customer_id, shipment_id, currency_id
-- **Уникальные ограничения**: sale_number
-- **Статусы**: draft, confirmed, shipped, invoiced, paid, cancelled
+- **Главный источник**: на пилоте продажи вводятся в Nexus для резервирования по FEFO и контроля ОСГ. Как они будут сверяться с реализациями в 1С «Управление торговлей» — вопрос И2.
 - **audit_log**: create, update, status_changed
 
-### receivables
-
-Назначение: дебиторская задолженность по продажам.
+### sale_items — Новая (фаза 4)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| sale_id | uuid | да | FK → sales.id |
-| customer_id | uuid | да | FK → counterparties.id |
-| currency_id | uuid | да | FK → currencies.id |
-| amount_due | numeric(14,2) | да | |
-| amount_paid | numeric(14,2) | да | |
-| due_date | date | да | |
-| status | enum | да | |
-| last_payment_at | timestamptz | нет | |
+| sale_id | uuid | да | FK |
+| product_id | uuid | да | FK |
+| batch_id | uuid | нет | FK — после подбора по FEFO |
+| quantity / uom | numeric / text | да | |
+| unit_price / discount_pct | numeric | нет | |
+| promo_plan_item_id | uuid | нет | FK |
+| remaining_shelf_life_pct | numeric(5,2) | нет | ОСГ на дату отгрузки (снимок) |
+| required_shelf_life_pct | numeric(5,2) | нет | требование клиента (снимок) |
+| guarantee_letter_id | uuid | нет | FK → `guarantee_letters.id` — если ОСГ ниже требования |
+| cost_amount | numeric(14,2) | нет | себестоимость строки (фаза 5) |
 
-- **PK**: id · **FK**: sale_id, customer_id, currency_id
-- **Статусы**: open, partially_paid, paid, overdue, written_off
-- **audit_log**: create, payment_recorded, status_changed, written_off
+- **Правило**: если `remaining_shelf_life_pct < required_shelf_life_pct`, отгрузку нельзя подтвердить без гарантийного письма (известное правило ARSEO).
+- **audit_log**: create, update, batch_assigned
+
+### receivables — Новая (фаза 5)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| customer_id | uuid | да | FK |
+| sale_id | uuid | нет | FK |
+| external_document_ref | text | нет | документ реализации в 1С |
+| currency_id | uuid | да | FK |
+| amount_due / amount_paid | numeric(14,2) | да | |
+| due_date | date | да | |
+| status | text | да | `open`, `partially_paid`, `paid`, `overdue`, `written_off` |
+| source | text | да | `onec`, `nexus` |
+
+- **Главный источник** — предположительно 1С (данные только читаются), **«Требует подтверждения ARSEO»** (вопрос И10). В Nexus добавляются комментарии, задачи на взыскание и отчёты по срокам.
+- **audit_log**: create, status_changed, written_off (для записей из 1С — фиксируется синхронизацией)
+
+### receivable_payments — Новая (фаза 5)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| receivable_id | uuid | да | FK |
+| amount | numeric(14,2) | да | |
+| currency_id | uuid | да | FK |
+| paid_at | date | да | |
+| source | text | да | `onec`, `nexus` |
+
+- **audit_log**: create
+
+### client_profitability_snapshots — Новая (фаза 5)
+
+Зафиксированный расчёт прибыльности клиента за период. Нужен, чтобы утверждённые цифры не менялись при пересчёте.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| customer_id | uuid | да | FK |
+| period_start / period_end | date | да | |
+| currency_id | uuid | да | FK |
+| revenue | numeric(14,2) | да | выручка по `sale_items` |
+| cogs | numeric(14,2) | да | себестоимость проданных партий |
+| promo_costs | numeric(14,2) | да | расходы с `promo_plan_id` клиента |
+| returns_amount | numeric(14,2) | да | |
+| logistics_costs | numeric(14,2) | да | расходы с `attributed_customer_id` |
+| gross_margin | numeric(14,2) | да | |
+| overdue_receivables | numeric(14,2) | нет | на конец периода |
+| calculation_params | jsonb | да | курс, методы, версия расчёта |
+| status | text | да | `draft`, `approved`, `superseded` |
+| approved_by | uuid | нет | FK |
+
+- **Уникальные ограничения**: (customer_id, period_start, period_end) среди `approved`
+- **audit_log**: calculated, approved, superseded
 
 ---
 
-## 9. Маркировка и стикеровка
+## 10. Планирование: прогноз, закупки, промо
 
-### sticker_templates
+Прогнозы, планы закупок и промо хранятся версиями. Утверждённая версия не редактируется: изменения — новая версия со ссылкой на предыдущую.
+
+### forecasts — Новая (фаза 7)
+
+Версия прогноза продаж.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | name | text | да | |
-| product_id | uuid | нет | FK → products.id |
-| layout | jsonb | да | |
-| is_active | boolean | да | |
-| created_by | uuid | да | FK → employees.id |
+| scenario | text | да | `base`, `optimistic`, `pessimistic`, `custom` |
+| version | integer | да | |
+| based_on_id | uuid | нет | FK → `forecasts.id` — предыдущая версия |
+| horizon_start / horizon_end | date | да | |
+| granularity | text | да | `week`, `month` |
+| method | text | да | `manual`, `moving_average`, `seasonal`, `imported` |
+| method_params | jsonb | нет | |
+| input_snapshot_at | timestamptz | нет | на какую дату взяты продажи и остатки |
+| status | text | да | `draft`, `in_review`, `approved`, `superseded`, `archived` |
+| approved_by / approved_at | uuid / timestamptz | нет | |
+| created_by | uuid | да | FK |
 
-- **PK**: id · **FK**: product_id, created_by
-- **audit_log**: create, update, deactivated
+- **Уникальные ограничения**: (name, scenario, version); одна версия `approved` на сценарий и горизонт
+- **audit_log**: create, submitted, approved, superseded
 
-### sticker_orders
-
-Назначение: заказы на изготовление/нанесение стикеров по партии (этап «Стикеровка» в Актобе).
+### forecast_lines — Новая (фаза 7)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| shipment_id | uuid | да | FK → shipments.id |
-| batch_id | uuid | да | FK → batches.id |
-| sticker_template_id | uuid | да | FK → sticker_templates.id |
-| quantity | numeric(14,3) | да | |
-| status | enum | да | |
-| requested_by | uuid | да | FK → employees.id |
-| completed_at | timestamptz | нет | |
+| forecast_id | uuid | да | FK |
+| product_id | uuid | да | FK |
+| customer_id | uuid | нет | FK |
+| warehouse_id | uuid | нет | FK |
+| period_start | date | да | |
+| base_quantity | numeric(14,3) | да | прогноз без промо |
+| promo_uplift_quantity | numeric(14,3) | да | прирост от промо |
+| promo_plan_item_id | uuid | нет | FK |
+| final_quantity | numeric(14,3) | да | |
+| is_manual_override | boolean | да | |
+| comment | text | нет | |
 
-- **PK**: id · **FK**: shipment_id, batch_id, sticker_template_id, requested_by
-- **Статусы**: planned, in_production, completed, cancelled
+- **Уникальные ограничения**: (forecast_id, product_id, customer_id, warehouse_id, period_start)
+
+### purchase_plans — Новая (фаза 7)
+
+План закупок на основе утверждённого прогноза.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| forecast_id | uuid | да | FK — утверждённый прогноз |
+| supplier_id | uuid | нет | FK |
+| version | integer | да | |
+| based_on_id | uuid | нет | FK → `purchase_plans.id` |
+| horizon_start / horizon_end | date | да | |
+| status | text | да | `draft`, `in_review`, `approved`, `ordered`, `superseded` |
+| approved_by / approved_at | uuid / timestamptz | нет | |
+
+- **audit_log**: create, approved, superseded
+
+### purchase_plan_lines — Новая (фаза 7)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| purchase_plan_id | uuid | да | FK |
+| product_id | uuid | да | FK |
+| forecast_demand | numeric(14,3) | да | |
+| stock_on_hand / stock_in_transit / stock_reserved | numeric(14,3) | да | снимок на дату расчёта |
+| safety_stock | numeric(14,3) | нет | правило — **«Требует подтверждения ARSEO»** |
+| expiring_before_sale | numeric(14,3) | нет | остаток, который не успеет продаться до критического ОСГ |
+| suggested_quantity | numeric(14,3) | да | |
+| rounded_quantity | numeric(14,3) | да | с учётом кратности короба, паллеты, фуры |
+| approved_quantity | numeric(14,3) | нет | |
+| planned_order_date | date | нет | |
+| shipment_id | uuid | нет | FK — созданная поставка |
+
+### promo_plans — Новая (фаза 7)
+
+Промо у клиента и распродажа товаров с низким ОСГ.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| promo_type | text | да | `trade_promo` (промо у клиента), `low_shelf_life_clearance` (распродажа с низким ОСГ) |
+| name | text | да | |
+| customer_id | uuid | нет | FK |
+| period_start / period_end | date | да | |
+| mechanics | text | нет | механика промо; перечень — вопрос П5 |
+| budget_amount | numeric(14,2) | нет | |
+| currency_id | uuid | нет | FK |
+| version | integer | да | |
+| based_on_id | uuid | нет | FK |
+| status | text | да | `draft`, `in_review`, `approved`, `active`, `completed`, `cancelled` |
+| approved_by / approved_at | uuid / timestamptz | нет | |
+
+- **audit_log**: create, approved, status_changed
+
+### promo_plan_items — Новая (фаза 7)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| promo_plan_id | uuid | да | FK |
+| product_id | uuid | да | FK |
+| batch_id | uuid | нет | FK — для распродажи конкретной партии |
+| promo_price / discount_pct | numeric | нет | |
+| planned_quantity | numeric(14,3) | да | |
+| actual_quantity | numeric(14,3) | нет | по `sale_items` |
+
+- **Источник кандидатов для распродажи**: партии с ОСГ ниже порога — порог **«Требует подтверждения ARSEO»**.
+
+---
+
+## 11. Работа с клиентами: гарантийные письма, возвраты, карты ввода и вывода
+
+### guarantee_letters — Новая (фаза 4)
+
+Гарантийное письмо клиенту. Нужно, если ОСГ товара ниже условий клиента.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| letter_number | text | да | |
+| customer_id | uuid | да | FK |
+| sale_id | uuid | нет | FK |
+| reason | text | да | `low_shelf_life`, `other` |
+| document_id | uuid | нет | FK — сформированное письмо |
+| status | text | да | `draft`, `pending_approval`, `approved`, `sent`, `accepted`, `rejected`, `cancelled` |
+| sent_at / customer_decision_at | timestamptz | нет | |
+
+- **Содержание и обязательства** берутся из утверждённого шаблона ARSEO; текст здесь не определяется.
+- **audit_log**: create, approved, sent, customer_decision
+
+### guarantee_letter_items — Новая (фаза 4)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| guarantee_letter_id | uuid | да | FK |
+| product_id / batch_id | uuid | да | FK |
+| quantity | numeric(14,3) | да | |
+| remaining_shelf_life_pct | numeric(5,2) | да | |
+| required_shelf_life_pct | numeric(5,2) | да | |
+
+### customer_returns — Новая (фаза 5)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| return_number | text | да | |
+| customer_id | uuid | да | FK |
+| sale_id | uuid | нет | FK |
+| guarantee_letter_id | uuid | нет | FK — возврат по гарантийному письму |
+| reason | text | да | `expired`, `damaged`, `quality`, `guarantee_obligation`, `wrong_item`, `other`; перечень — вопрос П6 |
+| warehouse_id | uuid | да | склад приёмки возврата |
+| status | text | да | `requested`, `approved`, `rejected`, `in_transit`, `received`, `inspected`, `closed` |
+| credit_amount | numeric(14,2) | нет | уменьшение задолженности |
+| currency_id | uuid | нет | FK |
+
+- **audit_log**: create, approved, rejected, received, closed
+
+### customer_return_items — Новая (фаза 5)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| customer_return_id | uuid | да | FK |
+| product_id / batch_id | uuid | да / нет | FK |
+| quantity | numeric(14,3) | да | |
+| condition | text | нет | |
+| decision | text | нет | `restock`, `write_off`, `return_to_supplier`; правила — вопрос П6 |
+
+- Приёмка возврата — движение `return`; списание — `write_off`.
+
+### product_listing_cards — Новая (фаза 3)
+
+Клиентские карты ввода и вывода товаров.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| card_type | text | да | `input` (ввод), `output` (вывод) |
+| customer_id | uuid | да | FK |
+| template_id | uuid | нет | FK → `document_templates.id` — форма клиента |
+| document_id | uuid | нет | FK — заполненная карта |
+| effective_date | date | нет | |
+| status | text | да | `draft`, `submitted`, `approved_by_customer`, `rejected_by_customer`, `cancelled` |
+
+- **audit_log**: create, submitted, customer_decision
+
+### product_listing_card_items — Новая (фаза 3)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| card_id | uuid | да | FK |
+| product_id | uuid | да | FK |
+| customer_sku | text | нет | артикул у клиента |
+| price | numeric(14,4) | нет | |
+| comment | text | нет | |
+
+- Карта заполняется автоматически из карточки товара (GTIN, штрихкоды, упаковка, состав, КБЖУ, срок годности).
+
+---
+
+## 12. Стикеры и маркировка
+
+Стикеры изготавливает типография после согласования макета; наклеивают сотрудники склада ARSEO (в основном в Актобе).
+
+### sticker_templates — Новая (фаза 4)
+
+Стикер для товара (или группы товаров, или клиента).
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| name | text | да | |
+| product_id | uuid | нет | FK |
+| customer_id | uuid | нет | FK — если стикер специфичен для клиента |
+| sticker_level | text | да | `unit`, `box`; правило — вопрос М9 |
+| languages | text[] | да | языки на стикере |
+| current_version_id | uuid | нет | FK → `sticker_template_versions.id` — последняя согласованная |
+| status | text | да | `active`, `archived` |
+
+- **audit_log**: create, update, archived
+
+### sticker_template_versions — Новая (фаза 4)
+
+Версии макета стикера; хранятся все, включая отклонённые.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| sticker_template_id | uuid | да | FK |
+| version_number | integer | да | |
+| content | jsonb | да | текст полей стикера по языкам |
+| layout_document_id | uuid | да | FK → `documents.id` — файл макета |
+| status | text | да | `draft`, `in_review`, `approved`, `rejected`, `superseded` |
+| approved_by / approved_at | uuid / timestamptz | нет | |
+
+- **Правило**: заказать печать можно только по версии `approved`.
+- **audit_log**: create, submitted, approved, rejected
+
+### sticker_orders — Новая (фаза 4)
+
+Заказ стикеров в типографии.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| order_number | text | да | |
+| printing_house_id | uuid | нет | FK → `counterparties.id` (роль `printing_house`) |
+| shipment_id | uuid | нет | FK |
+| status | text | да | `draft`, `calculated`, `ordered`, `received`, `applied`, `cancelled` |
+| ordered_at / received_at | timestamptz | нет | |
+| document_id | uuid | нет | FK — заявка или счёт типографии |
+
 - **audit_log**: create, status_changed
 
-### marking_codes
+### sticker_order_items — Новая (фаза 4)
 
-Назначение: коды маркировки «Честный знак» на единицу/короб товара.
+Расчёт количества стикеров.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| product_id | uuid | да | FK → products.id |
-| batch_id | uuid | да | FK → batches.id |
-| shipment_id | uuid | нет | FK → shipments.id |
-| code_type | enum | да | unit / box |
-| code_value | text | да | |
-| status | enum | да | **«Требует подтверждения ARSEO»** — полный перечень статусов «Честного знака» |
+| sticker_order_id | uuid | да | FK |
+| sticker_template_version_id | uuid | да | FK — согласованная версия |
+| product_id | uuid | да | FK |
+| batch_id | uuid | нет | FK — после регистрации партии |
+| units_to_label | numeric(14,3) | да | сколько единиц (или коробов) нужно обклеить |
+| reserve_pct | numeric(5,2) | да | запас на брак; значение — вопрос М9 |
+| calculated_quantity | integer | да | `ceil(units_to_label × (1 + reserve_pct / 100))` |
+| ordered_quantity | integer | нет | с учётом минимального тиража типографии |
+| received_quantity / applied_quantity / spoiled_quantity | integer | нет | |
+| applied_by_name | text | нет | работник склада, наклеивший стикеры |
+
+- **Расчёт**: предварительно — от `confirmed_quantity` поставки (можно заказать заранее, пока товар в пути); окончательно — от `received_quantity`.
+
+### marking_code_orders — Новая (фаза 4)
+
+Заказ кодов маркировки (QR/DataMatrix). Маркировка «Честный знак» относится к работе с российскими партнёрами.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| partner_id | uuid | нет | FK — российский партнёр |
+| product_id | uuid | да | FK |
+| quantity_requested | integer | да | |
+| code_type | text | да | `unit`, `box` |
+| status | text | да | `draft`, `requested`, `received`, `partially_applied`, `applied`, `cancelled` |
+| codes_document_id | uuid | нет | FK — файл кодов |
+| requested_at / received_at | timestamptz | нет | |
+
+- Кто заказывает коды (ARSEO или партнёр) и в каком формате — вопрос И8.
+- **audit_log**: create, status_changed
+
+### marking_codes — Новая (фаза 4)
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| marking_code_order_id | uuid | нет | FK |
+| product_id / batch_id | uuid | да | FK |
+| shipment_id | uuid | нет | FK |
+| code_type | text | да | `unit`, `box` |
+| code_value | text | да | не хранится в GitHub и не выводится в логи |
+| status | text | да | предварительно `issued`, `applied`, `shipped`, `withdrawn`; полный перечень — вопрос И8 |
 | applied_at | timestamptz | нет | |
 
-- **PK**: id · **FK**: product_id, batch_id, shipment_id
 - **Уникальные ограничения**: code_value
-- **Статусы (предварительно)**: issued, applied, shipped, sold, withdrawn
-- **Архивирование**: не удаляется (юридически значимый след)
-- **audit_log**: create, status_changed, applied
+- **Архивирование**: не удаляется в течение срока хранения
+- **audit_log**: imported (пакетом), applied, status_changed
 
 ---
 
-## 10. Интеграции
+## 13. Интеграции
 
-### integrations
+1С («Бухгалтерия 8.3» и «Управление торговлей», сопровождение — «Первый Бит») — только источник: Nexus читает данные и не записывает изменения обратно. Google Drive — действующий источник документов. Google Sheets — рабочие таблицы (основной файл «Калькулятор»).
 
-Назначение: справочник внешних систем (Google Drive, Google Sheets, 1С). 1С — только источник данных: направление `inbound`, Nexus не изменяет данные в 1С.
+### integrations — Новая (фаза 6)
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
-| code | enum | да | google_drive / google_sheets / one_c |
+| code | text | да | `google_drive`, `google_sheets`, `onec_accounting` (Бухгалтерия 8.3), `onec_trade` (Управление торговлей), `whatsapp`, `email` |
 | name | text | да | |
-| direction | enum | да | inbound / outbound / bidirectional |
-| config | jsonb | нет | конфигурация без секретов (секреты — в хранилище секретов/переменных окружения) |
+| direction | text | да | `inbound`, `outbound`, `bidirectional`; для 1С — только `inbound` |
+| config | jsonb | нет | без секретов; ключи — в переменных окружения |
 | is_active | boolean | да | |
 
-- **PK**: id · **Уникальные ограничения**: code
+- **Уникальные ограничения**: code
 - **audit_log**: create, update, activated, deactivated
 
-### synchronization_runs
+### synchronization_runs — Новая (фаза 6)
 
-Назначение: журнал запусков синхронизации + ошибки. Append-only.
-
-| Поле | Тип | Обязательное | Описание |
-|---|---|---|---|
-| id | uuid | да | PK |
-| integration_id | uuid | да | FK → integrations.id |
-| started_at | timestamptz | да | |
-| finished_at | timestamptz | нет | |
-| status | enum | да | running / success / failed / partial |
-| records_processed | integer | да | |
-| records_failed | integer | да | |
-| error_summary | jsonb | нет | |
-| triggered_by | enum | да | schedule / manual |
-
-- **PK**: id · **FK**: integration_id
-- **Архивирование**: не удаляется
-- **audit_log**: manual-запуск фиксируется в общем audit_log отдельным событием
-
----
-
-## 11. Аудит
-
-### audit_log
-
-Назначение: универсальный журнал действий пользователей и системы. Append-only, ничего не редактируется и не удаляется.
+Журнал синхронизаций. Append-only.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
+| integration_id | uuid | да | FK |
+| entity_type | text | да | что синхронизировалось |
+| started_at / finished_at | timestamptz | да / нет | |
+| status | text | да | `running`, `success`, `failed`, `partial` |
+| records_read / records_created / records_updated / records_failed | integer | да | |
+| triggered_by | text | да | `schedule`, `manual` |
+| triggered_by_user_id | uuid | нет | FK |
+
+- **audit_log**: ручной запуск
+
+### synchronization_errors — Новая (фаза 6)
+
+Ошибки по отдельным записям.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| run_id | uuid | да | FK → `synchronization_runs.id` |
 | entity_type | text | да | |
-| entity_id | uuid | да | полиморфная ссылка |
-| action | text | да | например create, status_changed, approved |
-| actor_employee_id | uuid | нет | FK → employees.id; null для системных/интеграционных действий |
-| actor_type | enum | да | user / system / integration |
-| occurred_at | timestamptz | да | |
-| before_state | jsonb | нет | |
-| after_state | jsonb | нет | |
-| ip_address | text | нет | |
+| external_id | text | нет | |
+| error_code | text | да | например `no_match`, `ambiguous_match`, `validation_failed` |
+| message | text | да | |
+| payload | jsonb | нет | без персональных данных сверх необходимого |
+| status | text | да | `open`, `resolved`, `ignored` |
+| resolved_by / resolved_at | uuid / timestamptz | нет | |
 
-- **PK**: id · **FK**: actor_employee_id
-- **Архивирование**: не удаляется; срок хранения (retention) — **«Требует подтверждения ARSEO»**
-- **Какие действия попадают в журнал**: изменения прав доступа, статусов поставок/документов/партий, финансовые операции (создание/изменение расходов, списание дебиторки), согласования, вход/выход пользователей, ручная блокировка товара, запуск/ошибки интеграций — полный перечень указан в описании каждой сущности выше.
+- **audit_log**: resolved, ignored
+
+### integration_mappings — Новая (фаза 6)
+
+Связь записей Nexus с внешними системами.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| id | uuid | да | PK |
+| integration_id | uuid | да | FK |
+| entity_type | text | да | `product`, `counterparty`, `warehouse`, `sale`, `receivable`, `document` |
+| internal_id | uuid | да | |
+| external_id | text | да | GUID 1С, ID файла Drive, ключ строки Sheets |
+| external_code | text | нет | код или артикул во внешней системе |
+| match_method | text | да | `supplier_sku`, `gtin`, `tax_id`, `manual`, `guid` |
+| last_synced_at | timestamptz | нет | |
+| source_hash | text | нет | для определения изменений |
+
+- **Уникальные ограничения**: (integration_id, entity_type, external_id)
+- **Сопоставление товаров с 1С** — по артикулу поставщика и GTIN; при неоднозначности — ручное (ошибка `ambiguous_match`)
+- **audit_log**: manual_match, unmatch
 
 ---
 
-## Сводная схема связей (по доменам)
+## Сводная схема связей
 
 ```
-users ── employees ──< employee_roles >── roles ──< role_permissions >── permissions
-employees ──< tasks / comments / notifications / shipment_stage_history
+auth.users ── profiles ──< user_roles >── app_roles ──< role_permissions >── permissions
+profiles ──< user_permission_overrides >── permissions
+profiles >── counterparties (для external)
+profiles ──< audit_log / tasks / comments / notifications
 
 counterparties ──< counterparties_contacts
 counterparties ──< contracts ──< contract_terms
 counterparties ── carriers ──< vehicles
 counterparties ── brokers
-counterparties ──< product_identifiers (supplier_sku)
 
-products ──< product_identifiers
-products ──< product_packaging
-products ──< batches ──< inventory_balances
-batches ──< inventory_movements
-batches ──< inventory_reservations
-batches ──< marking_codes / sticker_orders
+products ──< product_identifiers / product_packaging
+products ──< batches ──< inventory_balances / inventory_movements / inventory_reservations
+warehouses ──< warehouse_locations
 
-warehouses ──< warehouse_locations ──< inventory_balances / inventory_movements
-
-routes ──< shipment_stages
-shipments >── carriers / vehicles / routes / contracts
-shipments ──< shipment_items
-shipments ──< shipment_stage_history >── shipment_stages
-shipments ──< customs_clearances ── brokers
+process_templates ──< shipment_stages
+shipments ──< shipment_transports ──< shipment_items
+shipments ──< shipment_stage_runs >── shipment_stages
+shipment_stage_runs ──< shipment_stage_history
+shipments ──< customs_clearances
 shipments ──< expenses ──< expense_allocations
-shipments ──< documents (related_entity)
-shipments ── batches (incoming_shipment_id)
+shipment_items ──< batches
 
-sales ──< receivables
-sales ── shipments (опционально)
+sales ──< sale_items >── batches
+sale_items >── guarantee_letters ──< guarantee_letter_items
+sales ──< receivables ──< receivable_payments
+customer_returns ──< customer_return_items
+
+forecasts ──< forecast_lines
+purchase_plans ──< purchase_plan_lines >── shipments
+promo_plans ──< promo_plan_items
+
+sticker_templates ──< sticker_template_versions
+sticker_orders ──< sticker_order_items
+marking_code_orders ──< marking_codes
 
 documents ──< document_versions
-documents ── document_templates
-documents ──< approvals (entity_type = document)
+integrations ──< synchronization_runs ──< synchronization_errors
+integrations ──< integration_mappings
 
-integrations ──< synchronization_runs
-
-(*) audit_log и comments/notifications/approvals ссылаются полиморфно на большинство сущностей выше.
+(*) audit_log, comments, notifications, approvals, documents ссылаются на сущности полиморфно.
 ```
