@@ -18,6 +18,24 @@ export async function requestPasswordReset(formData: FormData) {
     redirectTo: `${origin}/auth/callback?next=/update-password`,
   });
 
-  if (error) redirect("/forgot-password?error=send");
+  if (error) {
+    console.error("[password-reset] Supabase rejected the request", {
+      code: error.code,
+      status: error.status,
+      message: error.message,
+    });
+
+    const knownErrorCodes = new Set([
+      "email_address_invalid",
+      "email_address_not_authorized",
+      "over_email_send_rate_limit",
+      "over_request_rate_limit",
+      "request_timeout",
+    ]);
+    const errorCode =
+      error.code && knownErrorCodes.has(error.code) ? error.code : "send";
+
+    redirect(`/forgot-password?error=${errorCode}`);
+  }
   redirect("/forgot-password?sent=1");
 }
