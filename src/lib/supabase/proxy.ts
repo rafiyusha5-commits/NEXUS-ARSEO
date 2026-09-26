@@ -36,9 +36,10 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const signedIn = Boolean(data?.claims);
   const isLogin = request.nextUrl.pathname.startsWith("/login");
+  const isPasswordRecovery = request.nextUrl.pathname.startsWith("/forgot-password");
   const isAuthCallback = request.nextUrl.pathname.startsWith("/auth/");
 
-  if (!signedIn && !isLogin && !isAuthCallback) {
+  if (!signedIn && !isLogin && !isPasswordRecovery && !isAuthCallback) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", request.nextUrl.pathname);

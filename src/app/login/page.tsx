@@ -43,6 +43,7 @@ export default async function LoginPage({
             <input id="email" name="email" type="email" autoComplete="email" placeholder="name@arseo.kz" required />
             <label htmlFor="password">Пароль</label>
             <input id="password" name="password" type="password" autoComplete="current-password" minLength={8} required />
+            <Link className="forgot-link" href="/forgot-password">Забыли пароль?</Link>
             <button className="primary login-submit" type="submit" disabled={!configured}>Войти</button>
           </form>
 
