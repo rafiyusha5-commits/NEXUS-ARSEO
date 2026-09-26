@@ -14,7 +14,7 @@ button, a { font:inherit; }
 nav { display:grid; gap:6px; } nav a { color:#c5d8d0; text-decoration:none; padding:11px 14px; border-radius:10px; font-size:14px; } nav a:hover, nav a.active { background:#245746; color:#fff; }
 .profile { margin-top:auto; border-top:1px solid #356353; padding:20px 6px 0; display:flex; gap:10px; align-items:center; }
 .profile > span { width:36px; height:36px; border-radius:50%; display:grid; place-items:center; background:#e8efe9; color:#174838; font-size:12px; font-weight:800; }
-.profile strong,.profile small { display:block; font-size:12px; }.profile small{color:#9ebbb0;margin-top:2px}
+.profile-copy{min-width:0;flex:1}.profile strong,.profile small { display:block; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.profile small{color:#9ebbb0;margin-top:2px}.profile-logout{padding:7px 9px;background:transparent;color:#a9c8bc;border:1px solid #356353}.profile-logout:hover{color:#fff;border-color:#6a9183;background:#245746}
 .workspace { padding:38px 46px 54px; max-width:1500px; width:100%; margin:auto; }
 .topbar,.panel-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; }
 h1,h2,p { margin:0; } h1 { font-size:28px; letter-spacing:-.04em; } h2 { font-size:18px; letter-spacing:-.025em; }

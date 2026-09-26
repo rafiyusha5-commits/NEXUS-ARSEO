@@ -19,7 +19,49 @@ const tasks = [
 
 const navigation = ["Обзор", "Поставки", "Товары", "Склад", "Документы", "Финансы", "Отчёты"];
 
-export default function Home() {
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase("ru-RU"))
+    .join("");
+}
+
+export default async function Home() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  const [{ data: profile }, { data: roleAssignment }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, job_title")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("user_roles")
+      .select("app_roles(name)")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const roleName = roleAssignment?.app_roles?.[0]?.name;
+  const fullName = profile?.full_name || user.email?.split("@")[0] || "Сотрудник";
+  const firstName = fullName.split(/\s+/)[0];
+  const displayRole = roleName || profile?.job_title || "Сотрудник";
+  const initials = getInitials(fullName) || "AR";
+  const currentDate = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Asia/Qyzylorda",
+  }).format(new Date());
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -32,12 +74,21 @@ export default function Home() {
             <a className={index === 0 ? "active" : ""} href={`#${index === 0 ? "overview" : "workspace"}`} key={item}>{item}</a>
           ))}
         </nav>
-        <div className="profile"><span>РФ</span><div><strong>Рафия</strong><small>Администратор</small></div></div>
+        <div className="profile">
+          <span>{initials}</span>
+          <div className="profile-copy">
+            <strong>{fullName}</strong>
+            <small>{displayRole}</small>
+          </div>
+          <form action={logout}>
+            <button className="profile-logout" type="submit" title="Выйти" aria-label="Выйти из системы">↪</button>
+          </form>
+        </div>
       </aside>
 
       <section className="workspace" id="overview">
         <header className="topbar">
-          <div><p className="eyebrow">Пятница, 26 сентября</p><h1>Добрый день, Рафия</h1></div>
+          <div><p className="eyebrow">{currentDate}</p><h1>Добрый день, {firstName}</h1></div>
           <div className="top-actions"><button className="ghost" type="button">Поиск</button><button className="primary" type="button">+ Новая поставка</button></div>
         </header>
 
@@ -76,3 +127,6 @@ export default function Home() {
     </main>
   );
 }
+import { redirect } from "next/navigation";
+import { logout } from "@/app/login/actions";
+import { createClient } from "@/lib/supabase/server";
