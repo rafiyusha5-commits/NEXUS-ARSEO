@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/access";
 import Link from "next/link";
 import { createProduct } from "./actions";
 
-type ProductRow = { id:string; internal_sku:string; name:Record<string,string>; brand:string|null; hs_code:string|null; shelf_life_days:number|null; requires_marking:boolean; requires_sticker:boolean; counterparties:{legal_name:string}[]; product_identifiers:{identifier_type:string;value:string}[] };
+type ProductRow = { id:string; internal_sku:string; name:Record<string,string>; brand:string|null; hs_code:string|null; shelf_life_days:number|null; requires_marking:boolean; requires_sticker:boolean; counterparties:{legal_name:string}|{legal_name:string}[]|null; product_identifiers:{identifier_type:string;value:string}[] };
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string}> }) {
   const { profile, roles, supabase } = await requireUser();
@@ -30,7 +30,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         </form>{!manufacturers?.length && !error && <p className="form-help">Сначала добавьте производителя или поставщика в разделе «Контрагенты».</p>}
       </section>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Реестр номенклатуры</p><h2>Карточки товаров</h2></div></div><div className="reference-list">
-        {((products ?? []) as ProductRow[]).map(product=>{const ids=Object.fromEntries(product.product_identifiers.map(i=>[i.identifier_type,i.value])); return <article className="reference-row product-row" key={product.id}><div><strong>{product.internal_sku} · {product.name.ru}</strong><small>{product.counterparties[0]?.legal_name ?? "Производитель не указан"}{product.brand ? ` · ${product.brand}`:""}</small></div><div className="tag-list">{ids.gtin && <span className="reference-tag">GTIN {ids.gtin}</span>}{ids.supplier_sku && <span className="reference-tag">Арт. {ids.supplier_sku}</span>}{product.requires_sticker && <span className="reference-tag accent">Стикер</span>}{product.requires_marking && <span className="reference-tag accent">ЧЗ</span>}</div><span className="reference-meta">{product.hs_code || "ТН ВЭД —"}{product.shelf_life_days ? ` · ${product.shelf_life_days} дн.`:""}</span></article>})}
+        {((products ?? []) as ProductRow[]).map(product=>{const ids=Object.fromEntries(product.product_identifiers.map(i=>[i.identifier_type,i.value])); const manufacturer=Array.isArray(product.counterparties)?product.counterparties[0]:product.counterparties; return <article className="reference-row product-row" key={product.id}><div><strong>{product.internal_sku} · {product.name.ru}</strong><small>{manufacturer?.legal_name ?? "Производитель не указан"}{product.brand ? ` · ${product.brand}`:""}</small></div><div className="tag-list">{ids.gtin && <span className="reference-tag">GTIN {ids.gtin}</span>}{ids.supplier_sku && <span className="reference-tag">Арт. {ids.supplier_sku}</span>}{product.requires_sticker && <span className="reference-tag accent">Стикер</span>}{product.requires_marking && <span className="reference-tag accent">ЧЗ</span>}</div><span className="reference-meta">{product.hs_code || "ТН ВЭД —"}{product.shelf_life_days ? ` · ${product.shelf_life_days} дн.`:""}</span></article>})}
         {!error && !products?.length && <p className="empty-state">Товары ещё не добавлены.</p>}
       </div></section>
     </section></main>;
