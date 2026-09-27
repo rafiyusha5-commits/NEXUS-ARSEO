@@ -11,7 +11,7 @@ function usersRedirect(kind: "success" | "error", message: string): never {
 }
 
 export async function inviteUser(formData: FormData) {
-  const { user: actor } = await requireAccessManager();
+  const { supabase, user: actor } = await requireAccessManager();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const fullName = String(formData.get("full_name") ?? "").trim();
   const jobTitle = String(formData.get("job_title") ?? "").trim();
@@ -37,11 +37,11 @@ export async function inviteUser(formData: FormData) {
     usersRedirect("error", error?.message ?? "Supabase не создал приглашение.");
   }
 
-  const { error: profileError } = await admin
+  const { error: profileError } = await supabase
     .from("profiles")
     .update({ full_name: fullName, job_title: jobTitle || null })
     .eq("id", data.user.id);
-  const { error: roleError } = await admin.from("user_roles").insert({
+  const { error: roleError } = await supabase.from("user_roles").insert({
     user_id: data.user.id,
     role_id: roleId,
     assigned_by: actor.id,
