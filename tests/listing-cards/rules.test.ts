@@ -48,7 +48,7 @@ describe("card status graph", () => {
 
   it("matches the transitions enforced by the database trigger", () => {
     const sql = readFileSync(
-      new URL("../../supabase/migrations/202609271600_document_templates_listing_cards.sql", import.meta.url),
+      new URL("../../supabase/migrations/202609271700_document_templates_listing_cards.sql", import.meta.url),
       "utf8",
     );
     const guard = sql.slice(sql.indexOf("function private.guard_listing_card_update"), sql.indexOf("drop trigger if exists guard_listing_card_update"));

@@ -225,7 +225,7 @@ $$, 'другим пользователем');
 
 do $$
 begin
-  assert tests.affected($q$update public.documents set title = 'Инвойс (исправлен)', status = 'approved'
+  assert tests.affected($q$update public.documents set title = 'Инвойс (исправлен)'
     where id = 'd0000000-0000-4000-8000-000000000001'$q$) = 1, 'specialist edits metadata';
 end;
 $$;
@@ -235,9 +235,13 @@ $$, 'permission denied');
 select tests.expect_error($$
   update public.documents set archived_at = now() where id = 'd0000000-0000-4000-8000-000000000001'
 $$, 'permission denied');
+-- Status changes only through the approval workflow (202609271600 revokes update (status)).
+select tests.expect_error($$
+  update public.documents set status = 'approved' where id = 'd0000000-0000-4000-8000-000000000001'
+$$, 'permission denied');
 select tests.expect_error($$
   update public.documents set status = 'lost' where id = 'd0000000-0000-4000-8000-000000000001'
-$$, 'status_check');
+$$, 'permission denied');
 
 -- 5. New version ----------------------------------------------------------------------
 

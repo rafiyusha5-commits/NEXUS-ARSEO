@@ -42,9 +42,12 @@ for migration in "$ROOT"/supabase/migrations/*.sql; do
 done
 
 echo "re-applying document migrations (idempotency check)"
+# Order matters: 202609271600 redefines my_document_permissions() (adds "approve") and
+# apply_document_version() from 202609271001; 202609271700 narrows two Storage policies
+# of 202609271001. Re-running 202609271001 alone would undo both.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271001_document_management.sql" >/dev/null
-# 202609271600 narrows two Storage policies of 202609271001, so it must run after it.
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271600_document_templates_listing_cards.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271600_document_approvals.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271700_document_templates_listing_cards.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

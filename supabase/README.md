@@ -18,5 +18,6 @@ Migration order:
 7. `202609271200_inventory_fifo.sql` — batches, balances and controlled FIFO issue.
 8. `202609271400_inventory_movements.sql` — warehouse transfers and write-offs.
 9. `202609271600_document_approvals.sql` — version-bound document review and approval workflow.
+10. `202609271700_document_templates_listing_cards.sql` — document templates with file versions, and customer product listing cards (input/output) with versions and items.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

@@ -1,5 +1,5 @@
 -- RLS, status and version tests for document templates and product listing cards
--- (migration 202609271600). Run with scripts/test-db.sh. Every statement runs in its own
+-- (migration 202609271700). Run with scripts/test-db.sh. Every statement runs in its own
 -- transaction as the role and user that the comment names.
 
 \set ON_ERROR_STOP 1

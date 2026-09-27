@@ -6,7 +6,7 @@
 
 | Часть | Где |
 |---|---|
-| Таблицы, права, RLS, триггеры, функции, политики Storage | `supabase/migrations/202609271600_document_templates_listing_cards.sql` |
+| Таблицы, права, RLS, триггеры, функции, политики Storage | `supabase/migrations/202609271700_document_templates_listing_cards.sql` |
 | Правила шаблонов (поля, путь файла, утверждение) | `src/lib/templates/rules.ts` |
 | Операции с файлами шаблонов (создание, версия, скачивание) | `src/lib/templates/operations.ts`, `supabase-gateway.ts` |
 | Правила карт (статусы, версии, позиции) | `src/lib/listing-cards/rules.ts` |
@@ -20,7 +20,7 @@
 
 ### Порядок миграций
 
-Миграция `202609271600_document_templates_listing_cards.sql` применяется **после** всех предыдущих, в том числе после `202609271001_document_management.sql` (использует `document_types`, `documents`, bucket `nexus-documents`, функции `private.has_permission` и `private.write_access_audit`).
+Миграция `202609271700_document_templates_listing_cards.sql` применяется **после** всех предыдущих, в том числе после `202609271001_document_management.sql` и `202609271600_document_approvals.sql` (использует `document_types`, `documents`, bucket `nexus-documents`, функции `private.has_permission` и `private.write_access_audit`).
 
 ```
 202609260001_identity_and_access.sql
@@ -31,12 +31,13 @@
 202609271001_document_management.sql
 202609271200_inventory_fifo.sql
 202609271400_inventory_movements.sql
-202609271600_document_templates_listing_cards.sql   ← новая
+202609271600_document_approvals.sql
+202609271700_document_templates_listing_cards.sql   ← новая
 ```
 
 Миграция идемпотентна: повторный запуск не ломает данные и не возвращает права, отозванные администратором.
 
-**Важно:** эта миграция пересоздаёт две политики Storage из `202609271001` («nexus documents: read registered files» и «nexus documents: remove own unregistered upload»), ограничивая их папкой `documents/`. Если по какой-то причине `202609271001` будет выполнена повторно, после неё нужно снова выполнить `202609271600`.
+**Важно:** эта миграция пересоздаёт две политики Storage из `202609271001` («nexus documents: read registered files» и «nexus documents: remove own unregistered upload»), ограничивая их папкой `documents/`. Если по какой-то причине `202609271001` будет выполнена повторно, после неё нужно последовательно выполнить `202609271600_document_approvals.sql` и `202609271700_document_templates_listing_cards.sql`: иначе `my_document_permissions()` потеряет флаг `approve`, а политики Storage снова станут общими для всех папок.
 
 ### Применение
 
@@ -148,7 +149,7 @@ npm run build
 npm run test:db   # миграции и SQL-тесты на локальном PostgreSQL (нужны initdb и pg_ctl)
 ```
 
-`npm run test:db` применяет все миграции к временной локальной базе, повторно применяет `202609271001` и `202609271600` (проверка идемпотентности) и выполняет `supabase/tests/documents_rls.test.sql` и `supabase/tests/templates_listing_cards.test.sql`. К удалённому Supabase скрипт не подключается.
+`npm run test:db` применяет все миграции к временной локальной базе, повторно применяет `202609271001`, `202609271600` и `202609271700` в этом порядке (проверка идемпотентности; после неё отдельный тест проверяет, что флаг `approve` в `my_document_permissions()` сохранился) и выполняет `supabase/tests/documents_rls.test.sql` и `supabase/tests/templates_listing_cards.test.sql`. К удалённому Supabase скрипт не подключается.
 
 ## 5. Ручная проверка
 

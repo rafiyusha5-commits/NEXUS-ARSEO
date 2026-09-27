@@ -838,7 +838,7 @@
 
 ### document_templates — Новая (фаза 3)
 
-> **Реализовано** миграцией `202609271600_document_templates_listing_cards.sql`: вместо `doc_type` — ссылка `document_type_id` на `document_types`, файлы вынесены в `document_template_versions` (версии без удаления), добавлены `purpose`, `is_active`, `current_version`, поля архива. Подробности — `docs/templates-listing-cards.md`.
+> **Реализовано** миграцией `202609271700_document_templates_listing_cards.sql`: вместо `doc_type` — ссылка `document_type_id` на `document_types`, файлы вынесены в `document_template_versions` (версии без удаления), добавлены `purpose`, `is_active`, `current_version`, поля архива. Подробности — `docs/templates-listing-cards.md`.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
@@ -1282,7 +1282,7 @@ Append-only.
 
 ### product_listing_cards — Новая (фаза 3)
 
-> **Реализовано** миграцией `202609271600_document_templates_listing_cards.sql`. Добавлены номер карты, версии (`version`, `previous_version_id`, `root_card_id`), статус `superseded`, поля отправки, решения и отмены; в позициях — `required_quantity`, `uom`, `currency_id`. Редактируется только черновик — это проверяет база. Подробности — `docs/templates-listing-cards.md`.
+> **Реализовано** миграцией `202609271700_document_templates_listing_cards.sql`. Добавлены номер карты, версии (`version`, `previous_version_id`, `root_card_id`), статус `superseded`, поля отправки, решения и отмены; в позициях — `required_quantity`, `uom`, `currency_id`. Редактируется только черновик — это проверяет база. Подробности — `docs/templates-listing-cards.md`.
 
 Клиентские карты ввода и вывода товаров.
 

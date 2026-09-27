@@ -70,7 +70,7 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         {migrationMissing && (
-          <div className="setup-notice">Карты ещё не подключены к базе. Администратору: примените миграцию <strong>202609271600_document_templates_listing_cards.sql</strong> (docs/templates-listing-cards.md).</div>
+          <div className="setup-notice">Карты ещё не подключены к базе. Администратору: примените миграцию <strong>202609271700_document_templates_listing_cards.sql</strong> (docs/templates-listing-cards.md).</div>
         )}
         {!can["listing_cards.view"] && !migrationMissing && (
           <section className="panel admin-section"><div className="empty-state">Нет доступа к картам ввода и вывода. Обратитесь к администратору.</div></section>
