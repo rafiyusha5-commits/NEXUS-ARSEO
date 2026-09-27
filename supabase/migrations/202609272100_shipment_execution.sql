@@ -11,7 +11,13 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_item public.shipment_items%rowtype;
+  v_shipment_id uuid;
+  v_current_transport_id uuid;
+  v_product_id uuid;
+  v_uom text;
+  v_ordered_quantity numeric;
+  v_unit_price numeric;
+  v_currency_id uuid;
   v_shipment_locked boolean;
   v_target_item_id uuid;
 begin
@@ -22,8 +28,24 @@ begin
     raise exception 'Количество должно быть больше нуля';
   end if;
 
-  select item, shipment.is_locked
-    into v_item, v_shipment_locked
+  select
+    item.shipment_id,
+    item.shipment_transport_id,
+    item.product_id,
+    item.uom,
+    item.ordered_quantity,
+    item.unit_price,
+    item.currency_id,
+    shipment.is_locked
+    into
+      v_shipment_id,
+      v_current_transport_id,
+      v_product_id,
+      v_uom,
+      v_ordered_quantity,
+      v_unit_price,
+      v_currency_id,
+      v_shipment_locked
   from public.shipment_items item
   join public.shipments shipment on shipment.id = item.shipment_id
   where item.id = p_item_id
@@ -31,47 +53,47 @@ begin
 
   if not found then raise exception 'Позиция поставки не найдена'; end if;
   if v_shipment_locked then raise exception 'Закрытая поставка недоступна для изменений'; end if;
-  if p_quantity > v_item.ordered_quantity then
+  if p_quantity > v_ordered_quantity then
     raise exception 'Нельзя распределить больше заказанного количества';
   end if;
   if p_transport_id is not null and not exists (
     select 1 from public.shipment_transports transport
     where transport.id = p_transport_id
-      and transport.shipment_id = v_item.shipment_id
+      and transport.shipment_id = v_shipment_id
       and transport.status <> 'cancelled'
   ) then
     raise exception 'Перевозка не относится к этой поставке или отменена';
   end if;
-  if v_item.shipment_transport_id is not distinct from p_transport_id then
+  if v_current_transport_id is not distinct from p_transport_id then
     raise exception 'Позиция уже распределена в выбранную перевозку';
   end if;
 
   select id into v_target_item_id
   from public.shipment_items
-  where shipment_id = v_item.shipment_id
-    and product_id = v_item.product_id
+  where shipment_id = v_shipment_id
+    and product_id = v_product_id
     and shipment_transport_id is not distinct from p_transport_id
-    and id <> v_item.id
+    and id <> p_item_id
   for update;
 
-  if p_quantity = v_item.ordered_quantity then
+  if p_quantity = v_ordered_quantity then
     if v_target_item_id is null then
       update public.shipment_items
       set shipment_transport_id = p_transport_id, updated_at = now()
-      where id = v_item.id;
-      return v_item.id;
+      where id = p_item_id;
+      return p_item_id;
     end if;
 
     update public.shipment_items
     set ordered_quantity = ordered_quantity + p_quantity, updated_at = now()
     where id = v_target_item_id;
-    delete from public.shipment_items where id = v_item.id;
+    delete from public.shipment_items where id = p_item_id;
     return v_target_item_id;
   end if;
 
   update public.shipment_items
   set ordered_quantity = ordered_quantity - p_quantity, updated_at = now()
-  where id = v_item.id;
+  where id = p_item_id;
 
   if v_target_item_id is not null then
     update public.shipment_items
@@ -84,8 +106,8 @@ begin
     shipment_id, shipment_transport_id, product_id, uom,
     ordered_quantity, unit_price, currency_id
   ) values (
-    v_item.shipment_id, p_transport_id, v_item.product_id, v_item.uom,
-    p_quantity, v_item.unit_price, v_item.currency_id
+    v_shipment_id, p_transport_id, v_product_id, v_uom,
+    p_quantity, v_unit_price, v_currency_id
   ) returning id into v_target_item_id;
   return v_target_item_id;
 end $$;
