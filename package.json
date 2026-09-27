@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
