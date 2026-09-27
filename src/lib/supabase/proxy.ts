@@ -46,9 +46,5 @@ export async function updateSession(request: NextRequest) {
     return copySessionState(response, NextResponse.redirect(loginUrl));
   }
 
-  if (signedIn && isLogin) {
-    return copySessionState(response, NextResponse.redirect(new URL("/", request.url)));
-  }
-
   return response;
 }
