@@ -1,10 +1,14 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { logout } from "@/app/login/actions";
 import type { AccessProfile, AccessRole } from "@/lib/auth/access";
 import { roleLabel } from "@/lib/auth/access";
+import { NotificationsBadge } from "./notifications-badge";
 
 const navigation = [
   { label: "Обзор", href: "/", key: "overview" },
+  { label: "Задачи", href: "/tasks", key: "tasks" },
+  { label: "Уведомления", href: "/notifications", key: "notifications" },
   { label: "Поставки", href: "/shipments", key: "shipments" },
   { label: "Клиенты", href: "/counterparties", key: "counterparties" },
   { label: "Поставщики", href: "/suppliers", key: "suppliers" },
@@ -55,6 +59,11 @@ export function AppSidebar({
           .map((item) => (
             <Link className={item.key === active ? "active" : ""} href={item.href} key={item.key}>
               {item.label}
+              {item.key === "notifications" && (
+                <Suspense fallback={null}>
+                  <NotificationsBadge />
+                </Suspense>
+              )}
             </Link>
           ))}
       </nav>

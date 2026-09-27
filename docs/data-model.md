@@ -894,8 +894,12 @@
 | priority | text | да | `low`, `normal`, `high`, `urgent` |
 | due_at | timestamptz | нет | |
 | status | text | да | `open`, `in_progress`, `done`, `cancelled` |
+| shipment_id | uuid | нет | FK → `shipments.id`; при указании этапа берётся из него (миграция 202609272200) |
+| stage_run_id | uuid | нет | FK → `shipment_stage_runs.id` (миграция 202609272200) |
+| started_at / completed_at | timestamptz | нет | взята в работу / завершена или отменена |
 
 - **audit_log**: create, status_changed, reassigned
+- **Изменение** — только через функции `create_task`, `set_task_status`, `reassign_task`, `change_task_due`; видимость и правила — `docs/tasks-notifications.md`
 
 ### comments — Новая (фаза 2)
 
@@ -918,11 +922,13 @@
 |---|---|---|---|
 | id | uuid | да | PK |
 | recipient_user_id | uuid | да | FK → `profiles.id` |
-| type | text | да | `deadline`, `overdue`, `approval_request`, `approval_decision`, `status_change`, `discrepancy`, `low_shelf_life`, `document_uploaded`, `sync_error`, `system` |
+| type | text | да | `deadline`, `overdue`, `approval_request`, `approval_decision`, `status_change`, `discrepancy`, `low_shelf_life`, `document_uploaded`, `sync_error`, `system`, `task_assigned`, `task_reassigned`, `stage_blocked` |
 | title / body | text | да / нет | на языке получателя (`profiles.locale`) |
 | entity_type / entity_id | text / uuid | нет | |
 | is_read / read_at | boolean / timestamptz | | |
 | created_at | timestamptz | да | |
+| shipment_id | uuid | нет | FK → `shipments.id`, для ссылки на поставку и этап (миграция 202609272200) |
+| dedupe_key | text | нет | уникален вместе с `recipient_user_id`; повторная генерация того же события ничего не добавляет |
 
 - **audit_log**: не пишется (массовые события); доставки — в `notification_deliveries`
 

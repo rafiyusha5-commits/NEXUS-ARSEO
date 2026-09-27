@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 
@@ -68,7 +69,7 @@ export default async function Home() {
           </article>
 
           <article className="panel tasks-panel">
-            <div className="panel-heading"><div><p className="eyebrow">Сегодня</p><h2>Ближайшие задачи</h2></div><button className="text-button" type="button">Открыть задачи →</button></div>
+            <div className="panel-heading"><div><p className="eyebrow">Сегодня</p><h2>Ближайшие задачи</h2></div><Link className="text-button" href="/tasks">Открыть задачи →</Link></div>
             {tasks.map(([title, time, owner]) => <div className="task" key={title}><span className="check"/><div><strong>{title}</strong><small>{owner}</small></div><time>{time}</time></div>)}
           </article>
         </section>
