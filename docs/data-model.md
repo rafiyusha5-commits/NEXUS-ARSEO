@@ -382,6 +382,8 @@
 | is_primary | boolean | да | |
 
 - **Уникальные ограничения**: (identifier_type, value) для `gtin`, `unit_barcode`, `box_barcode`; (counterparty_id, value) для `supplier_sku`
+- **Один штрихкод — один товар** (миграция 202609271900): значение `gtin`, `unit_barcode` или `box_barcode` не может принадлежать двум товарам ни в каком из этих типов. Числовые коды сравниваются в форме GTIN-14 (`private.barcode_key`); проверку выполняет триггер `guard_product_barcode`
+- **Импорт**: `public.import_reference_data` — см. `docs/reference-import.md`
 - **audit_log**: create, update, archive
 
 ### product_packaging — Новая (фаза 1)

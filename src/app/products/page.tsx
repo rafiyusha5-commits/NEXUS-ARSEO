@@ -14,7 +14,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   ]);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="products" />
     <section className="workspace admin-workspace">
-      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Номенклатура</p><h1>Товары</h1></div><div className="top-actions"><Link className="ghost button-link" href="/products/import">Импорт Excel / CSV</Link><span className="page-count">{products?.length ?? 0} товаров</span></div></header>
+      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Номенклатура</p><h1>Товары</h1></div><div className="top-actions"><Link className="ghost button-link" href="/products/import">Импорт справочника</Link><span className="page-count">{products?.length ?? 0} товаров</span></div></header>
       {params.error && <div className="login-error admin-message">{params.error}</div>}{params.success && <div className="login-success admin-message">{params.success}</div>}
       {error && <div className="setup-notice">Примените миграцию <strong>202609270002_phase1_reference_data.sql</strong> в Supabase.</div>}
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Новая карточка</p><h2>Добавить товар</h2></div></div>

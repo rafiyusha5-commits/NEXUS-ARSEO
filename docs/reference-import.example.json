@@ -1,0 +1,112 @@
+{
+  "format": "nexus-reference-import",
+  "version": 1,
+  "counterparties": [
+    {
+      "row": 2,
+      "ref": "demo-maker",
+      "legal_name": "Demo Confectionery Oy",
+      "short_name": "Demo Candy",
+      "roles": [
+        "manufacturer",
+        "supplier"
+      ],
+      "country": "FI",
+      "tax_id": "FI0000000-0",
+      "website": "https://example.com",
+      "preferred_locale": "en"
+    },
+    {
+      "row": 3,
+      "ref": "demo-dist",
+      "legal_name": "Demo Distribution GmbH",
+      "roles": [
+        "supplier"
+      ],
+      "country": "DE",
+      "preferred_locale": "en"
+    }
+  ],
+  "products": [
+    {
+      "row": 2,
+      "internal_sku": "DEMO-001",
+      "name": {
+        "ru": "Демо конфеты 200 г",
+        "en": "Demo sweets 200 g"
+      },
+      "manufacturer": "demo-maker",
+      "brand": "Demo",
+      "country_of_origin": "FI",
+      "hs_code": "1806903100",
+      "shelf_life_days": 365,
+      "composition": {
+        "ru": "сахар, какао-масло, молоко сухое",
+        "en": "sugar, cocoa butter, milk powder"
+      },
+      "nutrition_facts": {
+        "basis": "100g",
+        "energy_kcal": 530,
+        "protein_g": 6.5,
+        "fat_g": 30,
+        "carbohydrates_g": 58,
+        "salt_g": 0.1
+      },
+      "temperature_regime": "ambient",
+      "temperature_range": "+5…+25 °C",
+      "requires_sticker": true,
+      "requires_marking": false,
+      "identifiers": [
+        {
+          "type": "gtin",
+          "value": "2000000000091",
+          "is_primary": true
+        },
+        {
+          "type": "box_barcode",
+          "value": "12000000000098",
+          "packaging_uom": "box"
+        },
+        {
+          "type": "supplier_sku",
+          "value": "ART-001",
+          "counterparty": "demo-dist",
+          "is_primary": true
+        },
+        {
+          "type": "supplier_sku",
+          "value": "MFR-001",
+          "counterparty": "demo-maker",
+          "is_primary": false
+        }
+      ],
+      "packaging": [
+        {
+          "uom": "piece",
+          "units_per_parent": 1,
+          "gross_weight_kg": 0.22,
+          "net_weight_kg": 0.2
+        },
+        {
+          "uom": "box",
+          "units_per_parent": 12,
+          "gross_weight_kg": 2.8,
+          "net_weight_kg": 2.4,
+          "volume_m3": 0.012,
+          "length_cm": 30,
+          "width_cm": 20,
+          "height_cm": 20
+        },
+        {
+          "uom": "pallet",
+          "units_per_parent": 60,
+          "gross_weight_kg": 180,
+          "volume_m3": 1.6,
+          "length_cm": 120,
+          "width_cm": 80,
+          "height_cm": 150
+        }
+      ]
+    }
+  ]
+}

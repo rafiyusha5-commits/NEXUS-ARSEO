@@ -49,10 +49,12 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271001_document_management.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271600_document_approvals.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271800_counterparty_template_directions.sql" >/dev/null
+# The reference import only replaces functions and re-creates its index and trigger.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271900_reference_data_import.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
-  "${PSQL[@]}" -o /dev/null -f "$test_file"
+  "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
 
 echo "database tests passed"

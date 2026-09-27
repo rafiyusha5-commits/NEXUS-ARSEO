@@ -1,94 +1,68 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { loadPermissions } from "@/lib/permissions.ts";
+import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
+import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
 
-type ImportRow = {
-  rowNumber: number;
-  internalSku: string;
-  nameRu: string;
-  nameEn?: string;
-  nameKk?: string;
-  manufacturerId: string;
-  supplierId?: string;
-  brand?: string;
-  supplierSku?: string;
-  gtin?: string;
-  unitBarcode?: string;
-  boxBarcode?: string;
-  hsCode?: string;
-  countryOfOrigin?: string;
-  shelfLifeDays?: number | null;
-  requiresSticker?: boolean;
-  requiresMarking?: boolean;
-};
+export type ReferenceImportResult =
+  | { ok: true; report: ImportReport }
+  | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
 
-function go(kind: "error" | "success", message: string): never {
-  redirect(`/products/import?${kind}=${encodeURIComponent(message)}`);
-}
+// Stays below serverActions.bodySizeLimit in next.config.ts.
+const MAX_PAYLOAD_CHARS = 4_000_000;
+const PERMISSIONS = ["products.create", "products.update"] as const;
 
-export async function importProducts(formData: FormData) {
+// Runs the import as the signed-in user: "preview" is a dry-run that writes nothing,
+// "apply" writes the whole package in one transaction or nothing at all. The package is
+// normalised again here and once more by the database; the payload is never logged
+// because the source files may be confidential.
+export async function runReferenceImport(payload: string, mode: "preview" | "apply"): Promise<ReferenceImportResult> {
+  if (mode !== "preview" && mode !== "apply") return { ok: false, message: "Неизвестный режим импорта." };
+  if (typeof payload !== "string" || !payload || payload.length > MAX_PAYLOAD_CHARS) {
+    return { ok: false, message: "Пакет пуст или слишком большой. Разделите файл на части." };
+  }
+
   const { supabase } = await requireUser();
-  let rows: ImportRow[];
+  const can = await loadPermissions(supabase, PERMISSIONS);
+  if (!can["products.create"] || !can["products.update"]) {
+    return { ok: false, message: "Недостаточно прав: для импорта справочника нужны права «Товары: создание» и «Товары: изменение»." };
+  }
+
+  let raw: unknown;
   try {
-    rows = JSON.parse(String(formData.get("rows_json") ?? "[]"));
+    raw = JSON.parse(payload);
   } catch {
-    go("error", "Не удалось прочитать подготовленные строки.");
+    return { ok: false, message: "Не удалось прочитать подготовленный пакет." };
   }
-  if (!Array.isArray(rows) || rows.length === 0 || rows.length > 500) go("error", "За один раз можно импортировать от 1 до 500 строк.");
-
-  const cleaned = rows.map((row) => ({
-    ...row,
-    internalSku: String(row.internalSku ?? "").trim(),
-    nameRu: String(row.nameRu ?? "").trim(),
-    manufacturerId: String(row.manufacturerId ?? ""),
-    supplierId: String(row.supplierId ?? ""),
-  }));
-  if (cleaned.some((row) => !row.internalSku || !row.nameRu || !row.manufacturerId)) go("error", "В файле есть строки без артикула, названия или производителя.");
-
-  const manufacturerIds = [...new Set(cleaned.map((row) => row.manufacturerId))];
-  const partyIds = [...new Set(cleaned.flatMap((row) => [row.manufacturerId, row.supplierId]).filter(Boolean))];
-  const { data: allowedManufacturers } = await supabase.from("counterparties").select("id, roles").in("id", partyIds);
-  const partyRoles = new Map((allowedManufacturers ?? []).map((item) => [item.id, item.roles as string[]]));
-  if (manufacturerIds.some((id) => !partyRoles.get(id)?.includes("manufacturer")) || cleaned.some((row) => row.supplierId && !partyRoles.get(row.supplierId)?.includes("supplier"))) go("error", "В файле неверно указана роль производителя или поставщика.");
-
-  const skus = cleaned.map((row) => row.internalSku);
-  const { data: existingProducts } = await supabase.from("products").select("internal_sku").in("internal_sku", skus);
-  const existingSkus = new Set((existingProducts ?? []).map((item) => item.internal_sku));
-  const uniqueRows = cleaned.filter((row, index, all) => !existingSkus.has(row.internalSku) && all.findIndex((other) => other.internalSku === row.internalSku) === index);
-  const skipped = cleaned.length - uniqueRows.length;
-  if (!uniqueRows.length) go("error", "Все строки пропущены: такие внутренние артикулы уже существуют или повторяются в файле.");
-
-  const { data: inserted, error } = await supabase.from("products").insert(uniqueRows.map((row) => ({
-    internal_sku: row.internalSku,
-    name: { ru: row.nameRu, ...(row.nameEn ? { en: row.nameEn } : {}), ...(row.nameKk ? { kk: row.nameKk } : {}) },
-    manufacturer_id: row.manufacturerId,
-    brand: row.brand || null,
-    country_of_origin: row.countryOfOrigin || null,
-    hs_code: row.hsCode || null,
-    shelf_life_days: row.shelfLifeDays || null,
-    base_uom: "piece",
-    requires_sticker: Boolean(row.requiresSticker),
-    requires_marking: Boolean(row.requiresMarking),
-    status: "active",
-  }))).select("id, internal_sku");
-  if (error || !inserted) go("error", error?.message ?? "Supabase не создал товары.");
-
-  const idsBySku = new Map(inserted.map((item) => [item.internal_sku, item.id]));
-  const identifiers: Array<{product_id:string; identifier_type:string; value:string; counterparty_id:string|null; is_primary:boolean}> = [];
-  uniqueRows.forEach((row) => {
-    const productId = idsBySku.get(row.internalSku);
-    if (!productId) return;
-    if (row.supplierSku) identifiers.push({ product_id: productId, identifier_type: "supplier_sku", value: row.supplierSku, counterparty_id: row.supplierId || row.manufacturerId, is_primary: true });
-    if (row.gtin) identifiers.push({ product_id: productId, identifier_type: "gtin", value: row.gtin, counterparty_id: null, is_primary: true });
-    if (row.unitBarcode) identifiers.push({ product_id: productId, identifier_type: "unit_barcode", value: row.unitBarcode, counterparty_id: null, is_primary: false });
-    if (row.boxBarcode) identifiers.push({ product_id: productId, identifier_type: "box_barcode", value: row.boxBarcode, counterparty_id: null, is_primary: false });
-  });
-  if (identifiers.length) {
-    const { error: identifierError } = await supabase.from("product_identifiers").insert(identifiers);
-    if (identifierError) go("error", `Создано товаров: ${inserted.length}, но часть идентификаторов не записана: ${identifierError.message}`);
+  const { pkg, issues } = normalizePackage(raw, "Пакет");
+  if (issues.length) {
+    return { ok: false, message: `В пакете есть ошибки (${issues.length}). Исправьте файл и загрузите его снова.`, issues: issues.slice(0, 200) };
   }
-  revalidatePath("/products");
-  go("success", `Импортировано товаров: ${inserted.length}${skipped ? `. Пропущено дублей: ${skipped}` : ""}.`);
+
+  const { data, error } = await supabase.rpc("import_reference_data", { p_payload: pkg, p_dry_run: mode === "preview" });
+  if (error) {
+    // A cancelled import (NX422) carries its conflicts and errors in the details.
+    let report: ImportReport | null = null;
+    if (error.code === "NX422" && error.details) {
+      try {
+        report = parseReport(JSON.parse(error.details));
+      } catch {
+        report = null;
+      }
+    }
+    const message = /import_reference_data/.test(error.message) && /schema cache|does not exist/.test(error.message)
+      ? "Импорт ещё не подключён к базе. Администратору: примените миграцию 202609271900_reference_data_import.sql."
+      : error.message;
+    return { ok: false, message, ...(report ? { report } : {}) };
+  }
+
+  const report = parseReport(data);
+  if (!report) return { ok: false, message: "База данных вернула неожиданный ответ." };
+  if (mode === "apply") {
+    revalidatePath("/products");
+    revalidatePath("/counterparties");
+  }
+  return { ok: true, report };
 }
