@@ -148,7 +148,7 @@ begin
   perform tests.act_as('71000000-0000-4000-8000-000000000005');
   assert (select count(*) from public.tasks) = 0, 'tasks.view alone shows no foreign tasks';
   perform tests.act_as('71000000-0000-4000-8000-000000000002');
-  assert (select count(*) from public.tasks) = 2, 'a manager sees tasks of employees';
+  assert (select count(*) from public.tasks where id in (select id from tests.tn)) = 2, 'a manager sees tasks of employees';
   perform tests.act_as('71000000-0000-4000-8000-000000000006');
   assert (select count(*) from public.tasks) = 1 and exists (select 1 from public.tasks where id = tests.tn_id('t1')),
     'the shipment owner sees tasks of the shipment only';
@@ -158,7 +158,8 @@ $$;
 -- 4. Status rules ----------------------------------------------------------------------
 
 select tests.act_as('71000000-0000-4000-8000-000000000004'); -- Beta, not the assignee
-select tests.expect_error($$ select public.set_task_status(tests.tn_id('t1'), 'in_progress') $$, 'Нельзя перевести');
+-- Since 202609272300 a task the caller can not see is "not found" (its status is not revealed).
+select tests.expect_error($$ select public.set_task_status(tests.tn_id('t1'), 'in_progress') $$, 'Задача не найдена');
 
 select tests.act_as('71000000-0000-4000-8000-000000000003'); -- Alpha, the assignee
 select public.set_task_status(tests.tn_id('t1'), 'in_progress');
@@ -267,7 +268,8 @@ begin
   assert tests.tn_count('71000000-0000-4000-8000-000000000004', 'stage_blocked', '74000000-0000-4000-8000-000000000001') = 1,
     'assignee of an open task of the stage notified';
   assert tests.tn_count('71000000-0000-4000-8000-000000000003', 'stage_blocked') = 0, 'the employee who blocked it is not';
-  assert (select body from public.notifications where type = 'stage_blocked' limit 1) ~ 'Нет сертификата происхождения', 'reason in the text';
+  assert (select body from public.notifications where type = 'stage_blocked' and entity_id = '74000000-0000-4000-8000-000000000001' limit 1)
+    ~ 'Нет сертификата происхождения', 'reason in the text';
 end;
 $$;
 
@@ -296,7 +298,8 @@ begin
     'holders of the approver role notified';
   assert tests.tn_count('71000000-0000-4000-8000-000000000003', 'approval_decision', '73000000-0000-4000-8000-000000000001') = 1,
     'requester learns the decision';
-  assert (select title from public.notifications where type = 'approval_decision') ~ 'TN-2026-0001 — утверждено', 'decision text';
+  assert (select title from public.notifications where type = 'approval_decision'
+          and recipient_user_id = '71000000-0000-4000-8000-000000000003') ~ 'TN-2026-0001 — утверждено', 'decision text';
   -- Other test files leave directors behind; only this file's users are counted.
   assert (select count(*) from public.notifications n where n.type = 'approval_request' and n.entity_type = 'document'
           and n.recipient_user_id::text like '71000000-%') = 1

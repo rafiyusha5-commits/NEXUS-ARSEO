@@ -37,6 +37,13 @@ PSQL=(psql -h "$WORKDIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/supabase_stub.sql"
 for migration in "$ROOT"/supabase/migrations/*.sql; do
+  # supabase/tests/before/<migration>.sql runs on the schema just before that migration and
+  # proves that the problems it fixes were real (it must roll back its own changes).
+  before="$ROOT/supabase/tests/before/$(basename "$migration")"
+  if [[ -f "$before" ]]; then
+    echo "before: $(basename "$migration")"
+    "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$before"
+  fi
   echo "migration: $(basename "$migration")"
   "${PSQL[@]}" -f "$migration"
 done
@@ -55,6 +62,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272100_shipment_execution.sql" >/dev/null
 # Tasks and notifications: columns, policies, triggers and functions are re-created.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272200_shipment_tasks_notifications.sql" >/dev/null
+# The security hardening replaces policies and functions of 1600 and 2200 re-applied above,
+# so it has to come last.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272300_database_security_hardening.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

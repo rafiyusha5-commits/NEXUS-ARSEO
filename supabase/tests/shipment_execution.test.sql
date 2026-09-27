@@ -45,14 +45,14 @@ select public.create_shipment_with_stages(
   'd7000000-0000-4000-8000-000000000001',current_date,current_date+14
 );
 
-update tests.shipment_execution_context set
+-- Vehicles are added through the RPC: direct writes to shipment_transports are closed
+-- by 202609272300_database_security_hardening.sql.
+select public.add_shipment_transport(shipment_id) from tests.shipment_execution_context;
+select public.add_shipment_transport(shipment_id) from tests.shipment_execution_context;
+update tests.shipment_execution_context c set
   item_id='da000000-0000-4000-8000-000000000001',
-  transport_one='da000000-0000-4000-8000-000000000002',
-  transport_two='da000000-0000-4000-8000-000000000003';
-insert into public.shipment_transports(id,shipment_id,sequence_no,status)
-select transport_one,shipment_id,1,'planned' from tests.shipment_execution_context
-union all
-select transport_two,shipment_id,2,'planned' from tests.shipment_execution_context;
+  transport_one=(select t.id from public.shipment_transports t where t.shipment_id=c.shipment_id and t.sequence_no=1),
+  transport_two=(select t.id from public.shipment_transports t where t.shipment_id=c.shipment_id and t.sequence_no=2);
 insert into public.shipment_items(id,shipment_id,product_id,ordered_quantity,uom,unit_price,currency_id)
 select item_id,shipment_id,'d9000000-0000-4000-8000-000000000001',100,'piece',2.5,
        (select id from public.currencies where code='EUR')
