@@ -335,4 +335,52 @@ begin
 end;
 $$;
 
+-- 9. A personal deny of tasks.view closes tasks completely ---------------------------------
+-- Specialist Gamma is an active employee whose tasks.view is denied by a personal override.
+
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('71000000-0000-4000-8000-000000000007', 'tn-gamma@test.local', '{"full_name":"Специалист Гамма"}');
+insert into public.user_roles (user_id, role_id)
+select '71000000-0000-4000-8000-000000000007', id from public.app_roles where code = 'logistics_specialist';
+insert into public.user_permission_overrides (user_id, permission_id, effect, reason, granted_by)
+select '71000000-0000-4000-8000-000000000007', p.id, 'deny', 'tasks.view deny test', '71000000-0000-4000-8000-000000000001'
+from public.permissions p where p.code = 'tasks.view';
+
+set role authenticated;
+select tests.act_as('71000000-0000-4000-8000-000000000001'); -- director assigns a task to Gamma
+insert into tests.tn values ('t7', public.create_task('Задача для сотрудника без доступа', '71000000-0000-4000-8000-000000000007',
+  now() + interval '2 days', 'normal', null, '73000000-0000-4000-8000-000000000001'));
+
+select tests.act_as('71000000-0000-4000-8000-000000000007'); -- Gamma
+do $$
+begin
+  assert (select private.is_employee()), 'Gamma is an active employee';
+  assert not (select private.has_permission('tasks.view')), 'the personal override denies tasks.view';
+  assert (select count(*) from public.tasks) = 0, 'Gamma sees no tasks at all';
+  assert not exists (select 1 from public.tasks where id = tests.tn_id('t7')), 'not even the task assigned to Gamma';
+end;
+$$;
+select tests.expect_error($$ select public.set_task_status(tests.tn_id('t7'), 'in_progress') $$, 'Нет доступа к задачам');
+reset role;
+
+create table tests.tn_total as select count(*) as n from public.tasks;
+grant select on tests.tn_total to authenticated;
+
+set role authenticated;
+do $$
+begin
+  -- Senior manager: tasks.view from the role (no override) plus tasks.manage.
+  perform tests.act_as('71000000-0000-4000-8000-000000000002');
+  assert (select private.has_permission('tasks.view')) and (select private.has_permission('tasks.manage')), 'manager rights';
+  assert (select count(*) from public.tasks) = (select n from tests.tn_total), 'the manager still sees every task';
+  assert exists (select 1 from public.tasks where id = tests.tn_id('t7')), 'including the task of the denied employee';
+  perform tests.act_as('71000000-0000-4000-8000-000000000001');
+  assert (select count(*) from public.tasks) = (select n from tests.tn_total), 'the director sees every task';
+  -- The assignee without a deny keeps seeing own tasks.
+  perform tests.act_as('71000000-0000-4000-8000-000000000004');
+  assert exists (select 1 from public.tasks where id = tests.tn_id('t1')), 'an ordinary assignee still sees own task';
+end;
+$$;
+reset role;
+
 \echo 'tasks_notifications: all checks passed'

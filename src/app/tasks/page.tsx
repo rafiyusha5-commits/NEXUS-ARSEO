@@ -61,6 +61,22 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const taskFilter = UUID.test(params.task ?? "") ? params.task! : "";
   const returnTo = taskFilter ? `/tasks?task=${taskFilter}` : tasksHref(view, shipmentFilter);
 
+  // Without tasks.view (for example, a personal deny override) nothing about tasks is loaded.
+  // RLS enforces the same rule; this only avoids pointless requests and empty lists.
+  if (!can["tasks.view"]) {
+    return (
+      <main className="app-shell">
+        <AppSidebar profile={profile} roles={roles} active="tasks" />
+        <section className="workspace admin-workspace">
+          <header className="topbar"><div><p className="eyebrow">Поставки</p><h1>Мои задачи</h1></div></header>
+          <section className="panel admin-section">
+            <div className="empty-state">Нет доступа к задачам. Обратитесь к администратору, чтобы получить право «Задачи: просмотр».</div>
+          </section>
+        </section>
+      </main>
+    );
+  }
+
   // Deadline notifications of this employee; idempotent, so a reload adds nothing.
   await supabase.rpc("refresh_my_deadline_notifications");
 

@@ -81,12 +81,13 @@ create trigger prepare_task
   before insert or update of shipment_id, stage_run_id on public.tasks
   for each row execute function private.prepare_task();
 
--- Who sees a task: its assignee and creator, task managers, and the employee responsible
--- for the linked shipment. Everybody else — including holders of tasks.view — does not.
+-- Who sees a task: an employee holding tasks.view (so a personal deny override closes the
+-- section completely) who is its assignee or creator, a task manager, or the employee
+-- responsible for the linked shipment. tasks.view alone does not show other people's tasks.
 drop policy if exists "users view relevant tasks" on public.tasks;
 create policy "users view relevant tasks" on public.tasks for select to authenticated
 using (
-  (select private.is_employee())
+  (select private.has_permission('tasks.view'))
   and (
     assignee_user_id = (select auth.uid())
     or created_by = (select auth.uid())
@@ -520,8 +521,8 @@ declare
   v_manager boolean := (select private.has_permission('tasks.manage'));
   v_assignee boolean;
 begin
-  if not (select private.is_employee()) then
-    raise exception 'Требуется вход сотрудника' using errcode = '42501';
+  if not (select private.has_permission('tasks.view')) then
+    raise exception 'Нет доступа к задачам' using errcode = '42501';
   end if;
   select * into v_task from public.tasks where id = p_task_id for update;
   if not found then
@@ -555,7 +556,7 @@ as $$
 declare
   v_task public.tasks%rowtype;
 begin
-  if not (select private.has_permission('tasks.manage')) then
+  if not ((select private.has_permission('tasks.view')) and (select private.has_permission('tasks.manage'))) then
     raise exception 'Переназначать задачи может только руководитель' using errcode = '42501';
   end if;
   select * into v_task from public.tasks where id = p_task_id for update;
@@ -586,7 +587,7 @@ as $$
 declare
   v_task public.tasks%rowtype;
 begin
-  if not (select private.has_permission('tasks.manage')) then
+  if not ((select private.has_permission('tasks.view')) and (select private.has_permission('tasks.manage'))) then
     raise exception 'Менять срок задачи может только руководитель' using errcode = '42501';
   end if;
   select * into v_task from public.tasks where id = p_task_id for update;
