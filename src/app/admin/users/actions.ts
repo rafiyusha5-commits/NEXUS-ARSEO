@@ -23,7 +23,7 @@ export async function inviteUser(formData: FormData) {
 
   const admin = createAdminClient();
   if (!admin) {
-    usersRedirect("error", "Для приглашений нужно добавить SUPABASE_SERVICE_ROLE_KEY в серверные переменные.");
+    usersRedirect("error", "Для приглашений нужно добавить SUPABASE_SECRET_KEY в серверные переменные.");
   }
 
   const requestHeaders = await headers();

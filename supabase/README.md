@@ -5,7 +5,7 @@
 3. Copy the Project URL and publishable key to `.env.local` using `.env.example`.
 4. Create the first employee account in Supabase Auth. The database trigger creates a matching `profiles` row.
 5. Assign the first administrator by inserting the matching user and `administrator` role into `user_roles` from the SQL Editor.
-6. For invitations from the Nexus user-management screen, add the server-only `SUPABASE_SERVICE_ROLE_KEY` to `.env.local` and later to Vercel. Never prefix it with `NEXT_PUBLIC_` and never paste it into chat or commit it.
+6. For invitations from the Nexus user-management screen, add the server-only `SUPABASE_SECRET_KEY` to `.env.local` and later to Vercel. A legacy `SUPABASE_SERVICE_ROLE_KEY` is also supported. Never prefix either key with `NEXT_PUBLIC_`, paste it into chat, or commit it.
 
 Migration order:
 
