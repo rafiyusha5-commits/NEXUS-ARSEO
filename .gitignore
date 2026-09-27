@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/node_modules.*
 /.node_modules-*
 /.pnp
 .pnp.*
@@ -24,6 +25,7 @@
 # misc
 .DS_Store
 *.pem
+/local-imports/
 
 # debug
 npm-debug.log*

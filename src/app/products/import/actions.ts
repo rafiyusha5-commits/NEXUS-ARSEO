@@ -11,6 +11,7 @@ type ImportRow = {
   nameEn?: string;
   nameKk?: string;
   manufacturerId: string;
+  supplierId?: string;
   brand?: string;
   supplierSku?: string;
   gtin?: string;
@@ -42,13 +43,15 @@ export async function importProducts(formData: FormData) {
     internalSku: String(row.internalSku ?? "").trim(),
     nameRu: String(row.nameRu ?? "").trim(),
     manufacturerId: String(row.manufacturerId ?? ""),
+    supplierId: String(row.supplierId ?? ""),
   }));
   if (cleaned.some((row) => !row.internalSku || !row.nameRu || !row.manufacturerId)) go("error", "В файле есть строки без артикула, названия или производителя.");
 
   const manufacturerIds = [...new Set(cleaned.map((row) => row.manufacturerId))];
-  const { data: allowedManufacturers } = await supabase.from("counterparties").select("id").in("id", manufacturerIds);
-  const allowed = new Set((allowedManufacturers ?? []).map((item) => item.id));
-  if (manufacturerIds.some((id) => !allowed.has(id))) go("error", "Один из производителей недоступен или был удалён.");
+  const partyIds = [...new Set(cleaned.flatMap((row) => [row.manufacturerId, row.supplierId]).filter(Boolean))];
+  const { data: allowedManufacturers } = await supabase.from("counterparties").select("id, roles").in("id", partyIds);
+  const partyRoles = new Map((allowedManufacturers ?? []).map((item) => [item.id, item.roles as string[]]));
+  if (manufacturerIds.some((id) => !partyRoles.get(id)?.includes("manufacturer")) || cleaned.some((row) => row.supplierId && !partyRoles.get(row.supplierId)?.includes("supplier"))) go("error", "В файле неверно указана роль производителя или поставщика.");
 
   const skus = cleaned.map((row) => row.internalSku);
   const { data: existingProducts } = await supabase.from("products").select("internal_sku").in("internal_sku", skus);
@@ -77,7 +80,7 @@ export async function importProducts(formData: FormData) {
   uniqueRows.forEach((row) => {
     const productId = idsBySku.get(row.internalSku);
     if (!productId) return;
-    if (row.supplierSku) identifiers.push({ product_id: productId, identifier_type: "supplier_sku", value: row.supplierSku, counterparty_id: row.manufacturerId, is_primary: true });
+    if (row.supplierSku) identifiers.push({ product_id: productId, identifier_type: "supplier_sku", value: row.supplierSku, counterparty_id: row.supplierId || row.manufacturerId, is_primary: true });
     if (row.gtin) identifiers.push({ product_id: productId, identifier_type: "gtin", value: row.gtin, counterparty_id: null, is_primary: true });
     if (row.unitBarcode) identifiers.push({ product_id: productId, identifier_type: "unit_barcode", value: row.unitBarcode, counterparty_id: null, is_primary: false });
     if (row.boxBarcode) identifiers.push({ product_id: productId, identifier_type: "box_barcode", value: row.boxBarcode, counterparty_id: null, is_primary: false });

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { createCounterparty } from "./actions";
@@ -18,7 +19,7 @@ export default async function CounterpartiesPage({ searchParams }: { searchParam
   return <main className="app-shell">
     <AppSidebar profile={profile} roles={roles} active="counterparties" />
     <section className="workspace admin-workspace">
-      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Справочники</p><h1>Контрагенты</h1></div><span className="page-count">{counterparties?.length ?? 0} записей</span></header>
+      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Справочники</p><h1>Контрагенты</h1></div><div className="topbar-actions"><span className="page-count">{counterparties?.length ?? 0} записей</span><Link className="ghost button-link" href="/counterparties/import">Импорт из файла</Link></div></header>
       {params.error && <div className="login-error admin-message">{params.error}</div>}
       {params.success && <div className="login-success admin-message">{params.success}</div>}
       {error && <div className="setup-notice">Примените миграцию <strong>202609270002_phase1_reference_data.sql</strong> в Supabase.</div>}
