@@ -6,6 +6,7 @@ const messages: Record<string, string> = {
   configuration: "Подключение к базе данных ещё не настроено.",
   validation: "Проверьте электронную почту и пароль — не менее 8 символов.",
   credentials: "Неверная электронная почта или пароль.",
+  disabled: "Учётная запись отключена. Обратитесь к администратору Nexus-ARSEO.",
 };
 
 export default async function LoginPage({

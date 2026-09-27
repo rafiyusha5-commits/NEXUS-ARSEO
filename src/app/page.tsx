@@ -1,3 +1,6 @@
+import { AppSidebar } from "@/components/app-sidebar";
+import { requireUser } from "@/lib/auth/access";
+
 const summary = [
   { label: "Активные поставки", value: "7", hint: "2 требуют внимания" },
   { label: "Товар в пути", value: "68,4 т", hint: "4 автомобиля" },
@@ -17,44 +20,10 @@ const tasks = [
   ["Получить CMR от перевозчика", "27 сентября", "Перевозчик"],
 ];
 
-const navigation = ["Обзор", "Поставки", "Товары", "Склад", "Документы", "Финансы", "Отчёты"];
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toLocaleUpperCase("ru-RU"))
-    .join("");
-}
-
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
-  const [{ data: profile }, { data: roleAssignment }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("full_name, job_title")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("user_roles")
-      .select("app_roles(name)")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  const roleName = roleAssignment?.app_roles?.[0]?.name;
-  const fullName = profile?.full_name || user.email?.split("@")[0] || "Сотрудник";
+  const { profile, roles } = await requireUser();
+  const fullName = profile.full_name;
   const firstName = fullName.split(/\s+/)[0];
-  const displayRole = roleName || profile?.job_title || "Сотрудник";
-  const initials = getInitials(fullName) || "AR";
   const currentDate = new Intl.DateTimeFormat("ru-RU", {
     weekday: "long",
     day: "numeric",
@@ -64,27 +33,7 @@ export default async function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">N</span>
-          <div><strong>Nexus</strong><small>ARSEO</small></div>
-        </div>
-        <nav aria-label="Основная навигация">
-          {navigation.map((item, index) => (
-            <a className={index === 0 ? "active" : ""} href={`#${index === 0 ? "overview" : "workspace"}`} key={item}>{item}</a>
-          ))}
-        </nav>
-        <div className="profile">
-          <span>{initials}</span>
-          <div className="profile-copy">
-            <strong>{fullName}</strong>
-            <small>{displayRole}</small>
-          </div>
-          <form action={logout}>
-            <button className="profile-logout" type="submit" title="Выйти" aria-label="Выйти из системы">↪</button>
-          </form>
-        </div>
-      </aside>
+      <AppSidebar profile={profile} roles={roles} active="overview" />
 
       <section className="workspace" id="overview">
         <header className="topbar">
@@ -127,6 +76,3 @@ export default async function Home() {
     </main>
   );
 }
-import { redirect } from "next/navigation";
-import { logout } from "@/app/login/actions";
-import { createClient } from "@/lib/supabase/server";
