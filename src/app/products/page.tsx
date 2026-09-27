@@ -1,7 +1,7 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
-import { matchesProductSearch } from "@/lib/products/search";
+import { matchesProductSearch, PRODUCT_SEARCH_FIELDS, type ProductSearchField } from "@/lib/products/search";
 import Link from "next/link";
 import { createProduct } from "./actions";
 
@@ -22,7 +22,7 @@ function unique(values: (string | null | undefined)[]) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;manufacturer?:string;brand?:string;category?:string}> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;search_by?:string;manufacturer?:string;brand?:string;category?:string}> }) {
   const { profile, roles, supabase } = await requireUser();
   const params = await searchParams;
   const [{data,error},{data: manufacturers}] = await Promise.all([
@@ -36,13 +36,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const manufacturerOptions = unique(products.map(product => manufacturerOf(product)?.legal_name));
   const brandOptions = unique(products.map(product => product.brand));
   const categoryOptions = unique(products.map(product => product.category));
+  const searchBy: ProductSearchField = PRODUCT_SEARCH_FIELDS.includes(params.search_by as ProductSearchField) ? params.search_by as ProductSearchField : "all";
   const filtered = products.filter(product =>
     matchesProductSearch({
       ...product,
       manufacturer: manufacturerOf(product)?.legal_name ?? null,
       identifiers: product.product_identifiers,
       packaging: product.product_packaging,
-    }, params.q ?? "") &&
+    }, params.q ?? "", searchBy) &&
     (!params.manufacturer || manufacturerOf(product)?.legal_name === params.manufacturer) &&
     (!params.brand || product.brand === params.brand) &&
     (!params.category || product.category === params.category));
@@ -56,7 +57,8 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Каталог</p><h2>Фильтры</h2></div></div>
         <form className="catalog-filters">
-          <label className="catalog-search">Поиск товара<input name="q" defaultValue={params.q ?? ""} placeholder="Название, ШК, артикул, бренд, вес…" /></label>
+          <label className="catalog-search">Поиск товара<input name="q" defaultValue={params.q ?? ""} placeholder="Введите поисковое значение" /></label>
+          <label className="catalog-search-mode">Искать по<select name="search_by" defaultValue={searchBy}><option value="all">Везде</option><option value="barcode">Штрихкоду</option><option value="article">Артикулу</option><option value="name">Названию</option><option value="weight">Граммажу / весу</option><option value="brand">Бренду</option><option value="manufacturer">Производителю</option><option value="category">Категории</option><option value="hs_code">ТН ВЭД</option></select></label>
           <label>Производитель<select name="manufacturer" defaultValue={params.manufacturer ?? ""}><option value="">Все производители</option>{manufacturerOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Бренд<select name="brand" defaultValue={params.brand ?? ""}><option value="">Все бренды</option>{brandOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Категория<select name="category" defaultValue={params.category ?? ""}><option value="">Все категории</option>{categoryOptions.map(value=><option key={value}>{value}</option>)}</select></label>

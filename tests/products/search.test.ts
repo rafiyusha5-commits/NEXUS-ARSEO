@@ -37,4 +37,13 @@ describe("universal product search", () => {
   it("requires every search word", () => {
     assert.equal(matchesProductSearch(dumle, "dumle 250"), false);
   });
+
+  it("limits matching to the selected field", () => {
+    assert.equal(matchesProductSearch(dumle, "6411404035187", "barcode"), true);
+    assert.equal(matchesProductSearch(dumle, "403747", "article"), true);
+    assert.equal(matchesProductSearch(dumle, "403747", "name"), false);
+    assert.equal(matchesProductSearch(dumle, "120 гр", "weight"), true);
+    assert.equal(matchesProductSearch(dumle, "Fazer", "manufacturer"), true);
+    assert.equal(matchesProductSearch(dumle, "Dumle", "brand"), true);
+  });
 });
