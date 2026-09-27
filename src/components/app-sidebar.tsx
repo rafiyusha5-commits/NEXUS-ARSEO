@@ -6,7 +6,8 @@ import { roleLabel } from "@/lib/auth/access";
 const navigation = [
   { label: "Обзор", href: "/", key: "overview" },
   { label: "Поставки", href: "/shipments", key: "shipments" },
-  { label: "Контрагенты", href: "/counterparties", key: "counterparties" },
+  { label: "Клиенты", href: "/counterparties", key: "counterparties" },
+  { label: "Поставщики", href: "/suppliers", key: "suppliers" },
   { label: "Товары", href: "/products", key: "products" },
   { label: "Склады", href: "/warehouses", key: "warehouses" },
   { label: "Остатки FIFO", href: "/inventory", key: "inventory" },

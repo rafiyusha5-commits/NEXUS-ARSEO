@@ -3,19 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 
 export async function createProduct(formData: FormData) {
   const { supabase } = await requireUser();
   const sku = String(formData.get("internal_sku") ?? "").trim();
   const nameRu = String(formData.get("name_ru") ?? "").trim();
   const manufacturerId = String(formData.get("manufacturer_id") ?? "");
-  if (!sku || !nameRu || !manufacturerId) redirect("/products?error=" + encodeURIComponent("Заполните артикул, название и производителя."));
+  const category = String(formData.get("category") ?? "");
+  if (!sku || !nameRu || !manufacturerId || !PRODUCT_CATEGORIES.includes(category as (typeof PRODUCT_CATEGORIES)[number])) redirect("/products?error=" + encodeURIComponent("Заполните артикул, название, производителя и категорию."));
 
   const { data: product, error } = await supabase.from("products").insert({
     internal_sku: sku,
     name: { ru: nameRu, en: String(formData.get("name_en") ?? "").trim() || undefined, kk: String(formData.get("name_kk") ?? "").trim() || undefined },
     manufacturer_id: manufacturerId,
     brand: String(formData.get("brand") ?? "").trim() || null,
+    category,
     country_of_origin: String(formData.get("country_of_origin") ?? "").trim().toUpperCase() || null,
     hs_code: String(formData.get("hs_code") ?? "").trim() || null,
     shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,

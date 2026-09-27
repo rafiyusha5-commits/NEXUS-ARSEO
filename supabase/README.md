@@ -21,5 +21,6 @@ Migration order:
 10. `202609271700_document_templates_listing_cards.sql` — document templates with file versions, and product listing cards (input/output) with versions and items.
 11. `202609271800_counterparty_template_directions.sql` — supplier input and buyer output template directions, with counterparty-specific listing cards.
 12. `202609271900_reference_data_import.sql` — transactional, idempotent import of counterparties, products, identifiers and packaging (`public.import_reference_data`, dry-run by default), and one owner per global barcode. See `docs/reference-import.md`.
+13. `202609272000_product_catalog_classification.sql` — product categories, initial catalogue classification and indexes for manufacturer, brand and category filters.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
