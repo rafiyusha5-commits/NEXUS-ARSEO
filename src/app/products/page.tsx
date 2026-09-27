@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
+import { matchesProductSearch } from "@/lib/products/search";
 import Link from "next/link";
 import { createProduct } from "./actions";
 
@@ -10,6 +11,7 @@ type ProductRow = {
   hs_code: string | null; shelf_life_days: number | null; requires_marking: boolean; requires_sticker: boolean;
   counterparties: Manufacturer | Manufacturer[] | null;
   product_identifiers: { identifier_type: string; value: string }[];
+  product_packaging: { uom: string; units_per_parent: number | string; gross_weight_kg: number | string | null; net_weight_kg: number | string | null }[];
 };
 
 function manufacturerOf(product: ProductRow) {
@@ -20,11 +22,11 @@ function unique(values: (string | null | undefined)[]) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;manufacturer?:string;brand?:string;category?:string}> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;manufacturer?:string;brand?:string;category?:string}> }) {
   const { profile, roles, supabase } = await requireUser();
   const params = await searchParams;
   const [{data,error},{data: manufacturers}] = await Promise.all([
-    supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value)").order("internal_sku"),
+    supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg)").order("internal_sku"),
     supabase.from("counterparties").select("id, legal_name").overlaps("roles", ["manufacturer","supplier"]).eq("status","active").order("legal_name"),
   ]);
   const products = ((data ?? []) as ProductRow[]).sort((a,b) => {
@@ -35,6 +37,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const brandOptions = unique(products.map(product => product.brand));
   const categoryOptions = unique(products.map(product => product.category));
   const filtered = products.filter(product =>
+    matchesProductSearch({
+      ...product,
+      manufacturer: manufacturerOf(product)?.legal_name ?? null,
+      identifiers: product.product_identifiers,
+      packaging: product.product_packaging,
+    }, params.q ?? "") &&
     (!params.manufacturer || manufacturerOf(product)?.legal_name === params.manufacturer) &&
     (!params.brand || product.brand === params.brand) &&
     (!params.category || product.category === params.category));
@@ -48,11 +56,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Каталог</p><h2>Фильтры</h2></div></div>
         <form className="catalog-filters">
+          <label className="catalog-search">Поиск товара<input name="q" defaultValue={params.q ?? ""} placeholder="Название, ШК, артикул, бренд, вес…" /></label>
           <label>Производитель<select name="manufacturer" defaultValue={params.manufacturer ?? ""}><option value="">Все производители</option>{manufacturerOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Бренд<select name="brand" defaultValue={params.brand ?? ""}><option value="">Все бренды</option>{brandOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Категория<select name="category" defaultValue={params.category ?? ""}><option value="">Все категории</option>{categoryOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <button className="primary" type="submit">Показать</button>
-          {(params.manufacturer || params.brand || params.category) && <Link className="ghost button-link" href="/products">Сбросить</Link>}
+          {(params.q || params.manufacturer || params.brand || params.category) && <Link className="ghost button-link" href="/products">Сбросить</Link>}
         </form>
       </section>
 
