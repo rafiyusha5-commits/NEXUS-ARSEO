@@ -22,6 +22,7 @@ export type DocumentPermissions = {
   view: boolean;
   create: boolean;
   update: boolean;
+  approve: boolean;
   archive: boolean;
   manage_types: boolean;
   manage_requirements: boolean;

@@ -11,7 +11,6 @@ import {
   type UploadedFile,
 } from "@/lib/documents/operations.ts";
 import {
-  DOCUMENT_STATUSES,
   type DocumentLinkInput,
   type DocumentMetadata,
   isUuid,
@@ -19,6 +18,7 @@ import {
   validateDocumentMetadata,
 } from "@/lib/documents/rules.ts";
 import { createDocumentGateway, randomHex, sha256Hex } from "@/lib/documents/supabase-gateway.ts";
+import { validateDocumentDecision } from "@/lib/documents/review-rules.ts";
 
 function text(formData: FormData, name: string) {
   const value = formData.get(name);
@@ -139,14 +139,12 @@ export async function updateDocumentAction(formData: FormData) {
   const back = `/documents/${documentId}`;
 
   const metadata = readMetadata(formData);
-  const status = text(formData, "status");
   const error = validateDocumentMetadata(metadata);
   if (error) redirect(withMessage(back, "error", error));
-  if (!(DOCUMENT_STATUSES as readonly string[]).includes(status)) redirect(withMessage(back, "error", "Некорректный статус"));
 
   const { data, error: updateError } = await supabase
     .from("documents")
-    .update({ ...metadata, title: metadata.title.trim(), status })
+    .update({ ...metadata, title: metadata.title.trim() })
     .eq("id", documentId)
     .select("id");
   if (updateError) redirect(withMessage(back, "error", updateError.message));
@@ -200,4 +198,44 @@ export async function removeDocumentLinkAction(formData: FormData) {
   revalidatePath(back);
   if (data[0].entity_type === "shipment") revalidatePath(`/shipments/${data[0].entity_id}`);
   redirect(withMessage(back, "success", "Связь снята. История сохранена в журнале"));
+}
+
+export async function submitDocumentForReviewAction(formData: FormData) {
+  const { supabase } = await requireUser();
+  const documentId = text(formData, "document_id");
+  if (!isUuid(documentId)) redirect(withMessage("/documents", "error", "Некорректный документ"));
+  const back = `/documents/${documentId}`;
+  const comment = text(formData, "comment");
+  if (comment.length > 1000) redirect(withMessage(back, "error", "Комментарий не должен превышать 1000 символов"));
+
+  const { error } = await supabase.rpc("submit_document_for_review", {
+    p_document_id: documentId,
+    p_comment: comment || null,
+  });
+  if (error) redirect(withMessage(back, "error", error.message));
+  revalidatePath(back);
+  revalidatePath("/documents");
+  redirect(withMessage(back, "success", "Документ отправлен на согласование"));
+}
+
+export async function decideDocumentReviewAction(formData: FormData) {
+  const { supabase } = await requireUser();
+  const documentId = text(formData, "document_id");
+  const approvalId = text(formData, "approval_id");
+  const decision = text(formData, "decision");
+  const comment = text(formData, "comment");
+  const back = isUuid(documentId) ? `/documents/${documentId}` : "/documents";
+  if (!isUuid(documentId) || !isUuid(approvalId)) redirect(withMessage(back, "error", "Некорректный запрос на согласование"));
+  const validationError = validateDocumentDecision(decision, comment);
+  if (validationError) redirect(withMessage(back, "error", validationError));
+
+  const { error } = await supabase.rpc("decide_document_review", {
+    p_approval_id: approvalId,
+    p_decision: decision,
+    p_comment: comment || null,
+  });
+  if (error) redirect(withMessage(back, "error", error.message));
+  revalidatePath(back);
+  revalidatePath("/documents");
+  redirect(withMessage(back, "success", decision === "approved" ? "Документ утверждён" : "Документ отклонён"));
 }
