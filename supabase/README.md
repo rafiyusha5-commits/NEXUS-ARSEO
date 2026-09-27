@@ -13,5 +13,6 @@ Migration order:
 2. `202609270001_phase0_access_control.sql` — detailed permissions, personal overrides, access audit and admin safeguards.
 3. `202609270002_phase1_reference_data.sql` — counterparties, products, warehouses, routes, currencies and Phase 1 RLS.
 4. `202609270003_phase2_shipments.sql` — shipments, the 18-stage RVI process, stage history, tasks, approvals and notifications.
+5. `202609270004_service_role_grants.sql` — minimal privileges for trusted server-side reference-data imports with the secret API key.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
