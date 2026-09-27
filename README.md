@@ -40,6 +40,8 @@ pnpm build
 
 Модуль «Документы» хранит файлы в приватном Storage bucket `nexus-documents` (создаётся миграцией `202609271001_document_management.sql`), выдаёт их по временным ссылкам и не использует секретный ключ Supabase. Максимальный размер файла — 4 МБ. Применение миграции, проверка bucket, права и откат описаны в [`docs/documents-module.md`](docs/documents-module.md).
 
+Шаблоны документов (с версиями файлов) и карты ввода/вывода товара описаны в [`docs/templates-listing-cards.md`](docs/templates-listing-cards.md); миграция `202609271700_document_templates_listing_cards.sql` применяется после всех предыдущих.
+
 ## Тесты
 
 ```bash

@@ -13,6 +13,8 @@ const navigation = [
   { label: "Движения", href: "/inventory/movements", key: "inventory-movements" },
   { label: "Маршруты", href: "/routes", key: "routes" },
   { label: "Документы", href: "/documents", key: "documents" },
+  { label: "Шаблоны", href: "/templates", key: "templates" },
+  { label: "Карты ввода/вывода", href: "/listing-cards", key: "listing-cards" },
   { label: "Пользователи", href: "/admin/users", key: "users", managerOnly: true },
   { label: "Роли и права", href: "/admin/roles", key: "roles", managerOnly: true },
   { label: "Журнал действий", href: "/audit", key: "audit", managerOnly: true },
