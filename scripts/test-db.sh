@@ -41,8 +41,10 @@ for migration in "$ROOT"/supabase/migrations/*.sql; do
   "${PSQL[@]}" -f "$migration"
 done
 
-echo "re-applying document migration (idempotency check)"
+echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271001_document_management.sql" >/dev/null
+# 202609271600 narrows two Storage policies of 202609271001, so it must run after it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271600_document_templates_listing_cards.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
