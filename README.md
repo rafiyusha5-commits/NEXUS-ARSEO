@@ -36,6 +36,18 @@ pnpm build
 
 Без переменных Supabase проект запускается в демо-режиме, чтобы интерфейс можно было разрабатывать до подключения облачной базы.
 
+## Документы
+
+Модуль «Документы» хранит файлы в приватном Storage bucket `nexus-documents` (создаётся миграцией `202609271001_document_management.sql`), выдаёт их по временным ссылкам и не использует секретный ключ Supabase. Максимальный размер файла — 4 МБ. Применение миграции, проверка bucket, права и откат описаны в [`docs/documents-module.md`](docs/documents-module.md).
+
+## Тесты
+
+```bash
+pnpm typecheck
+pnpm test      # модульные тесты (Node test runner)
+pnpm test:db   # миграции и RLS на локальном PostgreSQL (нужны initdb и pg_ctl)
+```
+
 ## Стек
 
 - Next.js 16
