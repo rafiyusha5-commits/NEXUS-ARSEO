@@ -10,7 +10,7 @@ const navigation = [
   { label: "Товары", href: "/products", key: "products" },
   { label: "Склады", href: "/warehouses", key: "warehouses" },
   { label: "Маршруты", href: "/routes", key: "routes" },
-  { label: "Документы", href: "/#workspace", key: "documents" },
+  { label: "Документы", href: "/documents", key: "documents" },
   { label: "Пользователи", href: "/admin/users", key: "users", managerOnly: true },
   { label: "Роли и права", href: "/admin/roles", key: "roles", managerOnly: true },
   { label: "Журнал действий", href: "/audit", key: "audit", managerOnly: true },

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
 import { requireUser } from "@/lib/auth/access";
 import { addShipmentItem, addShipmentTransport, changeStageStatus } from "../actions";
 
@@ -45,6 +46,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
         <div className="compact-list">{transports?.map((transport)=><div className="compact-row" key={transport.id}><div><strong>Автомобиль №{transport.sequence_no}</strong><small>{transport.notes||"Перевозчик будет назначен позже"}</small></div><span className="status shipment-planning">{transportStatus[transport.status]??transport.status}</span><div><strong>{transport.planned_loading_date?new Intl.DateTimeFormat("ru-RU").format(new Date(transport.planned_loading_date)):"—"}</strong><small>план загрузки</small></div></div>)}{!transports?.length&&<div className="empty-state">Добавьте первый автомобиль для распределения товара.</div>}</div>
       </section>
     </section>
+    <ShipmentDocumentsPanel shipmentId={shipment.id}/>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Процесс RVI</p><h2>Этапы поставки</h2></div><span className="page-count">{runs?.filter((run)=>run.status==="completed").length??0} из {runs?.length??0} завершено</span></div>
       <div className="stage-list">{runs?.map((run)=>{const stage=one(run.stage);return <article className={`stage-row stage-${run.status}`} key={run.id}>
         <div className="stage-number">{stage?.sequence_order}</div><div className="stage-copy"><strong>{name(stage?.name)}</strong><small>{stage?.scope==="transport"?"По перевозке":"По поставке"} · {stage?.requirement==="required"?"обязательный":stage?.requirement==="conditional"?"по условию":"необязательный"}</small>{run.status_reason&&<p>{run.status_reason}</p>}</div>
