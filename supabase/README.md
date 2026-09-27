@@ -22,6 +22,7 @@ Migration order:
 11. `202609271800_counterparty_template_directions.sql` — supplier input and buyer output template directions, with counterparty-specific listing cards.
 12. `202609271900_reference_data_import.sql` — transactional, idempotent import of counterparties, products, identifiers and packaging (`public.import_reference_data`, dry-run by default), and one owner per global barcode. See `docs/reference-import.md`.
 13. `202609272000_product_catalog_classification.sql` — product categories, initial catalogue classification and indexes for manufacturer, brand and category filters.
-14. `202609272200_shipment_tasks_notifications.sql` — shipment tasks (links to shipments and stages, status rules, `tasks.manage`) and in-app notifications for task assignment, deadlines, blocked stages and approvals, with idempotent deadline generation. See `docs/tasks-notifications.md`.
+14. `202609272100_shipment_execution.sql` — atomic allocation of shipment items between vehicles, transport progress and controlled hold, resume and cancellation actions.
+15. `202609272200_shipment_tasks_notifications.sql` — shipment tasks (links to shipments and stages, status rules, `tasks.manage`) and in-app notifications for task assignment, deadlines, blocked stages and approvals, with idempotent deadline generation. See `docs/tasks-notifications.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

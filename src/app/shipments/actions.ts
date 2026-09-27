@@ -65,3 +65,51 @@ export async function addShipmentTransport(formData:FormData){
   }
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Перевозка №${sequenceNo} добавлена`)}`);
 }
+
+export async function allocateShipmentItem(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const quantity=Number(text(formData,"quantity"));
+  if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество для распределения должно быть больше нуля")}`);
+  const {error}=await supabase.rpc("allocate_shipment_item",{p_item_id:uuid(formData,"item_id"),p_transport_id:uuid(formData,"transport_id",false),p_quantity:quantity});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Товар распределён по перевозкам")}`);
+}
+
+export async function updateShipmentItem(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const quantity=Number(text(formData,"quantity")); const priceText=text(formData,"unit_price");
+  const price=priceText?Number(priceText):null;
+  if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество должно быть больше нуля")}`);
+  if(price!==null&&(!Number.isFinite(price)||price<0))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Цена не может быть отрицательной")}`);
+  const {error}=await supabase.rpc("update_shipment_item",{p_item_id:uuid(formData,"item_id"),p_quantity:quantity,p_unit_price:price});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция обновлена")}`);
+}
+
+export async function deleteShipmentItem(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const {error}=await supabase.rpc("delete_shipment_item",{p_item_id:uuid(formData,"item_id")});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция удалена")}`);
+}
+
+export async function changeShipmentTransportStatus(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const status=text(formData,"status");
+  if(!["planned","loading","in_transit","at_customs","arrived","unloaded","cancelled"].includes(status))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Некорректный статус перевозки")}`);
+  const {error}=await supabase.rpc("change_shipment_transport_status",{p_transport_id:uuid(formData,"transport_id"),p_status:status});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус перевозки обновлён")}`);
+}
+
+export async function changeShipmentOperationalState(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const action=text(formData,"operation"); const reason=text(formData,"reason");
+  if(!["hold","resume","cancel"].includes(action))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Некорректное действие с поставкой")}`);
+  if(["hold","cancel"].includes(action)&&!reason)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Укажите причину")}`);
+  const {error}=await supabase.rpc("change_shipment_operational_state",{p_shipment_id:shipmentId,p_action:action,p_reason:reason||null});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(error.message)}`);
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
+  const messages:Record<string,string>={hold:"Поставка приостановлена",resume:"Поставка возобновлена",cancel:"Поставка отменена"};
+  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(messages[action])}`);
+}

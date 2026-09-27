@@ -51,6 +51,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271800_counterparty_template_directions.sql" >/dev/null
 # The reference import only replaces functions and re-creates its index and trigger.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271900_reference_data_import.sql" >/dev/null
+# Shipment execution consists of replaceable RPCs and recreated protection/audit triggers.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272100_shipment_execution.sql" >/dev/null
 # Tasks and notifications: columns, policies, triggers and functions are re-created.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272200_shipment_tasks_notifications.sql" >/dev/null
 
