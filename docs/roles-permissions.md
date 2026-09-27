@@ -86,7 +86,7 @@
 |---|---|---|---|
 | 1 | Пользователи | `users` | `users.view`, `users.manage` |
 | 2 | Роли | `roles` | `roles.manage` |
-| 3 | Клиенты | `customers` | — |
+| 3 | Клиенты | `customers`; карты ввода и вывода — `listing_cards` | `listing_cards.*` (миграция 202609271600) |
 | 4 | Поставщики | `suppliers` | — |
 | 5 | Товары | `products` | — |
 | 6 | Склады | `warehouses` | — |
@@ -95,7 +95,7 @@
 | 9 | Импорт | `shipments` + `scope = import` | — |
 | 10 | Экспорт | `shipments` + `scope = export` | — |
 | 11 | Документы | `documents` | `documents.view`, `documents.manage` |
-| 12 | Шаблоны | `templates` | — |
+| 12 | Шаблоны | `templates` | `templates.*` (миграция 202609271600) |
 | 13 | Финансы | `finance` | `finance.view`, `finance.manage` |
 | 14 | Себестоимость | `costing` | — |
 | 15 | Дебиторская задолженность | `receivables` | — |
