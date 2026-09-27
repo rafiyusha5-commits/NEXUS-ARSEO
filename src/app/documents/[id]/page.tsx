@@ -5,13 +5,16 @@ import { requireUser } from "@/lib/auth/access";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL, formatFileSize } from "@/lib/documents/files.ts";
 import { documentStatusLabel, formatDate, formatDateTime, languageLabel, linkEntityLabel, linkRoleLabel } from "@/lib/documents/labels.ts";
 import { loadLinkOptions, resolveLinkTargets } from "@/lib/documents/link-objects.ts";
-import { DOCUMENT_STATUSES, documentExpiry, isUuid, todayIso } from "@/lib/documents/rules.ts";
+import { documentExpiry, isUuid, todayIso } from "@/lib/documents/rules.ts";
+import { canSubmitDocumentForReview } from "@/lib/documents/review-rules.ts";
 import { loadDocumentPermissions } from "@/lib/documents/supabase-gateway.ts";
 import {
   addDocumentLinkAction,
   addDocumentVersionAction,
   archiveDocumentAction,
+  decideDocumentReviewAction,
   removeDocumentLinkAction,
+  submitDocumentForReviewAction,
   updateDocumentAction,
 } from "../actions";
 
@@ -33,7 +36,7 @@ export default async function DocumentPage({
   const permissions = await loadDocumentPermissions(supabase);
   if (!permissions.view) notFound();
 
-  const [{ data: document }, { data: versions }, { data: links }, { data: types }, { data: currencies }] = await Promise.all([
+  const [{ data: document }, { data: versions }, { data: links }, { data: types }, { data: currencies }, { data: approvals, error: approvalsError }] = await Promise.all([
     supabase
       .from("documents")
       .select(
@@ -57,6 +60,12 @@ export default async function DocumentPage({
       .order("created_at"),
     supabase.from("document_types").select("id, name_ru, is_active").order("sort_order"),
     supabase.from("currencies").select("id, code").eq("is_active", true).order("code"),
+    supabase
+      .from("approvals")
+      .select("id, status, entity_version, request_comment, comment, requested_at, decided_at, requester:profiles!approvals_requested_by_fkey(full_name), approver:profiles!approvals_approver_user_id_fkey(full_name)")
+      .eq("entity_type", "document")
+      .eq("entity_id", id)
+      .order("requested_at", { ascending: false }),
   ]);
 
   if (!document) notFound();
@@ -80,6 +89,12 @@ export default async function DocumentPage({
   const targets = await resolveLinkTargets(supabase, activeLinks);
   const linkOptions = canEdit ? await loadLinkOptions(supabase) : [];
   const currentVersion = (versions ?? []).find((version) => version.is_current);
+  const reviewHistory = (approvals ?? []) as unknown as {
+    id: string; status: string; entity_version: number | null; request_comment: string | null; comment: string | null;
+    requested_at: string; decided_at: string | null; requester: Named; approver: Named;
+  }[];
+  const pendingReview = reviewHistory.find((item) => item.status === "pending");
+  const reviewMigrationMissing = Boolean(approvalsError);
 
   return (
     <main className="app-shell">
@@ -114,6 +129,58 @@ export default async function DocumentPage({
           <article className="summary-card"><p>Срок действия</p><strong>{doc.valid_until ? formatDate(doc.valid_until) : "Бессрочно"}</strong><small>{type?.has_validity_period ? "для этого типа обычно указывается" : "не обязателен для типа"}</small></article>
           <article className="summary-card"><p>Сумма</p><strong>{doc.amount !== null ? `${Number(doc.amount).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ${currency?.code ?? ""}` : "—"}</strong><small>по документу</small></article>
           <article className="summary-card"><p>Зарегистрировал</p><strong>{uploader?.full_name ?? "—"}</strong><small>{formatDateTime(doc.created_at)}</small></article>
+        </section>
+
+        <section className="panel admin-section">
+          <div className="panel-heading">
+            <div><p className="eyebrow">Контроль документа</p><h2>Проверка и согласование</h2></div>
+            <span className={`doc-badge doc-status-${doc.status}`}>{documentStatusLabel[doc.status] ?? doc.status}</span>
+          </div>
+
+          {reviewMigrationMissing && (
+            <div className="setup-notice">Для согласования документов примените миграцию <strong>202609271600_document_approvals.sql</strong> в Supabase.</div>
+          )}
+
+          {!reviewMigrationMissing && canSubmitDocumentForReview(doc.status, archived) && permissions.update && (
+            <form action={submitDocumentForReviewAction} className="doc-subform">
+              <input type="hidden" name="document_id" value={doc.id} />
+              <label>Комментарий для согласующего<input name="comment" maxLength={1000} placeholder="Что нужно проверить" /></label>
+              <button className="primary" type="submit">Отправить на согласование</button>
+            </form>
+          )}
+
+          {!reviewMigrationMissing && doc.status === "under_review" && pendingReview && permissions.approve && (
+            <div className="doc-review-actions">
+              <form action={decideDocumentReviewAction} className="doc-subform">
+                <input type="hidden" name="document_id" value={doc.id} />
+                <input type="hidden" name="approval_id" value={pendingReview.id} />
+                <input type="hidden" name="decision" value="approved" />
+                <label>Комментарий к решению<input name="comment" maxLength={1000} placeholder="Необязательно" /></label>
+                <button className="primary" type="submit">Утвердить</button>
+              </form>
+              <form action={decideDocumentReviewAction} className="doc-subform">
+                <input type="hidden" name="document_id" value={doc.id} />
+                <input type="hidden" name="approval_id" value={pendingReview.id} />
+                <input type="hidden" name="decision" value="rejected" />
+                <label>Причина отклонения<input name="comment" required minLength={3} maxLength={1000} placeholder="Что нужно исправить" /></label>
+                <button className="ghost danger-text" type="submit">Отклонить</button>
+              </form>
+            </div>
+          )}
+
+          {!reviewMigrationMissing && <div className="compact-list">
+            {reviewHistory.map((review) => (
+              <div className="doc-link-row" key={review.id}>
+                <div>
+                  <span className="doc-type">Версия {review.entity_version ?? "—"} · {review.status === "pending" ? "Ожидает решения" : review.status === "approved" ? "Утверждён" : review.status === "rejected" ? "Отклонён" : "Отменён"}</span>
+                  <strong>{one(review.requester)?.full_name ?? "—"} · {formatDateTime(review.requested_at)}</strong>
+                  {review.request_comment && <small>Запрос: {review.request_comment}</small>}
+                  {review.decided_at && <small>Решение: {one(review.approver)?.full_name ?? "—"} · {formatDateTime(review.decided_at)}{review.comment ? ` · ${review.comment}` : ""}</small>}
+                </div>
+              </div>
+            ))}
+            {!reviewHistory.length && <div className="empty-state">Документ ещё не отправлялся на согласование.</div>}
+          </div>}
         </section>
 
         <section className="shipment-detail-grid">
@@ -209,9 +276,7 @@ export default async function DocumentPage({
               </select></label>
               <label className="doc-form-wide">Название<input name="title" required maxLength={300} defaultValue={doc.title} /></label>
               <label>Номер<input name="document_number" maxLength={120} defaultValue={doc.document_number ?? ""} /></label>
-              <label>Статус<select name="status" defaultValue={doc.status}>
-                {DOCUMENT_STATUSES.map((status) => <option value={status} key={status}>{documentStatusLabel[status]}</option>)}
-              </select></label>
+              <label>Статус<input value={documentStatusLabel[doc.status] ?? doc.status} readOnly /></label>
               <label>Дата документа<input name="document_date" type="date" defaultValue={doc.document_date ?? ""} /></label>
               <label>Срок действия<input name="valid_until" type="date" defaultValue={doc.valid_until ?? ""} /></label>
               <label>Язык<select name="language" defaultValue={doc.language ?? ""}>

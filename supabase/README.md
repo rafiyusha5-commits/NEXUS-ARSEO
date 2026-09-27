@@ -14,5 +14,9 @@ Migration order:
 3. `202609270002_phase1_reference_data.sql` — counterparties, products, warehouses, routes, currencies and Phase 1 RLS.
 4. `202609270003_phase2_shipments.sql` — shipments, the 18-stage RVI process, stage history, tasks, approvals and notifications.
 5. `202609270004_service_role_grants.sql` — minimal privileges for trusted server-side reference-data imports with the secret API key.
+6. `202609271001_document_management.sql` — document registry, private files, versions, links and requirements.
+7. `202609271200_inventory_fifo.sql` — batches, balances and controlled FIFO issue.
+8. `202609271400_inventory_movements.sql` — warehouse transfers and write-offs.
+9. `202609271600_document_approvals.sql` — version-bound document review and approval workflow.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
