@@ -26,7 +26,7 @@ export default async function UsersPage({
   const [{ data: users, error: usersError }, { data: roles, error: rolesError }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, full_name, email, job_title, is_active, user_roles(role_id, app_roles(id, code, name))")
+      .select("id, full_name, email, job_title, is_active, user_roles!user_roles_user_id_fkey(role_id, app_roles(id, code, name))")
       .order("full_name"),
     supabase.from("app_roles").select("id, code, name, is_enabled").order("name"),
   ]);
