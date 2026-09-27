@@ -335,33 +335,99 @@ begin
 end;
 $$;
 
--- 9. A personal deny of tasks.view closes tasks completely ---------------------------------
--- Specialist Gamma is an active employee whose tasks.view is denied by a personal override.
+-- 9. A personal deny of tasks.view closes tasks and task notifications -----------------------
+-- Specialist Gamma (active employee) first works normally, then gets a personal deny of
+-- tasks.view. Director = ...0001, Alpha = ...0003, Beta = ...0004 (ordinary employee).
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('71000000-0000-4000-8000-000000000007', 'tn-gamma@test.local', '{"full_name":"Специалист Гамма"}');
 insert into public.user_roles (user_id, role_id)
 select '71000000-0000-4000-8000-000000000007', id from public.app_roles where code = 'logistics_specialist';
+
+set role authenticated;
+select tests.act_as('71000000-0000-4000-8000-000000000001'); -- director assigns a task due soon
+insert into tests.tn values ('t7', public.create_task('Секретная задача Гаммы', '71000000-0000-4000-8000-000000000007',
+  now() + interval '2 hours', 'normal', null, '73000000-0000-4000-8000-000000000001'));
+select tests.act_as('71000000-0000-4000-8000-000000000007');
+do $$ begin assert public.refresh_my_deadline_notifications() = 1, 'before the deny Gamma gets the deadline notice'; end $$;
+reset role;
+
+-- Gamma also has an ordinary (non-task) notification: an approval addressed to her.
+insert into public.approvals (entity_type, entity_id, approver_user_id, requested_by)
+values ('shipment', '73000000-0000-4000-8000-000000000001', '71000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000003');
+insert into tests.tn
+select 'n7', id from public.notifications where recipient_user_id = '71000000-0000-4000-8000-000000000007' and type = 'task_assigned';
+
+do $$
+begin
+  assert tests.tn_count('71000000-0000-4000-8000-000000000007', 'task_assigned', tests.tn_id('t7')) = 1
+     and tests.tn_count('71000000-0000-4000-8000-000000000007', 'deadline', tests.tn_id('t7')) = 1
+     and tests.tn_count('71000000-0000-4000-8000-000000000007', 'approval_request') = 1, 'Gamma has two task notifications and one approval request';
+end;
+$$;
+
+-- The personal deny.
 insert into public.user_permission_overrides (user_id, permission_id, effect, reason, granted_by)
 select '71000000-0000-4000-8000-000000000007', p.id, 'deny', 'tasks.view deny test', '71000000-0000-4000-8000-000000000001'
 from public.permissions p where p.code = 'tasks.view';
 
+-- New task events after the deny: a direct assignment, a reassignment from Beta, an overdue task.
 set role authenticated;
-select tests.act_as('71000000-0000-4000-8000-000000000001'); -- director assigns a task to Gamma
-insert into tests.tn values ('t7', public.create_task('Задача для сотрудника без доступа', '71000000-0000-4000-8000-000000000007',
-  now() + interval '2 days', 'normal', null, '73000000-0000-4000-8000-000000000001'));
+select tests.act_as('71000000-0000-4000-8000-000000000001');
+insert into tests.tn values ('t8', public.create_task('Передаваемая задача', '71000000-0000-4000-8000-000000000004', now() + interval '3 days'));
+select public.reassign_task(tests.tn_id('t8'), '71000000-0000-4000-8000-000000000007');
+insert into tests.tn values ('t9', public.create_task('Ещё одна задача Гаммы', '71000000-0000-4000-8000-000000000007'));
+reset role;
+update public.tasks set due_at = now() - interval '1 hour' where id = tests.tn_id('t7'); -- overdue (as postgres)
+set role service_role;
+select public.generate_deadline_notifications();
+reset role;
 
-select tests.act_as('71000000-0000-4000-8000-000000000007'); -- Gamma
+do $$
+begin
+  assert tests.tn_count('71000000-0000-4000-8000-000000000007', 'task_assigned', tests.tn_id('t9')) = 0, 'no assignment notice without tasks.view';
+  assert tests.tn_count('71000000-0000-4000-8000-000000000007', 'task_reassigned', tests.tn_id('t8')) = 0, 'no reassignment notice without tasks.view';
+  assert tests.tn_count('71000000-0000-4000-8000-000000000007', 'overdue', tests.tn_id('t7')) = 0, 'the generator skips Gamma';
+  assert tests.tn_count('71000000-0000-4000-8000-000000000001', 'overdue', tests.tn_id('t7')) = 1,
+    'the creating director still learns about the overdue task';
+  assert tests.tn_count('71000000-0000-4000-8000-000000000004', 'task_assigned', tests.tn_id('t8')) = 1
+     and tests.tn_count('71000000-0000-4000-8000-000000000004', 'task_reassigned', tests.tn_id('t8')) = 1,
+    'an ordinary employee with tasks.view keeps getting task notifications';
+  assert (select count(*) from public.notifications where recipient_user_id = '71000000-0000-4000-8000-000000000007' and entity_type = 'task') = 2,
+    'the notifications from before the deny still exist in the table';
+end;
+$$;
+
+set role authenticated;
+select tests.act_as('71000000-0000-4000-8000-000000000007');
 do $$
 begin
   assert (select private.is_employee()), 'Gamma is an active employee';
   assert not (select private.has_permission('tasks.view')), 'the personal override denies tasks.view';
   assert (select count(*) from public.tasks) = 0, 'Gamma sees no tasks at all';
   assert not exists (select 1 from public.tasks where id = tests.tn_id('t7')), 'not even the task assigned to Gamma';
+  assert not exists (select 1 from public.notifications where entity_type = 'task'), 'task notifications are hidden';
+  assert not exists (select 1 from public.notifications where id = tests.tn_id('n7')), 'also when asked by id';
+  assert not exists (select 1 from public.notifications
+                     where entity_id in (tests.tn_id('t7'), tests.tn_id('t8'), tests.tn_id('t9')) or title ~ 'Гаммы'),
+    'no task data leaks through notifications';
+  assert (select count(*) from public.notifications) = 1
+     and exists (select 1 from public.notifications where type = 'approval_request'), 'the approval request stays visible';
+  -- The sidebar counter is count(*) of unread rows under the same policy.
+  assert (select count(*) from public.notifications where not is_read) = 1, 'the unread counter ignores hidden rows';
+  perform tests.expect_error(format('select public.mark_notification_read(%L)', tests.tn_id('n7')), 'не найдено');
+  assert public.mark_all_notifications_read() = 1, 'mark all touches the visible notification only';
 end;
 $$;
+select tests.expect_error($$ select public.refresh_my_deadline_notifications() $$, 'Нет доступа к задачам');
 select tests.expect_error($$ select public.set_task_status(tests.tn_id('t7'), 'in_progress') $$, 'Нет доступа к задачам');
 reset role;
+
+do $$
+begin
+  assert (select not is_read from public.notifications where id = tests.tn_id('n7')), 'hidden notifications are left untouched';
+end;
+$$;
 
 create table tests.tn_total as select count(*) as n from public.tasks;
 grant select on tests.tn_total to authenticated;
@@ -376,9 +442,13 @@ begin
   assert exists (select 1 from public.tasks where id = tests.tn_id('t7')), 'including the task of the denied employee';
   perform tests.act_as('71000000-0000-4000-8000-000000000001');
   assert (select count(*) from public.tasks) = (select n from tests.tn_total), 'the director sees every task';
-  -- The assignee without a deny keeps seeing own tasks.
+  assert exists (select 1 from public.notifications where entity_type = 'task' and entity_id = tests.tn_id('t7')),
+    'the director still sees task notifications';
+  -- An ordinary employee without a deny keeps seeing own tasks and their notifications.
   perform tests.act_as('71000000-0000-4000-8000-000000000004');
   assert exists (select 1 from public.tasks where id = tests.tn_id('t1')), 'an ordinary assignee still sees own task';
+  assert exists (select 1 from public.notifications where entity_type = 'task' and entity_id = tests.tn_id('t8')),
+    'and the notifications about it';
 end;
 $$;
 reset role;

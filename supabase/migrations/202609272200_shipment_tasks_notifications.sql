@@ -125,6 +125,18 @@ create index if not exists notifications_recipient_created_idx
 create index if not exists notifications_unread_idx
   on public.notifications (recipient_user_id) where not is_read;
 
+-- Recipients read their own notifications. Task notifications (entity_type = 'task') carry
+-- task titles and dates, so they follow tasks.view like the tasks themselves: a personal
+-- deny hides even notifications created before it. Approvals, documents and shipment
+-- stages stay visible. The unread counter and notification_deliveries go through this
+-- policy as well.
+drop policy if exists "users view own notifications" on public.notifications;
+create policy "users view own notifications" on public.notifications for select to authenticated
+using (
+  recipient_user_id = (select auth.uid())
+  and (entity_type is distinct from 'task' or (select private.has_permission('tasks.view')))
+);
+
 -- Notifications are created by database functions and read state changes through RPCs.
 drop policy if exists "users update own notifications" on public.notifications;
 revoke insert, update, delete on public.notifications from anon, authenticated;
@@ -192,8 +204,9 @@ as $$
   select to_char(p_value at time zone 'Asia/Qyzylorda', 'DD.MM.YYYY HH24:MI');
 $$;
 
--- Inserts one notification unless the recipient is not an active employee or the same
--- de-duplication key was already used for them. Returns true when a row was inserted.
+-- Inserts one notification unless the recipient is not an active employee, the same
+-- de-duplication key was already used for them, or it is about a task and the recipient
+-- lacks tasks.view. Returns true when a row was inserted.
 create or replace function private.notify(
   p_recipient uuid, p_type text, p_title text, p_body text,
   p_entity_type text, p_entity_id uuid, p_shipment_id uuid, p_dedupe_key text default null)
@@ -204,6 +217,9 @@ set search_path = ''
 as $$
 begin
   if p_recipient is null or not private.is_active_employee(p_recipient) then
+    return false;
+  end if;
+  if p_entity_type = 'task' and not private.user_has_permission(p_recipient, 'tasks.view') then
     return false;
   end if;
   insert into public.notifications (recipient_user_id, type, title, body, entity_type, entity_id, shipment_id, dedupe_key)
@@ -387,6 +403,7 @@ create trigger notify_approval_change
 -- Approaching (within p_window) and overdue open tasks. The key contains the due date, so
 -- a repeated run adds nothing, while a new due date is reported again. Overdue tasks are
 -- also reported to their creator. p_user limits the run to notifications for one user.
+-- Recipients without tasks.view get nothing.
 create or replace function private.generate_deadline_notifications(
   p_user uuid, p_now timestamptz, p_window interval default interval '24 hours')
 returns integer
@@ -417,7 +434,8 @@ begin
     where t.status in ('open', 'in_progress') and t.due_at is not null and t.due_at <= p_now
       and t.created_by is not null and t.created_by <> t.assignee_user_id
   ) c
-  where (p_user is null or c.recipient = p_user) and private.is_active_employee(c.recipient)
+  -- user_has_permission() also requires an active employee.
+  where (p_user is null or c.recipient = p_user) and private.user_has_permission(c.recipient, 'tasks.view')
   on conflict (recipient_user_id, dedupe_key) where dedupe_key is not null do nothing;
   get diagnostics v_count = row_count;
   return v_count;
@@ -432,8 +450,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not (select private.is_employee()) then
-    raise exception 'Требуется вход сотрудника' using errcode = '42501';
+  if not (select private.has_permission('tasks.view')) then
+    raise exception 'Нет доступа к задачам' using errcode = '42501';
   end if;
   return private.generate_deadline_notifications((select auth.uid()), now());
 end;
@@ -616,8 +634,10 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- Same visibility as the read policy: hidden task notifications are not touched.
   update public.notifications set is_read = true, read_at = coalesce(read_at, now())
-  where id = p_notification_id and recipient_user_id = (select auth.uid());
+  where id = p_notification_id and recipient_user_id = (select auth.uid())
+    and (entity_type is distinct from 'task' or (select private.has_permission('tasks.view')));
   if not found then
     raise exception 'Уведомление не найдено';
   end if;
@@ -637,7 +657,8 @@ begin
     raise exception 'Требуется авторизация' using errcode = '42501';
   end if;
   update public.notifications set is_read = true, read_at = now()
-  where recipient_user_id = (select auth.uid()) and not is_read;
+  where recipient_user_id = (select auth.uid()) and not is_read
+    and (entity_type is distinct from 'task' or (select private.has_permission('tasks.view')));
   get diagnostics v_count = row_count;
   return v_count;
 end;

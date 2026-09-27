@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { formatDateTime } from "@/lib/documents/labels.ts";
+import { loadPermissions } from "@/lib/permissions.ts";
 import { URGENT_NOTIFICATION_TYPES, notificationLink, notificationTypeLabel } from "@/lib/notifications/rules.ts";
 import { markAllNotificationsReadAction, markNotificationReadAction, openNotificationAction } from "./actions";
 
@@ -46,8 +47,13 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const params = await searchParams;
   const { profile, roles, supabase } = await requireUser();
 
-  // Deadline notifications of this employee; idempotent, so a reload adds nothing.
-  const { error: refreshError } = await supabase.rpc("refresh_my_deadline_notifications");
+  const can = await loadPermissions(supabase, ["tasks.view"] as const);
+
+  // Deadline notifications of this employee; idempotent, so a reload adds nothing. Without
+  // tasks.view there are no task notifications to create, and RLS hides the existing ones.
+  const { error: refreshError } = can["tasks.view"]
+    ? await supabase.rpc("refresh_my_deadline_notifications")
+    : { error: null };
   const [{ data: unread, error }, { data: read }] = await Promise.all([
     supabase.from("notifications").select(COLUMNS).eq("is_read", false).order("created_at", { ascending: false }).limit(200),
     supabase.from("notifications").select(COLUMNS).eq("is_read", true).order("created_at", { ascending: false }).limit(50),
