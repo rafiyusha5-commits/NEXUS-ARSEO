@@ -55,11 +55,12 @@ describe("template fields for substitution", () => {
 });
 
 describe("template approval rules", () => {
-  const base = { document_type_id: TYPE_ID, language: "ru", variables: [{ key: "gtin", label: "GTIN" }] };
+  const base = { document_type_id: TYPE_ID, language: "ru", flow_direction: "input", counterparty_id: null, variables: [{ key: "gtin", label: "GTIN" }] };
 
   it("keeps the approval for cosmetic changes and drops it for substantive ones", () => {
     assert.equal(editResetsApproval("approved", base, { ...base }), false);
     assert.equal(editResetsApproval("approved", base, { ...base, language: "kk" }), true);
+    assert.equal(editResetsApproval("approved", base, { ...base, flow_direction: "output" }), true);
     assert.equal(editResetsApproval("approved", base, { ...base, variables: [] }), true);
     assert.equal(editResetsApproval("draft", base, { ...base, language: "kk" }), false, "drafts have no approval to lose");
   });
@@ -111,7 +112,7 @@ const docx = (name = "Карта ввода.docx"): UploadedFile => {
   const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
   return { name, size: bytes.byteLength, type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes: async () => bytes };
 };
-const metadata = { document_type_id: TYPE_ID, name: " Карта ввода сети ", language: "ru", purpose: null, counterparty_id: null, variables: [{ key: "gtin", label: "GTIN" }] };
+const metadata = { document_type_id: TYPE_ID, name: " Карта ввода сети ", language: "ru", flow_direction: "input", purpose: null, counterparty_id: null, variables: [{ key: "gtin", label: "GTIN" }] };
 
 describe("template operations", () => {
   it("registers a template with a server-built path and the parsed fields", async () => {
@@ -121,6 +122,7 @@ describe("template operations", () => {
     const input = fake.called("registerTemplate")[0].args[0] as Record<string, unknown>;
     assert.equal(input.storage_path, `templates/${TEMPLATE_ID}/${HEX}-Karta-vvoda.docx`);
     assert.equal(input.name, "Карта ввода сети");
+    assert.equal(input.flow_direction, "input");
     assert.deepEqual(input.variables_schema, { fields: [{ key: "gtin", label: "GTIN" }] });
   });
 

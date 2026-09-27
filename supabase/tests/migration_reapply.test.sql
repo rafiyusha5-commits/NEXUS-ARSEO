@@ -1,5 +1,5 @@
 -- Checks the state after scripts/test-db.sh re-applies the document migrations in order
--- (202609271001 → 202609271600 → 202609271700). Re-running 202609271001 on its own would
+-- (202609271001 → 202609271600 → 202609271800). Re-running older migrations alone would
 -- restore its older my_document_permissions() without the "approve" flag and its Storage
 -- policies without the documents/ prefix; the later migrations must win again.
 
@@ -53,7 +53,7 @@ end;
 $$;
 reset role;
 
--- 202609271700 ran after 202609271001, so the document Storage policies stay scoped.
+-- 202609271800 ran after 202609271001, so the document Storage policies stay scoped.
 do $$
 begin
   assert (select count(*) from pg_policies
@@ -61,6 +61,25 @@ begin
             and policyname in ('nexus documents: read registered files', 'nexus documents: remove own unregistered upload')
             and qual like '%documents/%') = 2,
     'document Storage policies must stay limited to documents/ after re-applying migrations';
+end;
+$$;
+
+-- 202609271800 remains the final schema: templates have direction and cards use a
+-- neutral counterparty reference for both suppliers and buyers.
+do $$
+begin
+  assert exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'document_templates'
+                   and column_name = 'flow_direction' and is_nullable = 'NO'),
+    'document_templates.flow_direction must survive migration re-apply';
+  assert exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'product_listing_cards'
+                   and column_name = 'counterparty_id'),
+    'listing cards must keep counterparty_id';
+  assert not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'product_listing_cards'
+                       and column_name = 'customer_id'),
+    'legacy product_listing_cards.customer_id must not return';
 end;
 $$;
 

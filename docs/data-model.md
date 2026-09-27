@@ -1282,16 +1282,16 @@ Append-only.
 
 ### product_listing_cards — Новая (фаза 3)
 
-> **Реализовано** миграцией `202609271700_document_templates_listing_cards.sql`. Добавлены номер карты, версии (`version`, `previous_version_id`, `root_card_id`), статус `superseded`, поля отправки, решения и отмены; в позициях — `required_quantity`, `uom`, `currency_id`. Редактируется только черновик — это проверяет база. Подробности — `docs/templates-listing-cards.md`.
+> **Реализовано** миграциями `202609271700_document_templates_listing_cards.sql` и `202609271800_counterparty_template_directions.sql`. Добавлены номер карты, версии (`version`, `previous_version_id`, `root_card_id`), статус `superseded`, поля отправки, решения и отмены; в позициях — `required_quantity`, `uom`, `currency_id`. Редактируется только черновик — это проверяет база. Подробности — `docs/templates-listing-cards.md`.
 
-Клиентские карты ввода и вывода товаров.
+Карты ввода товаров от поставщиков и вывода товаров для покупателей.
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
 | id | uuid | да | PK |
 | card_type | text | да | `input` (ввод), `output` (вывод) |
-| customer_id | uuid | да | FK |
-| template_id | uuid | нет | FK → `document_templates.id` — форма клиента |
+| counterparty_id | uuid | да | FK → `counterparties.id`; поставщик для `input`, покупатель для `output` |
+| template_id | uuid | нет | FK → `document_templates.id`; направление и контрагент должны совпадать |
 | document_id | uuid | нет | FK — заполненная карта |
 | effective_date | date | нет | |
 | status | text | да | `draft`, `submitted`, `approved_by_customer`, `rejected_by_customer`, `cancelled` |
@@ -1305,7 +1305,7 @@ Append-only.
 | id | uuid | да | PK |
 | card_id | uuid | да | FK |
 | product_id | uuid | да | FK |
-| customer_sku | text | нет | артикул у клиента |
+| counterparty_sku | text | нет | артикул у поставщика для `input`, у покупателя для `output` |
 | price | numeric(14,4) | нет | |
 | comment | text | нет | |
 

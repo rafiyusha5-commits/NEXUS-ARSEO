@@ -28,6 +28,7 @@ export type RegisterTemplateCall = {
   document_type_id: string;
   name: string;
   language: string;
+  flow_direction: string;
   purpose: string | null;
   counterparty_id: string | null;
   variables_schema: Record<string, unknown>;
@@ -97,6 +98,7 @@ export async function registerTemplateWithFile(
     document_type_id: metadata.document_type_id,
     name: metadata.name.trim(),
     language: metadata.language,
+    flow_direction: metadata.flow_direction,
     purpose: metadata.purpose?.trim() || null,
     counterparty_id: metadata.counterparty_id,
     variables_schema: variablesToSchema(metadata.variables),

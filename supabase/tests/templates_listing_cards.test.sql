@@ -1,5 +1,5 @@
 -- RLS, status and version tests for document templates and product listing cards
--- (migration 202609271700). Run with scripts/test-db.sh. Every statement runs in its own
+-- (migrations 202609271700 and 202609271800). Run with scripts/test-db.sh. Every statement runs in its own
 -- transaction as the role and user that the comment names.
 
 \set ON_ERROR_STOP 1
@@ -61,7 +61,8 @@ join public.app_roles r on r.code = u.role_code;
 
 insert into public.counterparties (id, roles, legal_name, country) values
   ('f0000000-0000-4000-8000-000000000001', array['customer'], 'ТОО Сеть магазинов', 'KZ'),
-  ('f0000000-0000-4000-8000-000000000002', array['manufacturer', 'supplier'], 'Candy Oy', 'FI');
+  ('f0000000-0000-4000-8000-000000000002', array['manufacturer', 'supplier'], 'Candy Oy', 'FI'),
+  ('f0000000-0000-4000-8000-000000000003', array['supplier'], 'Other Supplier GmbH', 'DE');
 
 insert into public.products (id, internal_sku, name, manufacturer_id, status) values
   ('f1000000-0000-4000-8000-000000000001', 'TL-001', '{"ru":"Конфеты 200 г"}', 'f0000000-0000-4000-8000-000000000002', 'active'),
@@ -131,10 +132,11 @@ select public.register_document_template(
   (select id from public.document_types where code = 'other'),
   'Карта ввода сети',
   'ru',
+  'input',
   'templates/a1000000-0000-4000-8000-000000000001/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-karta-vvoda.docx',
   'Карта ввода.docx',
-  p_purpose => 'Форма клиента для ввода товаров',
-  p_counterparty_id => 'f0000000-0000-4000-8000-000000000001',
+  p_purpose => 'Форма поставщика для ввода товаров',
+  p_counterparty_id => 'f0000000-0000-4000-8000-000000000002',
   p_variables_schema => '{"fields": [{"key": "product_name", "label": "Наименование"}]}'
 );
 
@@ -144,6 +146,7 @@ declare
 begin
   select * into v_template from public.document_templates where id = 'a1000000-0000-4000-8000-000000000001';
   assert v_template.status = 'draft', 'new template is a draft';
+  assert v_template.flow_direction = 'input', 'supplier template is incoming';
   assert v_template.current_version = 1, 'first version';
   assert v_template.created_by = 'e0000000-0000-4000-8000-000000000002', 'author set by the database';
   assert (select file_size_bytes from public.document_template_versions
@@ -286,26 +289,44 @@ select tests.act_as('e0000000-0000-4000-8000-000000000003');
 set role authenticated;
 -- The commercial director has no listing_cards.create ("ОР" in the matrix).
 select tests.expect_error($$
-  insert into public.product_listing_cards (card_type, customer_id) values ('input', 'f0000000-0000-4000-8000-000000000001')
+  insert into public.product_listing_cards (card_type, counterparty_id) values ('input', 'f0000000-0000-4000-8000-000000000002')
 $$, 'row-level security');
 reset role;
 
 select tests.act_as('e0000000-0000-4000-8000-000000000002');
 set role authenticated;
 select tests.expect_error($$
-  insert into public.product_listing_cards (card_type, customer_id) values ('input', 'f0000000-0000-4000-8000-000000000002')
-$$, 'не является клиентом');
+  insert into public.product_listing_cards (card_type, counterparty_id) values ('input', 'f0000000-0000-4000-8000-000000000001')
+$$, 'выберите активного поставщика');
 select tests.expect_error($$
-  insert into public.product_listing_cards (card_type, customer_id, status)
-  values ('input', 'f0000000-0000-4000-8000-000000000001', 'approved_by_customer')
+  insert into public.product_listing_cards (card_type, counterparty_id, status)
+  values ('input', 'f0000000-0000-4000-8000-000000000002', 'approved_by_customer')
 $$, 'permission denied');
 -- Only an approved, active template can be attached (template 1 is a draft after v2).
 select tests.expect_error($$
-  insert into public.product_listing_cards (card_type, customer_id, template_id)
-  values ('input', 'f0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001')
-$$, 'не утверждён');
-insert into public.product_listing_cards (id, card_type, customer_id, template_id, title, effective_date)
-values ('c1000000-0000-4000-8000-000000000001', 'input', 'f0000000-0000-4000-8000-000000000001', null,
+  insert into public.product_listing_cards (card_type, counterparty_id, template_id)
+  values ('input', 'f0000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000001')
+$$, 'не соответствует');
+
+reset role;
+select tests.act_as('e0000000-0000-4000-8000-000000000001');
+set role authenticated;
+select public.approve_document_template('a1000000-0000-4000-8000-000000000001');
+reset role;
+
+select tests.act_as('e0000000-0000-4000-8000-000000000002');
+set role authenticated;
+-- Direction and counterparty are both part of template compatibility.
+select tests.expect_error($$
+  insert into public.product_listing_cards (card_type, counterparty_id, template_id)
+  values ('output', 'f0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001')
+$$, 'не соответствует');
+select tests.expect_error($$
+  insert into public.product_listing_cards (card_type, counterparty_id, template_id)
+  values ('input', 'f0000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001')
+$$, 'не соответствует');
+insert into public.product_listing_cards (id, card_type, counterparty_id, template_id, title, effective_date)
+values ('c1000000-0000-4000-8000-000000000001', 'input', 'f0000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000001',
         'Ввод новинок осень', '2026-10-15');
 do $$
 declare
@@ -323,7 +344,7 @@ select tests.expect_error($$
   select public.submit_listing_card('c1000000-0000-4000-8000-000000000001')
 $$, 'нет позиций');
 
-insert into public.product_listing_card_items (card_id, product_id, required_quantity, uom, customer_sku, price, currency_id)
+insert into public.product_listing_card_items (card_id, product_id, required_quantity, uom, counterparty_sku, price, currency_id)
 values ('c1000000-0000-4000-8000-000000000001', 'f1000000-0000-4000-8000-000000000001', 120, 'box', 'SKU-777', 1500,
         (select id from public.currencies where code = 'KZT'));
 insert into public.product_listing_card_items (card_id, product_id, required_quantity)
@@ -338,7 +359,7 @@ select tests.expect_error($$
 $$, 'required_quantity_check|product_once');
 select tests.expect_error($$
   update public.product_listing_card_items set price = 10, currency_id = null
-  where card_id = 'c1000000-0000-4000-8000-000000000001' and customer_sku is null
+  where card_id = 'c1000000-0000-4000-8000-000000000001' and counterparty_sku is null
 $$, 'price_currency');
 
 select public.submit_listing_card('c1000000-0000-4000-8000-000000000001');
@@ -451,7 +472,7 @@ $$;
 
 select tests.act_as('e0000000-0000-4000-8000-000000000002');
 set role authenticated;
-insert into public.product_listing_cards (id, card_type, customer_id)
+insert into public.product_listing_cards (id, card_type, counterparty_id)
 values ('c1000000-0000-4000-8000-000000000002', 'output', 'f0000000-0000-4000-8000-000000000001');
 select tests.expect_error($$
   select public.cancel_listing_card('c1000000-0000-4000-8000-000000000002', '')

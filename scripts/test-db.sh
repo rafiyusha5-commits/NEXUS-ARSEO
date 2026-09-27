@@ -43,11 +43,12 @@ done
 
 echo "re-applying document migrations (idempotency check)"
 # Order matters: 202609271600 redefines my_document_permissions() (adds "approve") and
-# apply_document_version() from 202609271001; 202609271700 narrows two Storage policies
-# of 202609271001. Re-running 202609271001 alone would undo both.
+# apply_document_version() from 202609271001. The final 202609271800 migration restores
+# both the scoped Storage policies and the current supplier/buyer template model. The
+# superseded 202609271700 schema cannot be re-applied after its columns were renamed.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271001_document_management.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271600_document_approvals.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271700_document_templates_listing_cards.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609271800_counterparty_template_directions.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

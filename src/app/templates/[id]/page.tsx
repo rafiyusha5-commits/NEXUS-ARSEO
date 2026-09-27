@@ -8,6 +8,7 @@ import {
   TEMPLATE_LANGUAGES,
   availableTemplateActions,
   schemaToVariables,
+  templateDirectionLabel,
   templateLanguageLabel,
   templateStatusLabel,
   variablesToText,
@@ -26,7 +27,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const one = <T,>(value: T | T[] | null | undefined) => (Array.isArray(value) ? value[0] : value ?? undefined);
 
 type TemplateRecord = {
-  id: string; document_type_id: string; name: string; language: string; purpose: string | null; counterparty_id: string | null;
+  id: string; document_type_id: string; name: string; language: string; flow_direction: string; purpose: string | null; counterparty_id: string | null;
   variables_schema: unknown; status: string; is_active: boolean; current_version: number; approved_at: string | null;
   created_at: string; updated_at: string; archived_at: string | null; archive_reason: string | null;
   type: { name_ru: string } | null; counterparty: { legal_name: string; short_name: string | null } | null;
@@ -51,7 +52,7 @@ export default async function TemplatePage({
     supabase
       .from("document_templates")
       .select(
-        "id, document_type_id, name, language, purpose, counterparty_id, variables_schema, status, is_active, current_version, approved_at, created_at, updated_at, archived_at, archive_reason, " +
+        "id, document_type_id, name, language, flow_direction, purpose, counterparty_id, variables_schema, status, is_active, current_version, approved_at, created_at, updated_at, archived_at, archive_reason, " +
           "type:document_types(name_ru), counterparty:counterparties(legal_name, short_name), " +
           "creator:profiles!document_templates_created_by_fkey(full_name), approver:profiles!document_templates_approved_by_fkey(full_name), archiver:profiles!document_templates_archived_by_fkey(full_name)",
       )
@@ -71,7 +72,7 @@ export default async function TemplatePage({
   const variables = schemaToVariables(template.variables_schema);
   const currentVersion = (versions ?? []).find((version) => version.is_current);
   const { data: counterparties } = actions.includes("edit")
-    ? await supabase.from("counterparties").select("id, legal_name, short_name").eq("status", "active").order("legal_name").limit(500)
+    ? await supabase.from("counterparties").select("id, legal_name, short_name, roles").eq("status", "active").order("legal_name").limit(500)
     : { data: [] };
   const counterparty = one(template.counterparty);
 
@@ -80,7 +81,7 @@ export default async function TemplatePage({
       <AppSidebar profile={profile} roles={roles} active="templates" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Шаблон · {one(template.type)?.name_ru ?? "тип не указан"}</p><h1>{template.name}</h1></div>
+          <div><p className="eyebrow">{templateDirectionLabel[template.flow_direction]} · {one(template.type)?.name_ru ?? "тип не указан"}</p><h1>{template.name}</h1></div>
           <div className="topbar-actions">
             <span className={`doc-badge template-status-${template.status}`}>{templateStatusLabel[template.status] ?? template.status}</span>
             {!archived && <span className={`doc-badge ${template.is_active ? "doc-optional" : "doc-archive-badge"}`}>{template.is_active ? "Включён" : "Отключён"}</span>}
@@ -99,7 +100,7 @@ export default async function TemplatePage({
         )}
 
         <section className="shipment-summary-grid">
-          <article className="summary-card"><p>Язык</p><strong>{templateLanguageLabel[template.language] ?? template.language}</strong><small>{counterparty ? `для ${counterparty.short_name || counterparty.legal_name}` : "общий шаблон"}</small></article>
+          <article className="summary-card"><p>Направление</p><strong>{templateDirectionLabel[template.flow_direction]}</strong><small>{counterparty ? `для ${counterparty.short_name || counterparty.legal_name}` : "общий шаблон"}</small></article>
           <article className="summary-card"><p>Текущая версия</p><strong>{template.current_version}</strong><small>всего версий: {versions?.length ?? 0}</small></article>
           <article className="summary-card"><p>Утверждён</p><strong>{template.status === "approved" ? one(template.approver)?.full_name ?? "—" : "—"}</strong><small>{template.status === "approved" ? formatDateTime(template.approved_at) : "требуется утверждение"}</small></article>
           <article className="summary-card"><p>Создал</p><strong>{one(template.creator)?.full_name ?? "—"}</strong><small>{formatDateTime(template.created_at)}</small></article>
@@ -180,6 +181,8 @@ export default async function TemplatePage({
               <label>Тип документа<select name="document_type_id" required defaultValue={template.document_type_id}>
                 {(types ?? []).filter((type) => type.is_active || type.id === template.document_type_id).map((type) => <option value={type.id} key={type.id}>{type.name_ru}</option>)}
               </select></label>
+              <input type="hidden" name="flow_direction" value={template.flow_direction} />
+              <label>Направление<input value={templateDirectionLabel[template.flow_direction]} readOnly /></label>
               <label className="doc-form-wide">Название<input name="name" required maxLength={200} defaultValue={template.name} /></label>
               <label>Язык<select name="language" defaultValue={template.language}>
                 {TEMPLATE_LANGUAGES.map((code) => <option value={code} key={code}>{templateLanguageLabel[code]}</option>)}
@@ -187,14 +190,14 @@ export default async function TemplatePage({
               <label className="doc-form-wide">Назначение<input name="purpose" maxLength={1000} defaultValue={template.purpose ?? ""} /></label>
               <label className="doc-form-wide">Контрагент<select name="counterparty_id" defaultValue={template.counterparty_id ?? ""}>
                 <option value="">Общий шаблон</option>
-                {(counterparties ?? []).map((party) => <option value={party.id} key={party.id}>{party.short_name || party.legal_name}</option>)}
+                {(counterparties ?? []).filter((party) => template.flow_direction === "input" ? party.roles.some((role: string) => role === "manufacturer" || role === "supplier") : party.roles.includes("customer")).map((party) => <option value={party.id} key={party.id}>{party.short_name || party.legal_name}</option>)}
               </select></label>
               <label className="doc-form-full">Поля для подстановки — по одному в строке, «ключ — описание»
                 <textarea name="variables" rows={3} defaultValue={variablesToText(variables)} />
               </label>
               <button className="primary" type="submit">Сохранить</button>
               {template.status === "approved" && (
-                <p className="form-help doc-form-full">Изменение типа, языка или полей вернёт шаблон в черновик — потребуется повторное утверждение. Название, назначение и контрагент меняются без этого.</p>
+                <p className="form-help doc-form-full">Изменение типа, направления, языка, контрагента или полей вернёт шаблон в черновик — потребуется повторное утверждение.</p>
               )}
             </form>
           </section>

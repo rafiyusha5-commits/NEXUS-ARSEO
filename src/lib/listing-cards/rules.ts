@@ -14,12 +14,12 @@ export const CARD_STATUSES = [
 export type CardStatus = (typeof CARD_STATUSES)[number];
 export const CARD_UOMS = ["piece", "box", "layer", "pallet"] as const;
 
-export const cardTypeLabel: Record<string, string> = { input: "Ввод товара", output: "Вывод товара" };
+export const cardTypeLabel: Record<string, string> = { input: "Ввод от поставщика", output: "Вывод для покупателя" };
 export const cardStatusLabel: Record<string, string> = {
   draft: "Черновик",
-  submitted: "Отправлена клиенту",
-  approved_by_customer: "Утверждена клиентом",
-  rejected_by_customer: "Отклонена клиентом",
+  submitted: "Отправлена контрагенту",
+  approved_by_customer: "Утверждена контрагентом",
+  rejected_by_customer: "Отклонена контрагентом",
   cancelled: "Отменена",
   superseded: "Заменена новой версией",
 };
@@ -80,7 +80,7 @@ export type CardItemInput = {
   product_id: string;
   required_quantity: number;
   uom: string;
-  customer_sku: string | null;
+  counterparty_sku: string | null;
   price: number | null;
   currency_id: string | null;
   comment: string | null;
@@ -107,8 +107,8 @@ export function validateCardItem(item: CardItemInput, existingProductIds: Iterab
     return "Количество: не больше 3 знаков после запятой";
   }
   if (!(CARD_UOMS as readonly string[]).includes(item.uom)) return "Выберите единицу измерения";
-  if (item.customer_sku !== null && (item.customer_sku.trim().length === 0 || item.customer_sku.length > 100)) {
-    return "Артикул клиента — от 1 до 100 символов";
+  if (item.counterparty_sku !== null && (item.counterparty_sku.trim().length === 0 || item.counterparty_sku.length > 100)) {
+    return "Артикул контрагента — от 1 до 100 символов";
   }
   if (item.price !== null) {
     if (!Number.isFinite(item.price) || item.price < 0) return "Цена не может быть отрицательной";
@@ -121,7 +121,7 @@ export function validateCardItem(item: CardItemInput, existingProductIds: Iterab
 
 export type CardHeaderInput = {
   card_type: string;
-  customer_id: string;
+  counterparty_id: string;
   template_id: string | null;
   title: string | null;
   effective_date: string | null;
@@ -130,7 +130,7 @@ export type CardHeaderInput = {
 
 export function validateCardHeader(header: CardHeaderInput): string | null {
   if (!(CARD_TYPES as readonly string[]).includes(header.card_type)) return "Выберите тип карты: ввод или вывод";
-  if (!UUID.test(header.customer_id)) return "Выберите клиента";
+  if (!UUID.test(header.counterparty_id)) return header.card_type === "input" ? "Выберите поставщика" : "Выберите покупателя";
   if (header.template_id && !UUID.test(header.template_id)) return "Некорректный шаблон";
   if (header.title && header.title.length > 200) return "Название не должно быть длиннее 200 символов";
   if (header.effective_date && !/^\d{4}-\d{2}-\d{2}$/.test(header.effective_date)) return "Некорректная дата вступления в силу";

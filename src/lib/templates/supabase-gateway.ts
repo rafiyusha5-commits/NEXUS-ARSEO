@@ -69,6 +69,7 @@ export function createTemplateGateway(supabase: SupabaseClient, userId: string):
         p_document_type_id: input.document_type_id,
         p_name: input.name,
         p_language: input.language,
+        p_flow_direction: input.flow_direction,
         p_storage_path: input.storage_path,
         p_original_filename: input.original_filename,
         p_purpose: input.purpose,

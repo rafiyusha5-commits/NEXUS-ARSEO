@@ -22,7 +22,7 @@ const item = (overrides = {}) => ({
   product_id: PRODUCT,
   required_quantity: 12,
   uom: "box",
-  customer_sku: null,
+  counterparty_sku: null,
   price: null,
   currency_id: null,
   comment: null,
@@ -101,7 +101,7 @@ describe("editing and versions", () => {
 
 describe("card items", () => {
   it("accepts a complete item", () => {
-    assert.equal(validateCardItem(item({ customer_sku: "SKU-1", price: 1500.5, currency_id: CURRENCY })), null);
+    assert.equal(validateCardItem(item({ counterparty_sku: "SKU-1", price: 1500.5, currency_id: CURRENCY })), null);
   });
 
   it("requires a positive quantity with at most three decimals", () => {
@@ -125,19 +125,19 @@ describe("card items", () => {
     assert.notEqual(validateCardItem(item({ product_id: "not-a-uuid" })), null);
   });
 
-  it("limits the customer article and comment", () => {
-    assert.notEqual(validateCardItem(item({ customer_sku: "   " })), null);
-    assert.notEqual(validateCardItem(item({ customer_sku: "x".repeat(101) })), null);
+  it("limits the counterparty article and comment", () => {
+    assert.notEqual(validateCardItem(item({ counterparty_sku: "   " })), null);
+    assert.notEqual(validateCardItem(item({ counterparty_sku: "x".repeat(101) })), null);
     assert.notEqual(validateCardItem(item({ comment: "x".repeat(1001) })), null);
   });
 });
 
 describe("card header and number input", () => {
-  it("requires a card type and a customer", () => {
-    const header = { card_type: "input", customer_id: CUSTOMER, template_id: null, title: null, effective_date: "2026-10-15", notes: null };
+  it("requires a card type and a matching counterparty", () => {
+    const header = { card_type: "input", counterparty_id: CUSTOMER, template_id: null, title: null, effective_date: "2026-10-15", notes: null };
     assert.equal(validateCardHeader(header), null);
     assert.notEqual(validateCardHeader({ ...header, card_type: "transfer" }), null);
-    assert.notEqual(validateCardHeader({ ...header, customer_id: "" }), null);
+    assert.notEqual(validateCardHeader({ ...header, counterparty_id: "" }), null);
     assert.notEqual(validateCardHeader({ ...header, effective_date: "15.10.2026" }), null);
   });
 

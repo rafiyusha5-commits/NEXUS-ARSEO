@@ -4,6 +4,7 @@ import { normalizeFileName } from "../documents/files.ts";
 
 export const TEMPLATE_LANGUAGES = ["ru", "kk", "en"] as const;
 export const TEMPLATE_STATUSES = ["draft", "approved", "archived"] as const;
+export const TEMPLATE_DIRECTIONS = ["input", "output"] as const;
 export type TemplateStatus = (typeof TEMPLATE_STATUSES)[number];
 
 export const templateStatusLabel: Record<string, string> = {
@@ -18,11 +19,17 @@ export const templateLanguageLabel: Record<string, string> = {
   en: "Английский",
 };
 
+export const templateDirectionLabel: Record<string, string> = {
+  input: "Ввод от поставщика",
+  output: "Вывод для покупателя",
+};
+
 export type TemplateVariable = { key: string; label: string };
 export type TemplateMetadata = {
   document_type_id: string;
   name: string;
   language: string;
+  flow_direction: string;
   purpose: string | null;
   counterparty_id: string | null;
   variables: TemplateVariable[];
@@ -84,6 +91,7 @@ export function validateTemplateMetadata(metadata: TemplateMetadata): string | n
   if (!name) return "Укажите название шаблона";
   if (name.length > 200) return "Название не должно быть длиннее 200 символов";
   if (!(TEMPLATE_LANGUAGES as readonly string[]).includes(metadata.language)) return "Выберите язык шаблона";
+  if (!(TEMPLATE_DIRECTIONS as readonly string[]).includes(metadata.flow_direction)) return "Выберите направление шаблона";
   if (metadata.purpose && metadata.purpose.length > 1000) return "Назначение не должно быть длиннее 1000 символов";
   if (metadata.counterparty_id && !UUID.test(metadata.counterparty_id)) return "Некорректный контрагент";
   if (metadata.variables.length > MAX_TEMPLATE_VARIABLES) return `Не более ${MAX_TEMPLATE_VARIABLES} полей`;
@@ -94,13 +102,15 @@ export function validateTemplateMetadata(metadata: TemplateMetadata): string | n
 // approval. Used to warn the user before saving.
 export function editResetsApproval(
   status: string,
-  before: { document_type_id: string; language: string; variables: TemplateVariable[] },
-  after: { document_type_id: string; language: string; variables: TemplateVariable[] },
+  before: { document_type_id: string; language: string; flow_direction: string; counterparty_id: string | null; variables: TemplateVariable[] },
+  after: { document_type_id: string; language: string; flow_direction: string; counterparty_id: string | null; variables: TemplateVariable[] },
 ) {
   if (status !== "approved") return false;
   return (
     before.document_type_id !== after.document_type_id ||
     before.language !== after.language ||
+    before.flow_direction !== after.flow_direction ||
+    before.counterparty_id !== after.counterparty_id ||
     JSON.stringify(before.variables) !== JSON.stringify(after.variables)
   );
 }

@@ -19,7 +19,7 @@ function withMessage(path: string, kind: "error" | "success", message: string) {
 function readHeader(formData: FormData): CardHeaderInput {
   return {
     card_type: text(formData, "card_type"),
-    customer_id: text(formData, "customer_id"),
+    counterparty_id: text(formData, "counterparty_id"),
     template_id: text(formData, "template_id") || null,
     title: text(formData, "title") || null,
     effective_date: text(formData, "effective_date") || null,
@@ -71,7 +71,7 @@ export async function addCardItemAction(formData: FormData) {
     product_id: text(formData, "product_id"),
     required_quantity: parseDecimal(text(formData, "required_quantity")) ?? Number.NaN,
     uom: text(formData, "uom") || "piece",
-    customer_sku: text(formData, "customer_sku") || null,
+    counterparty_sku: text(formData, "counterparty_sku") || null,
     price: parseDecimal(text(formData, "price")),
     currency_id: text(formData, "currency_id") || null,
     comment: text(formData, "comment") || null,
@@ -110,19 +110,19 @@ async function callCardRpc(formData: FormData, rpc: string, args: Record<string,
 }
 
 export async function submitCardAction(formData: FormData) {
-  await callCardRpc(formData, "submit_listing_card", {}, "Карта отправлена клиенту и больше не редактируется");
+  await callCardRpc(formData, "submit_listing_card", {}, "Карта отправлена контрагенту и больше не редактируется");
 }
 
 export async function decideCardAction(formData: FormData) {
   const decision = text(formData, "decision");
   if (decision !== "approved" && decision !== "rejected") {
-    redirect(withMessage(cardPath(formData).back, "error", "Выберите решение клиента"));
+    redirect(withMessage(cardPath(formData).back, "error", "Выберите решение контрагента"));
   }
   await callCardRpc(
     formData,
     "record_listing_card_decision",
     { p_decision: decision, p_comment: text(formData, "comment") || null },
-    decision === "approved" ? "Решение клиента зафиксировано: карта утверждена" : "Решение клиента зафиксировано: карта отклонена",
+    decision === "approved" ? "Решение контрагента зафиксировано: карта утверждена" : "Решение контрагента зафиксировано: карта отклонена",
   );
 }
 
