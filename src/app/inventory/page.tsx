@@ -1,6 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
-import { issueFifo, receiveBatch } from "./actions";
+import { issueFifo, receiveBatch, setBatchStatus } from "./actions";
 
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 const shelfStates:Record<string,string>={normal:"Норма",warning:"Менее 90 дней",critical:"Менее 30 дней",expired:"Просрочено",quarantine:"Карантин",blocked:"Заблокировано"};
@@ -46,10 +46,16 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
         <label>Количество<input name="quantity" type="number" min="0.001" step="0.001" required/></label><label>Основание<input name="reason" required placeholder="Продажа клиенту"/></label><label>Документ/заказ<input name="reference" placeholder="№ накладной или заказа"/></label>
         <button className="primary" type="submit" disabled={Boolean(error)}>Списать по FIFO</button>
       </form><p className="form-help">Система сама распределит количество по непросроченным партиям, начиная с ближайшего срока годности. При нехватке остатка операция отменится целиком.</p></section>
+      <section className="panel admin-section"><p className="eyebrow">Контроль качества</p><h2>Изменить состояние партии</h2><form action={setBatchStatus} className="inventory-form issue-form">
+        <label>Партия<select name="batch_id" required defaultValue=""><option value="" disabled>Выберите партию</option>{stock?.map(row=><option value={row.batch_id} key={row.balance_id}>{row.internal_sku} · {row.batch_number} · {row.warehouse_code}</option>)}</select></label>
+        <label>Новое состояние<select name="status" required defaultValue="blocked"><option value="blocked">Заблокировано</option><option value="quarantine">Карантин</option><option value="available">Доступно к отбору</option></select></label>
+        <label>Причина<input name="reason" placeholder="Обязательна для блокировки и карантина"/></label>
+        <button className="primary" type="submit" disabled={Boolean(error)||!stock?.length}>Сохранить состояние</button>
+      </form><p className="form-help">Заблокированные и карантинные партии автоматически исключаются из FIFO. Разблокировка выполняется только вручную.</p></section>
     </section>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Контроль ОСГ</p><h2>Остатки по партиям</h2></div><span className="page-count">{stock?.length??0} строк</span></div>
       <div className="inventory-table-wrap"><table className="inventory-table"><thead><tr><th>FIFO</th><th>Товар</th><th>Партия</th><th>Склад / зона</th><th>Остаток</th><th>Срок годности</th><th>ОСГ</th><th>Состояние</th></tr></thead><tbody>
-        {stock?.map(row=><tr key={row.balance_id} className={`shelf-${row.shelf_life_state}`}><td><span className="fifo-rank">{row.fifo_rank}</span></td><td><strong>{row.internal_sku}</strong><small>{name(row.product_name)}</small></td><td><strong>{row.batch_number}</strong><small>Получено {formatDate(row.received_at)}</small></td><td><strong>{row.warehouse_code}</strong><small>{row.location_code||"Без зоны"}</small></td><td><strong>{Number(row.quantity_available).toLocaleString("ru-RU")} {units[row.uom]??row.uom}</strong><small>Всего: {Number(row.quantity_on_hand).toLocaleString("ru-RU")}</small></td><td><strong>{formatDate(row.expiry_date)}</strong><small>{row.days_remaining} дней</small></td><td><strong>{row.shelf_life_percent===null?"—":`${row.shelf_life_percent}%`}</strong></td><td><span className="status">{shelfStates[row.shelf_life_state]??row.shelf_life_state}</span></td></tr>)}
+        {stock?.map(row=><tr key={row.balance_id} className={`shelf-${row.shelf_life_state}`}><td><span className="fifo-rank">{row.fifo_rank}</span></td><td><strong>{row.internal_sku}</strong><small>{name(row.product_name)}</small></td><td><strong>{row.batch_number}</strong><small>Получено {formatDate(row.received_at)}</small></td><td><strong>{row.warehouse_code}</strong><small>{row.location_code||"Без зоны"}</small></td><td><strong>{Number(row.quantity_available).toLocaleString("ru-RU")} {units[row.uom]??row.uom}</strong><small>Всего: {Number(row.quantity_on_hand).toLocaleString("ru-RU")}</small></td><td><strong>{formatDate(row.expiry_date)}</strong><small>{row.days_remaining} дней</small></td><td><strong>{row.shelf_life_percent===null?"—":`${row.shelf_life_percent}%`}</strong></td><td><span className="status">{shelfStates[row.shelf_life_state]??row.shelf_life_state}</span>{row.status_reason&&<small>{row.status_reason}</small>}</td></tr>)}
         {!stock?.length&&!error&&<tr><td colSpan={8}><div className="empty-state">Остатков пока нет. Зарегистрируйте первую принятую партию.</div></td></tr>}
       </tbody></table></div>
     </section>

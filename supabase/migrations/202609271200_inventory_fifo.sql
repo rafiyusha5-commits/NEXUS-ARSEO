@@ -9,6 +9,9 @@ create table if not exists public.inventory_batches (
   expiry_date date not null,
   received_at timestamptz not null default now(),
   status text not null default 'available' check (status in ('available','quarantine','blocked','depleted')),
+  status_reason text,
+  status_changed_by uuid references public.profiles(id) on delete restrict,
+  status_changed_at timestamptz,
   notes text,
   created_by uuid not null default auth.uid() references public.profiles(id) on delete restrict,
   created_at timestamptz not null default now(),
@@ -62,6 +65,8 @@ select
   batch.expiry_date,
   batch.received_at,
   batch.status as batch_status,
+  batch.status_reason,
+  batch.status_changed_at,
   product.id as product_id,
   product.internal_sku,
   product.name as product_name,
@@ -107,6 +112,7 @@ insert into public.permissions(code,module,action,name,description) values
   ('inventory.view','inventory','view','Остатки: просмотр','Просмотр партий, сроков годности и складских остатков'),
   ('inventory.receive','inventory','receive','Остатки: приёмка','Регистрация партий при приёмке товара'),
   ('inventory.move','inventory','move','Остатки: движение','Списание и перемещение товара по FIFO'),
+  ('inventory.control','inventory','control','Остатки: контроль партий','Ручная блокировка, карантин и разблокировка партий'),
   ('inventory.write_off','inventory','write_off','Остатки: списание','Списание брака и просроченного товара')
 on conflict (code) do update set name=excluded.name,description=excluded.description;
 
@@ -115,7 +121,7 @@ select role.id,permission.id,true
 from public.app_roles role cross join public.permissions permission
 where permission.module='inventory' and (
   role.code in ('administrator','director','executive_director','logistics_director','senior_logistics_manager')
-  or (role.code='logistics_specialist' and permission.action in ('view','receive','move'))
+  or (role.code='logistics_specialist' and permission.action in ('view','receive','move','control'))
   or (role.code in ('commercial_director','accountant') and permission.action='view')
 )
 on conflict (role_id,permission_id) do update set granted=excluded.granted;
@@ -243,10 +249,50 @@ begin
   return v_allocations;
 end $$;
 
+create or replace function public.set_inventory_batch_status(
+  p_batch_id uuid,
+  p_status text,
+  p_reason text default null
+) returns void
+language plpgsql security definer set search_path='' as $$
+declare
+  v_has_stock boolean;
+begin
+  if not (select private.has_permission('inventory.control')) then
+    raise exception 'Недостаточно прав для управления состоянием партии';
+  end if;
+  if p_status not in ('available','quarantine','blocked') then
+    raise exception 'Некорректное состояние партии';
+  end if;
+  if p_status in ('quarantine','blocked') and nullif(trim(p_reason),'') is null then
+    raise exception 'Укажите причину блокировки или карантина';
+  end if;
+
+  perform 1 from public.inventory_batches where id=p_batch_id for update;
+  if not found then raise exception 'Партия не найдена'; end if;
+  select exists(
+    select 1 from public.inventory_balances
+    where batch_id=p_batch_id and quantity_on_hand>0
+  ) into v_has_stock;
+  if p_status='available' and not v_has_stock then
+    raise exception 'Нельзя разблокировать партию без остатка';
+  end if;
+
+  update public.inventory_batches set
+    status=p_status,
+    status_reason=case when p_status='available' then null else trim(p_reason) end,
+    status_changed_by=auth.uid(),
+    status_changed_at=now(),
+    updated_at=now()
+  where id=p_batch_id;
+end $$;
+
 revoke all on function public.receive_inventory_batch(uuid,uuid,uuid,text,date,date,numeric,text) from public;
 revoke all on function public.issue_inventory_fifo(uuid,uuid,text,numeric,text,text) from public;
+revoke all on function public.set_inventory_batch_status(uuid,text,text) from public;
 grant execute on function public.receive_inventory_batch(uuid,uuid,uuid,text,date,date,numeric,text) to authenticated;
 grant execute on function public.issue_inventory_fifo(uuid,uuid,text,numeric,text,text) to authenticated;
+grant execute on function public.set_inventory_batch_status(uuid,text,text) to authenticated;
 
 do $$ declare t text; begin
   foreach t in array array['inventory_batches','inventory_balances','inventory_movements'] loop
@@ -259,3 +305,4 @@ comment on table public.inventory_batches is 'Traceable product batches with man
 comment on table public.inventory_balances is 'Current warehouse quantity by batch and location; writes only through controlled RPC functions';
 comment on table public.inventory_movements is 'Append-only stock movement ledger';
 comment on function public.issue_inventory_fifo(uuid,uuid,text,numeric,text,text) is 'Atomically issues stock from the earliest non-expired batches first';
+comment on function public.set_inventory_batch_status(uuid,text,text) is 'Manually blocks, quarantines or releases a batch with an auditable reason';

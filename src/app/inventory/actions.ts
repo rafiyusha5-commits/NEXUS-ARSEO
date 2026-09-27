@@ -45,3 +45,18 @@ export async function issueFifo(data:FormData){
   revalidatePath("/inventory");
   redirect(`/inventory?success=${encodeURIComponent(`Списание выполнено по FIFO, использовано партий: ${count}`)}`);
 }
+
+export async function setBatchStatus(data:FormData){
+  const {supabase}=await requireUser();
+  const status=text(data,"status");
+  if(!["available","quarantine","blocked"].includes(status))redirect(`/inventory?error=${encodeURIComponent("Выберите корректное состояние партии")}`);
+  const {error}=await supabase.rpc("set_inventory_batch_status",{
+    p_batch_id:uuid(data,"batch_id"),
+    p_status:status,
+    p_reason:text(data,"reason")||null,
+  });
+  if(error)redirect(`/inventory?error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/inventory");
+  const label=status==="available"?"разблокирована":status==="quarantine"?"отправлена в карантин":"заблокирована";
+  redirect(`/inventory?success=${encodeURIComponent(`Партия ${label}`)}`);
+}
