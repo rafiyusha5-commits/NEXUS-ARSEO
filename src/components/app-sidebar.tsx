@@ -9,6 +9,8 @@ const navigation = [
   { label: "Контрагенты", href: "/counterparties", key: "counterparties" },
   { label: "Товары", href: "/products", key: "products" },
   { label: "Склады", href: "/warehouses", key: "warehouses" },
+  { label: "Остатки FIFO", href: "/inventory", key: "inventory" },
+  { label: "Движения", href: "/inventory/movements", key: "inventory-movements" },
   { label: "Маршруты", href: "/routes", key: "routes" },
   { label: "Документы", href: "/documents", key: "documents" },
   { label: "Пользователи", href: "/admin/users", key: "users", managerOnly: true },
