@@ -11,5 +11,6 @@ Migration order:
 
 1. `202609260001_identity_and_access.sql` — Supabase Auth profiles, roles and base RLS.
 2. `202609270001_phase0_access_control.sql` — detailed permissions, personal overrides, access audit and admin safeguards.
+3. `202609270002_phase1_reference_data.sql` — counterparties, products, warehouses, routes, currencies and Phase 1 RLS.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
