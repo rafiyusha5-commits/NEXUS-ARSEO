@@ -45,7 +45,9 @@ grant execute on all functions in schema tests to authenticated;
 --   04 specialist "Spec2" (personal deny of shipments.approve) — a named approver;
 --   05 self-registered account without any role;
 --   06 specialist "Viewer" (personal deny of shipments.view);
---   07 specialist "Importer" (personal deny of products.view).
+--   07 specialist "Importer" (personal deny of products.view);
+--   09 specialist "Blind": the role grants shipments.update and shipments.change_status (and
+--      inventory.receive), only shipments.view is denied personally.
 insert into auth.users (id, email, raw_user_meta_data) values
   ('9a000000-0000-4000-8000-000000000001', 'sec-admin@test.local', '{"full_name":"Администратор"}'),
   ('9a000000-0000-4000-8000-000000000002', 'sec-director@test.local', '{"full_name":"Директор"}'),
@@ -53,7 +55,8 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('9a000000-0000-4000-8000-000000000004', 'sec-spec2@test.local', '{"full_name":"Специалист 2"}'),
   ('9a000000-0000-4000-8000-000000000005', 'sec-signup@test.local', '{"full_name":"Самозапись"}'),
   ('9a000000-0000-4000-8000-000000000006', 'sec-viewer@test.local', '{"full_name":"Без поставок"}'),
-  ('9a000000-0000-4000-8000-000000000007', 'sec-importer@test.local', '{"full_name":"Импортёр"}');
+  ('9a000000-0000-4000-8000-000000000007', 'sec-importer@test.local', '{"full_name":"Импортёр"}'),
+  ('9a000000-0000-4000-8000-000000000009', 'sec-blind@test.local', '{"full_name":"Без просмотра поставок"}');
 
 insert into public.user_roles (user_id, role_id)
 select u.id::uuid, r.id
@@ -63,7 +66,8 @@ from (values
   ('9a000000-0000-4000-8000-000000000003', 'logistics_specialist'),
   ('9a000000-0000-4000-8000-000000000004', 'logistics_specialist'),
   ('9a000000-0000-4000-8000-000000000006', 'logistics_specialist'),
-  ('9a000000-0000-4000-8000-000000000007', 'logistics_specialist')
+  ('9a000000-0000-4000-8000-000000000007', 'logistics_specialist'),
+  ('9a000000-0000-4000-8000-000000000009', 'logistics_specialist')
 ) as u(id, role_code)
 join public.app_roles r on r.code = u.role_code;
 
@@ -74,7 +78,8 @@ from (values
   ('9a000000-0000-4000-8000-000000000003', 'documents.view'),
   ('9a000000-0000-4000-8000-000000000004', 'shipments.approve'),
   ('9a000000-0000-4000-8000-000000000006', 'shipments.view'),
-  ('9a000000-0000-4000-8000-000000000007', 'products.view')
+  ('9a000000-0000-4000-8000-000000000007', 'products.view'),
+  ('9a000000-0000-4000-8000-000000000009', 'shipments.view')
 ) as u(id, code)
 join public.permissions p on p.code = u.code;
 

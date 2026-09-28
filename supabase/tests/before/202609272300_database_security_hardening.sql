@@ -15,6 +15,10 @@ begin
   assert has_function_privilege('anon', 'public.create_shipment_with_stages(text,text,uuid,uuid,uuid,uuid,uuid,uuid,date,date)', 'execute'), 'S1: anon executes create_shipment_with_stages';
   assert has_table_privilege('anon', 'public.shipments', 'select'), 'S1: anon holds table privileges';
   assert has_table_privilege('authenticated', 'public.shipments', 'truncate'), 'S1: authenticated may TRUNCATE';
+  assert has_function_privilege('authenticated', 'private.protect_last_administrator_role()', 'execute'),
+    'S1: authenticated executes a trigger function (through PUBLIC)';
+  assert has_function_privilege('authenticated', 'private.has_role(text)', 'execute'),
+    'S1: authenticated executes an internal helper outside any allowlist';
 end;
 $$;
 
@@ -90,6 +94,17 @@ begin
 end;
 $$;
 
+-- S5f. A decision is rewritten afterwards, a pending request gets a comment without a decision ------
+select tests.act_as('9a000000-0000-4000-8000-000000000002'); -- director, shipments.approve
+do $$
+begin
+  assert tests.affected($q$update public.approvals set comment = 'Переписано задним числом', decided_at = timestamptz '2000-01-01'
+    where id = '9b000000-0000-4000-8000-000000000072'$q$) = 1, 'S5f: decided approval rewritten (comment and time)';
+  assert tests.affected($q$update public.approvals set comment = 'Без решения'
+    where id = '9b000000-0000-4000-8000-000000000074'$q$) = 1, 'S5f: pending request commented without a decision';
+end;
+$$;
+
 -- S5a. A requester inserts an already approved decision in the director's name ----------------------
 select tests.act_as('9a000000-0000-4000-8000-000000000003');
 do $$
@@ -152,6 +167,36 @@ $$;
 -- S10. set_task_status reveals the status of a task the caller can not see ----------------------
 select tests.act_as('9a000000-0000-4000-8000-000000000004');
 select tests.expect_error($$ select public.set_task_status('9b000000-0000-4000-8000-000000000061', 'open') $$, '«done»');
+
+-- S12. A personal deny of shipments.view does not stop the shipment RPCs --------------------------
+-- Blind: the role grants shipments.update / change_status / inventory.receive, shipments.view is
+-- denied. The shipment is invisible, but with its UUID every write RPC works.
+select tests.act_as('9a000000-0000-4000-8000-000000000009');
+do $$
+declare
+  v_id uuid;
+begin
+  assert not exists (select 1 from public.shipments where id = '9b000000-0000-4000-8000-000000000021'), 'S12: Blind can not read the shipment';
+  perform public.update_shipment_item('9b000000-0000-4000-8000-000000000051', 80, 0.01);
+  perform public.change_shipment_transport_status('9b000000-0000-4000-8000-000000000041', 'loading');
+  v_id := public.receive_inventory_batch('9b000000-0000-4000-8000-000000000051',
+    (select id from public.warehouses where code = 'AKT'), null, 'BLIND-1', null, current_date + 100, 1, null);
+  assert v_id is not null, 'S12: goods received against an invisible shipment item';
+  -- create_shipment_with_stages was a caller-rights function before the fix: its INSERT ...
+  -- RETURNING needed the SELECT policy, so creation was already refused. Checked after the fix.
+  perform public.change_shipment_operational_state('9b000000-0000-4000-8000-000000000021', 'hold', 'Blind');
+end;
+$$;
+reset role;
+do $$
+begin
+  assert (select unit_price = 0.01 and ordered_quantity = 80 from public.shipment_items where id = '9b000000-0000-4000-8000-000000000051'),
+    'S12: quantity and price of an invisible item changed';
+  assert (select status = 'on_hold' from public.shipments where id = '9b000000-0000-4000-8000-000000000021'),
+    'S12: invisible shipment put on hold';
+end;
+$$;
+set role authenticated;
 
 -- S7a–b. Shipment status changed directly: reopen a closed one, cancel without a reason ------------
 select tests.act_as('9a000000-0000-4000-8000-000000000003');

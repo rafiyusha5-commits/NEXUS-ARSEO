@@ -283,7 +283,7 @@ values ('shipment', '73000000-0000-4000-8000-000000000001', '71000000-0000-4000-
 insert into public.approvals (entity_type, entity_id, approver_role, requested_by)
 values ('shipment', '73000000-0000-4000-8000-000000000001', 'senior_logistics_manager', '71000000-0000-4000-8000-000000000003');
 select tests.act_as('71000000-0000-4000-8000-000000000001');
-update public.approvals set status = 'approved', decided_at = now(), comment = 'Согласовано'
+update public.approvals set status = 'approved', comment = 'Согласовано' -- decided_at is set by the trigger
 where approver_user_id = '71000000-0000-4000-8000-000000000001' and status = 'pending';
 reset role;
 -- Document approvals name a permission instead of a user (as submit_document_for_review does).

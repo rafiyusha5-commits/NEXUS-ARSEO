@@ -16,31 +16,8 @@ revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
 revoke truncate, trigger, references on all tables in schema public from authenticated;
 
--- Functions of the project (not of extensions): drop PUBLIC and anon, keep the existing
--- authenticated and service_role access. Trigger functions need no EXECUTE for firing.
-do $$
-declare
-  v_fn record;
-begin
-  for v_fn in
-    select p.oid, p.oid::regprocedure as signature, p.prorettype = 'trigger'::regtype as is_trigger,
-           has_function_privilege('authenticated', p.oid, 'execute') as for_authenticated,
-           has_function_privilege('service_role', p.oid, 'execute') as for_service
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'private')
-      and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')
-  loop
-    execute format('revoke execute on function %s from public, anon', v_fn.signature);
-    if v_fn.for_authenticated and not v_fn.is_trigger then
-      execute format('grant execute on function %s to authenticated', v_fn.signature);
-    end if;
-    if v_fn.for_service and not v_fn.is_trigger then
-      execute format('grant execute on function %s to service_role', v_fn.signature);
-    end if;
-  end loop;
-end;
-$$;
+-- EXECUTE on functions is managed by an explicit allowlist in the last section of this
+-- migration (it also covers the functions created below).
 
 -- Objects created by later migrations (run as postgres) start without anon access.
 alter default privileges in schema public revoke all on tables from anon;
@@ -114,8 +91,6 @@ as $$
       and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())
   );
 $$;
-revoke execute on function private.has_active_deny(text) from public, anon;
-grant execute on function private.has_active_deny(text) to authenticated;
 
 -- S3. Audit log: no forged entries, no snapshots for non-auditors, deny wins ----------------
 -- Any user could insert arbitrary audit events, read before/after snapshots of rows they
@@ -221,14 +196,16 @@ with check (
   )
 );
 
--- Decisions change status and comment only; the rest is fixed at request time
--- (decided_at is accepted but always set by the trigger below).
+-- A client may only send the decision (status) and its comment; the decision time and the
+-- actual approver are set by the trigger below, everything else is fixed at request time.
 revoke update on public.approvals from authenticated;
-grant update (status, comment, decided_at) on public.approvals to authenticated;
+grant update (status, comment) on public.approvals to authenticated;
 revoke delete on public.approvals from authenticated;
 
--- A request is decided once: pending -> approved / rejected / cancelled. The deciding
--- employee and the time are recorded by the database.
+-- A request is decided once: pending -> approved / rejected / cancelled. The trigger fires on
+-- every UPDATE (also from SECURITY DEFINER code): request fields never change, a pending request
+-- changes only together with its decision, and a decided request does not change at all. The
+-- decision time and the actual approver come from the database, not from the client.
 create or replace function private.guard_approval_decision()
 returns trigger
 language plpgsql
@@ -236,27 +213,36 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.status is not distinct from old.status then
-    return new;
+  if new.entity_type is distinct from old.entity_type or new.entity_id is distinct from old.entity_id
+     or new.requested_by is distinct from old.requested_by or new.requested_at is distinct from old.requested_at
+     or new.request_comment is distinct from old.request_comment or new.entity_version is distinct from old.entity_version
+     or new.approver_role is distinct from old.approver_role then
+    raise exception 'Параметры запроса на согласование не меняются';
   end if;
   if old.status <> 'pending' then
     raise exception 'Запрос на согласование уже обработан';
+  end if;
+  if new.status = 'pending' then
+    if new.comment is distinct from old.comment or new.decided_at is distinct from old.decided_at
+       or new.approver_user_id is distinct from old.approver_user_id then
+      raise exception 'Комментарий, согласующий и время решения задаются только вместе с решением';
+    end if;
+    return new;
   end if;
   if new.status not in ('approved', 'rejected', 'cancelled') then
     raise exception 'Недопустимое решение по согласованию';
   end if;
   new.decided_at := now();
-  if new.approver_user_id is null then
-    new.approver_user_id := (select auth.uid());
-  end if;
+  -- The employee who actually decides; a cancellation keeps the named approver.
+  new.approver_user_id := case when new.status in ('approved', 'rejected')
+    then coalesce((select auth.uid()), old.approver_user_id) else old.approver_user_id end;
   return new;
 end;
 $$;
-revoke execute on function private.guard_approval_decision() from public, anon;
 
 drop trigger if exists guard_approval_decision on public.approvals;
 create trigger guard_approval_decision
-  before update of status on public.approvals
+  before update on public.approvals
   for each row execute function private.guard_approval_decision();
 
 -- S6. Notifications follow the permission of the object they describe -------------------------
@@ -279,7 +265,6 @@ as $$
     and ((p_shipment_id is null and p_entity_type is distinct from 'shipment' and p_entity_type is distinct from 'shipment_stage_run')
          or private.user_has_permission(p_user, 'shipments.view'));
 $$;
-revoke execute on function private.notification_visible_to(uuid, text, uuid) from public, anon;
 
 drop policy if exists "users view own notifications" on public.notifications;
 create policy "users view own notifications" on public.notifications for select to authenticated
@@ -390,6 +375,19 @@ end;
 $$;
 
 -- S7. Shipments: status, lock and identity change only through the RPCs ---------------------
+-- Every shipment write — direct or through an RPC — needs shipments.view together with the
+-- action, so a personal deny of shipments.view blocks the employee completely, even when the
+-- role grants shipments.update / change_status and the UUID is known.
+create or replace function private.can_write_shipments(p_action text)
+returns boolean
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select private.has_permission('shipments.view') and private.has_permission('shipments.' || p_action);
+$$;
+
 -- shipments.update allowed plain UPDATEs of every column: reopening a closed or cancelled
 -- shipment, cancelling or holding it without a reason, changing number, type, process
 -- template or author. Editable business fields stay writable while the shipment is active.
@@ -406,8 +404,8 @@ revoke delete on public.shipments from authenticated;
 
 drop policy if exists "employees update shipments" on public.shipments;
 create policy "employees update shipments" on public.shipments for update to authenticated
-using ((select private.has_permission('shipments.update')) and not is_locked and status not in ('closed', 'cancelled'))
-with check ((select private.has_permission('shipments.update')) and not is_locked and status not in ('closed', 'cancelled'));
+using ((select private.can_write_shipments('update')) and not is_locked and status not in ('closed', 'cancelled'))
+with check ((select private.can_write_shipments('update')) and not is_locked and status not in ('closed', 'cancelled'));
 
 -- S8. Stage runs, stage history and transports: no direct writes --------------------------------
 -- shipments.change_status allowed setting any stage status directly (no history, no reason,
@@ -433,7 +431,7 @@ create or replace function public.create_shipment_with_stages(
 ) returns uuid language plpgsql security definer set search_path='' as $$
 declare v_template uuid; v_shipment uuid; v_number text; v_year text;
 begin
-  if not (select private.has_permission('shipments.create')) then raise exception 'Недостаточно прав для создания поставки'; end if;
+  if not private.can_write_shipments('create') then raise exception 'Недостаточно прав для создания поставки'; end if;
   if p_type not in ('import','export','domestic_transfer') then raise exception 'Некорректный тип поставки'; end if;
   if not private.is_active_employee(p_responsible_user_id) then raise exception 'Ответственный сотрудник не найден или неактивен'; end if;
   v_year := to_char(current_date,'YYYY');
@@ -455,7 +453,7 @@ create or replace function public.change_shipment_stage_status(p_run_id uuid,p_s
 returns void language plpgsql security definer set search_path='' as $$
 declare v_old text; v_shipment uuid; v_locked boolean;
 begin
-  if not (select private.has_permission('shipments.change_status')) then raise exception 'Недостаточно прав'; end if;
+  if not private.can_write_shipments('change_status') then raise exception 'Недостаточно прав'; end if;
   if p_status not in ('pending','in_progress','blocked','completed','skipped','not_applicable') then raise exception 'Некорректный статус этапа'; end if;
   if p_status in ('blocked','skipped','not_applicable') and nullif(trim(p_reason),'') is null then raise exception 'Укажите причину'; end if;
   select r.status,r.shipment_id,s.is_locked into v_old,v_shipment,v_locked from public.shipment_stage_runs r join public.shipments s on s.id=r.shipment_id where r.id=p_run_id for update of r;
@@ -488,7 +486,7 @@ declare
   v_transport uuid;
   v_first boolean;
 begin
-  if not (select private.has_permission('shipments.update')) then
+  if not private.can_write_shipments('update') then
     raise exception 'Недостаточно прав для добавления перевозки';
   end if;
   select * into v_shipment from public.shipments where id = p_shipment_id for update;
@@ -526,12 +524,283 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_shipment_with_stages(text,text,uuid,uuid,uuid,uuid,uuid,uuid,date,date) from public, anon;
-revoke execute on function public.change_shipment_stage_status(uuid,text,text,text) from public, anon;
-revoke execute on function public.add_shipment_transport(uuid,date,date,text,text) from public, anon;
-grant execute on function public.create_shipment_with_stages(text,text,uuid,uuid,uuid,uuid,uuid,uuid,date,date) to authenticated;
-grant execute on function public.change_shipment_stage_status(uuid,text,text,text) to authenticated;
-grant execute on function public.add_shipment_transport(uuid,date,date,text,text) to authenticated;
+
+-- The operational RPCs of 202609272100 and the receipt of a shipment item (202609271200):
+-- same bodies, the permission check now also requires shipments.view.
+CREATE OR REPLACE FUNCTION public.allocate_shipment_item(p_item_id uuid, p_transport_id uuid, p_quantity numeric)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_shipment_id uuid;
+  v_current_transport_id uuid;
+  v_product_id uuid;
+  v_uom text;
+  v_ordered_quantity numeric;
+  v_unit_price numeric;
+  v_currency_id uuid;
+  v_shipment_locked boolean;
+  v_target_item_id uuid;
+begin
+  if not private.can_write_shipments('update') then
+    raise exception 'Недостаточно прав для распределения товара';
+  end if;
+  if p_quantity is null or p_quantity <= 0 then
+    raise exception 'Количество должно быть больше нуля';
+  end if;
+
+  select
+    item.shipment_id,
+    item.shipment_transport_id,
+    item.product_id,
+    item.uom,
+    item.ordered_quantity,
+    item.unit_price,
+    item.currency_id,
+    shipment.is_locked
+    into
+      v_shipment_id,
+      v_current_transport_id,
+      v_product_id,
+      v_uom,
+      v_ordered_quantity,
+      v_unit_price,
+      v_currency_id,
+      v_shipment_locked
+  from public.shipment_items item
+  join public.shipments shipment on shipment.id = item.shipment_id
+  where item.id = p_item_id
+  for update of item, shipment;
+
+  if not found then raise exception 'Позиция поставки не найдена'; end if;
+  if v_shipment_locked then raise exception 'Закрытая поставка недоступна для изменений'; end if;
+  if p_quantity > v_ordered_quantity then
+    raise exception 'Нельзя распределить больше заказанного количества';
+  end if;
+  if p_transport_id is not null and not exists (
+    select 1 from public.shipment_transports transport
+    where transport.id = p_transport_id
+      and transport.shipment_id = v_shipment_id
+      and transport.status <> 'cancelled'
+  ) then
+    raise exception 'Перевозка не относится к этой поставке или отменена';
+  end if;
+  if v_current_transport_id is not distinct from p_transport_id then
+    raise exception 'Позиция уже распределена в выбранную перевозку';
+  end if;
+
+  select id into v_target_item_id
+  from public.shipment_items
+  where shipment_id = v_shipment_id
+    and product_id = v_product_id
+    and shipment_transport_id is not distinct from p_transport_id
+    and id <> p_item_id
+  for update;
+
+  if p_quantity = v_ordered_quantity then
+    if v_target_item_id is null then
+      update public.shipment_items
+      set shipment_transport_id = p_transport_id, updated_at = now()
+      where id = p_item_id;
+      return p_item_id;
+    end if;
+
+    update public.shipment_items
+    set ordered_quantity = ordered_quantity + p_quantity, updated_at = now()
+    where id = v_target_item_id;
+    delete from public.shipment_items where id = p_item_id;
+    return v_target_item_id;
+  end if;
+
+  update public.shipment_items
+  set ordered_quantity = ordered_quantity - p_quantity, updated_at = now()
+  where id = p_item_id;
+
+  if v_target_item_id is not null then
+    update public.shipment_items
+    set ordered_quantity = ordered_quantity + p_quantity, updated_at = now()
+    where id = v_target_item_id;
+    return v_target_item_id;
+  end if;
+
+  insert into public.shipment_items(
+    shipment_id, shipment_transport_id, product_id, uom,
+    ordered_quantity, unit_price, currency_id
+  ) values (
+    v_shipment_id, p_transport_id, v_product_id, v_uom,
+    p_quantity, v_unit_price, v_currency_id
+  ) returning id into v_target_item_id;
+  return v_target_item_id;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.update_shipment_item(p_item_id uuid, p_quantity numeric, p_unit_price numeric DEFAULT NULL::numeric)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare v_locked boolean;
+begin
+  if not private.can_write_shipments('update') then
+    raise exception 'Недостаточно прав для изменения товара';
+  end if;
+  if p_quantity is null or p_quantity <= 0 then raise exception 'Количество должно быть больше нуля'; end if;
+  if p_unit_price is not null and p_unit_price < 0 then raise exception 'Цена не может быть отрицательной'; end if;
+  select shipment.is_locked into v_locked
+  from public.shipment_items item
+  join public.shipments shipment on shipment.id = item.shipment_id
+  where item.id = p_item_id;
+  if not found then raise exception 'Позиция поставки не найдена'; end if;
+  if v_locked then raise exception 'Закрытая поставка недоступна для изменений'; end if;
+  update public.shipment_items
+  set ordered_quantity = p_quantity, unit_price = p_unit_price, updated_at = now()
+  where id = p_item_id;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.delete_shipment_item(p_item_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare v_locked boolean;
+begin
+  if not private.can_write_shipments('update') then
+    raise exception 'Недостаточно прав для удаления товара';
+  end if;
+  select shipment.is_locked into v_locked
+  from public.shipment_items item
+  join public.shipments shipment on shipment.id = item.shipment_id
+  where item.id = p_item_id;
+  if not found then raise exception 'Позиция поставки не найдена'; end if;
+  if v_locked then raise exception 'Закрытая поставка недоступна для изменений'; end if;
+  delete from public.shipment_items where id = p_item_id;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.change_shipment_transport_status(p_transport_id uuid, p_status text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare v_locked boolean;
+begin
+  if not private.can_write_shipments('change_status') then
+    raise exception 'Недостаточно прав для изменения перевозки';
+  end if;
+  if p_status not in ('planned','loading','in_transit','at_customs','arrived','unloaded','cancelled') then
+    raise exception 'Некорректный статус перевозки';
+  end if;
+  select shipment.is_locked into v_locked
+  from public.shipment_transports transport
+  join public.shipments shipment on shipment.id = transport.shipment_id
+  where transport.id = p_transport_id;
+  if not found then raise exception 'Перевозка не найдена'; end if;
+  if v_locked then raise exception 'Закрытая поставка недоступна для изменений'; end if;
+  update public.shipment_transports set
+    status = p_status,
+    actual_loading_date = case when p_status in ('loading','in_transit','at_customs','arrived','unloaded') then coalesce(actual_loading_date,current_date) else actual_loading_date end,
+    actual_arrival_date = case when p_status in ('arrived','unloaded') then coalesce(actual_arrival_date,current_date) else actual_arrival_date end,
+    updated_at = now()
+  where id = p_transport_id;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.change_shipment_operational_state(p_shipment_id uuid, p_action text, p_reason text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_status text;
+  v_locked boolean;
+  v_resume_status text;
+begin
+  if not private.can_write_shipments('change_status') then
+    raise exception 'Недостаточно прав для изменения поставки';
+  end if;
+  select status,is_locked into v_status,v_locked
+  from public.shipments where id = p_shipment_id for update;
+  if not found then raise exception 'Поставка не найдена'; end if;
+  if v_locked or v_status = 'closed' then raise exception 'Закрытая поставка недоступна для изменений'; end if;
+
+  if p_action = 'hold' then
+    if nullif(trim(p_reason),'') is null then raise exception 'Укажите причину приостановки'; end if;
+    if v_status in ('on_hold','cancelled') then raise exception 'Действие недоступно для текущего статуса'; end if;
+    update public.shipments set status='on_hold',hold_reason=trim(p_reason),updated_at=now() where id=p_shipment_id;
+  elsif p_action = 'resume' then
+    if v_status <> 'on_hold' then raise exception 'Возобновить можно только приостановленную поставку'; end if;
+    select stage.status_category into v_resume_status
+    from public.shipment_stage_runs run
+    join public.shipment_stages stage on stage.id=run.stage_id
+    where run.shipment_id=p_shipment_id and run.is_required
+      and run.status not in ('completed','skipped','not_applicable')
+    order by stage.sequence_order limit 1;
+    update public.shipments set status=coalesce(v_resume_status,'closed'),hold_reason=null,updated_at=now() where id=p_shipment_id;
+  elsif p_action = 'cancel' then
+    if nullif(trim(p_reason),'') is null then raise exception 'Укажите причину отмены'; end if;
+    if v_status = 'cancelled' then raise exception 'Поставка уже отменена'; end if;
+    update public.shipments set status='cancelled',cancel_reason=trim(p_reason),updated_at=now() where id=p_shipment_id;
+  else
+    raise exception 'Некорректное действие с поставкой';
+  end if;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.receive_inventory_batch(p_shipment_item_id uuid, p_warehouse_id uuid, p_location_id uuid, p_batch_number text, p_manufacture_date date, p_expiry_date date, p_quantity numeric, p_notes text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_item record;
+  v_batch_id uuid;
+  v_balance_id uuid;
+begin
+  if not ((select private.has_permission('inventory.receive')) and (select private.has_permission('shipments.view'))) then
+    raise exception 'Недостаточно прав для регистрации партии';
+  end if;
+  if p_quantity is null or p_quantity <= 0 then raise exception 'Количество должно быть больше нуля'; end if;
+  if nullif(trim(p_batch_number),'') is null then raise exception 'Укажите номер партии'; end if;
+  if p_expiry_date is null then raise exception 'Укажите срок годности'; end if;
+  if p_manufacture_date is not null and p_manufacture_date > p_expiry_date then raise exception 'Дата производства позже срока годности'; end if;
+
+  select item.product_id,item.uom,item.shipment_id,shipment.destination_warehouse_id
+  into v_item
+  from public.shipment_items item
+  join public.shipments shipment on shipment.id=item.shipment_id
+  where item.id=p_shipment_item_id;
+  if not found then raise exception 'Позиция поставки не найдена'; end if;
+  if v_item.destination_warehouse_id <> p_warehouse_id then raise exception 'Выбранный склад не совпадает со складом поставки'; end if;
+  if p_location_id is not null and not exists(
+    select 1 from public.warehouse_locations where id=p_location_id and warehouse_id=p_warehouse_id and status='active'
+  ) then raise exception 'Зона не относится к выбранному складу'; end if;
+
+  insert into public.inventory_batches(product_id,source_shipment_item_id,batch_number,manufacture_date,expiry_date,notes)
+  values(v_item.product_id,p_shipment_item_id,trim(p_batch_number),p_manufacture_date,p_expiry_date,nullif(trim(p_notes),''))
+  on conflict(product_id,batch_number,expiry_date) do update set
+    source_shipment_item_id=coalesce(public.inventory_batches.source_shipment_item_id,excluded.source_shipment_item_id),
+    manufacture_date=coalesce(public.inventory_batches.manufacture_date,excluded.manufacture_date),
+    updated_at=now()
+  returning id into v_batch_id;
+
+  select id into v_balance_id from public.inventory_balances
+  where batch_id=v_batch_id and warehouse_id=p_warehouse_id
+    and warehouse_location_id is not distinct from p_location_id and uom=v_item.uom
+  for update;
+  if v_balance_id is null then
+    insert into public.inventory_balances(batch_id,warehouse_id,warehouse_location_id,uom,quantity_on_hand)
+    values(v_batch_id,p_warehouse_id,p_location_id,v_item.uom,p_quantity);
+  else
+    update public.inventory_balances set quantity_on_hand=quantity_on_hand+p_quantity,updated_at=now() where id=v_balance_id;
+  end if;
+
+  insert into public.inventory_movements(batch_id,movement_type,quantity,uom,to_warehouse_id,to_location_id,shipment_id,shipment_item_id,reference,reason)
+  values(v_batch_id,'receipt',p_quantity,v_item.uom,p_warehouse_id,p_location_id,v_item.shipment_id,p_shipment_item_id,'Приёмка поставки',nullif(trim(p_notes),''));
+  return v_batch_id;
+end $function$;
 
 -- S9. Shipment items: receiving, allocation and discrepancy fields only through the RPCs -------
 -- shipments.update allowed direct UPDATEs of received quantities, discrepancy acceptance in
@@ -542,8 +811,18 @@ grant execute on function public.add_shipment_transport(uuid,date,date,text,text
 revoke insert, update, delete on public.shipment_items from authenticated;
 grant insert (id, shipment_id, product_id, uom, ordered_quantity, unit_price, currency_id) on public.shipment_items to authenticated;
 drop policy if exists "employees update shipment items" on public.shipment_items;
+drop policy if exists "employees create shipment items" on public.shipment_items;
+create policy "employees create shipment items" on public.shipment_items for insert to authenticated
+with check ((select private.can_write_shipments('update')));
 
 -- Customs records stay on their shipment: every field but the shipment remains editable.
+drop policy if exists "logistics create customs" on public.customs_clearances;
+create policy "logistics create customs" on public.customs_clearances for insert to authenticated
+with check ((select private.can_write_shipments('update')));
+drop policy if exists "logistics update customs" on public.customs_clearances;
+create policy "logistics update customs" on public.customs_clearances for update to authenticated
+using ((select private.can_write_shipments('update')))
+with check ((select private.can_write_shipments('update')));
 revoke update, delete on public.customs_clearances from authenticated;
 grant update (shipment_transport_id, broker_id, country, declaration_number, status, submitted_at, cleared_at,
   customs_value, duties_amount, fees_amount, currency_id, updated_at) on public.customs_clearances to authenticated;
@@ -595,18 +874,78 @@ begin
   where id = p_task_id;
 end;
 $$;
-revoke execute on function public.set_task_status(uuid, text) from public, anon;
-grant execute on function public.set_task_status(uuid, text) to authenticated;
 
--- S11. Stored functions of this migration: no PUBLIC or anon EXECUTE ---------------------------
-revoke execute on function private.is_employee() from public, anon;
-grant execute on function private.is_employee() to authenticated;
-revoke execute on function private.notify(uuid, text, text, text, text, uuid, uuid, text) from public, anon, authenticated;
-revoke execute on function private.generate_deadline_notifications(uuid, timestamptz, interval) from public, anon, authenticated;
-revoke execute on function public.mark_notification_read(uuid) from public, anon;
-revoke execute on function public.mark_all_notifications_read() from public, anon;
-grant execute on function public.mark_notification_read(uuid) to authenticated;
-grant execute on function public.mark_all_notifications_read() to authenticated;
+-- S1 (end). EXECUTE: an explicit allowlist for every function of the project ---------------
+-- First nobody but the owner may execute any function of public and private (extensions
+-- excluded); then EXECUTE is granted by name:
+--   * authenticated — the public RPCs the application calls (each checks permissions itself)
+--     and the private helpers that PostgreSQL evaluates with the caller's privileges inside
+--     RLS policies and index expressions (without EXECUTE every query on those tables would
+--     fail; the private schema is not exposed through the API, so they are not RPCs);
+--   * service_role — the scheduled deadline run and the barcode index expression it hits
+--     when importing identifiers with the secret key.
+-- Trigger functions and internal helpers are executable by nobody: triggers fire without
+-- an EXECUTE check, and internal helpers run inside SECURITY DEFINER functions as the owner.
+-- supabase/tests/security_audit.test.sql compares the result with its own copy of this list.
+do $$
+declare
+  v_fn record;
+  v_name text;
+  v_count integer;
+  c_authenticated constant text[] := array[
+    -- public RPCs
+    'public.add_shipment_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
+    'public.archive_document', 'public.archive_document_template', 'public.cancel_listing_card',
+    'public.change_shipment_operational_state', 'public.change_shipment_stage_status',
+    'public.change_shipment_transport_status', 'public.change_task_due', 'public.create_listing_card_version',
+    'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
+    'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',
+    'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
+    'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch',
+    'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
+    'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
+    'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
+    'public.transfer_inventory_batch', 'public.update_shipment_item', 'public.write_off_inventory',
+    -- private helpers evaluated in RLS policies and index expressions
+    'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
+    'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
+    'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
+    'private.is_registered_document_file', 'private.is_registered_template_file', 'private.listing_card_is_draft',
+    'private.template_is_active'];
+  c_service constant text[] := array['public.generate_deadline_notifications', 'private.barcode_key'];
+begin
+  for v_fn in
+    select p.oid::regprocedure as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')
+  loop
+    execute format('revoke execute on function %s from public, anon, authenticated, service_role', v_fn.signature);
+  end loop;
+
+  foreach v_name in array c_authenticated || c_service loop
+    select count(*) into v_count from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname || '.' || p.proname = v_name;
+    if v_count <> 1 then
+      raise exception 'EXECUTE allowlist: % matches % functions', v_name, v_count;
+    end if;
+  end loop;
+
+  for v_fn in
+    select p.oid::regprocedure as signature, n.nspname || '.' || p.proname as name
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname || '.' || p.proname = any(c_authenticated || c_service)
+  loop
+    if v_fn.name = any(c_authenticated) then
+      execute format('grant execute on function %s to authenticated', v_fn.signature);
+    end if;
+    if v_fn.name = any(c_service) then
+      execute format('grant execute on function %s to service_role', v_fn.signature);
+    end if;
+  end loop;
+end;
+$$;
 
 comment on function public.add_shipment_transport(uuid,date,date,text,text) is
   'Adds a vehicle to an active shipment and links or creates its transport stages in one transaction';

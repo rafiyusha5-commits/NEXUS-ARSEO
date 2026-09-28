@@ -31,12 +31,67 @@ begin
     select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity
   ), 'S1: row level security is enabled on every table';
-  assert has_function_privilege('authenticated', 'public.allocate_shipment_item(uuid, uuid, numeric)', 'execute'),
-    'S1: employees keep their RPCs';
-  assert has_function_privilege('service_role', 'public.generate_deadline_notifications(timestamptz)', 'execute'),
-    'S1: the scheduler keeps its RPC';
-  assert not has_function_privilege('authenticated', 'private.notify(uuid, text, text, text, text, uuid, uuid, text)', 'execute'),
-    'S1: notifications can not be written by employees';
+end;
+$$;
+
+-- S1. EXECUTE follows an explicit allowlist. This copy is independent of the migration: every
+-- function of the project (extensions excluded) is compared, with the effective privilege
+-- (PUBLIC included) of authenticated, service_role and anon.
+create table tests.sec_exec_allow (role_name text, fn text, primary key (role_name, fn));
+insert into tests.sec_exec_allow
+select 'authenticated', unnest(array[
+  'public.add_shipment_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
+  'public.archive_document', 'public.archive_document_template', 'public.cancel_listing_card',
+  'public.change_shipment_operational_state', 'public.change_shipment_stage_status',
+  'public.change_shipment_transport_status', 'public.change_task_due', 'public.create_listing_card_version',
+  'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
+  'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',
+  'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
+  'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch',
+  'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
+  'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
+  'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
+  'public.transfer_inventory_batch', 'public.update_shipment_item', 'public.write_off_inventory',
+  'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
+  'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
+  'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
+  'private.is_registered_document_file', 'private.is_registered_template_file', 'private.listing_card_is_draft',
+  'private.template_is_active'])
+union all
+select 'service_role', unnest(array['public.generate_deadline_notifications', 'private.barcode_key']);
+
+do $$
+declare
+  v_role text;
+  v_extra text;
+  v_missing text;
+begin
+  foreach v_role in array array['authenticated', 'service_role', 'anon'] loop
+    with fns as (
+      select p.oid, n.nspname || '.' || p.proname as fn
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private')
+        and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'))
+    select string_agg(fn, ', ' order by fn) filter (where has_function_privilege(v_role, oid, 'execute')
+             and fn not in (select a.fn from tests.sec_exec_allow a where a.role_name = v_role)),
+           string_agg(fn, ', ' order by fn) filter (where not has_function_privilege(v_role, oid, 'execute')
+             and fn in (select a.fn from tests.sec_exec_allow a where a.role_name = v_role))
+    into v_extra, v_missing
+    from fns;
+    assert v_extra is null, format('S1: %s may execute functions outside the allowlist: %s', v_role, v_extra);
+    assert v_missing is null, format('S1: %s lacks allowlisted functions: %s', v_role, v_missing);
+  end loop;
+  -- Spelled out as well: no trigger function and no internal helper for anybody.
+  assert not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private') and p.prorettype = 'trigger'::regtype
+      and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('service_role', p.oid, 'execute'))
+  ), 'S1: trigger functions are not executable';
+  assert not has_function_privilege('authenticated', 'private.notify(uuid, text, text, text, text, uuid, uuid, text)', 'execute')
+     and not has_function_privilege('authenticated', 'private.has_role(text)', 'execute')
+     and not has_function_privilege('authenticated', 'public.generate_deadline_notifications(timestamptz)', 'execute')
+     and not has_function_privilege('authenticated', 'private.run_reference_import(jsonb)', 'execute'),
+    'S1: internal and service-only functions are not executable by employees';
 end;
 $$;
 
@@ -144,17 +199,65 @@ $$, 'row-level security');
 insert into public.approvals (id, entity_type, entity_id, approver_user_id, requested_by)
 values ('9b000000-0000-4000-8000-000000000073', 'shipment', '9b000000-0000-4000-8000-000000000021',
         '9a000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000003');
-select tests.act_as('9a000000-0000-4000-8000-000000000002'); -- the director decides
-update public.approvals set status = 'approved', decided_at = timestamptz '2000-01-01', comment = 'Согласовано'
-where id = '9b000000-0000-4000-8000-000000000073';
+-- Two more pending requests: 75 names the director, 76 names only a role.
+insert into public.approvals (id, entity_type, entity_id, approver_user_id, requested_by)
+values ('9b000000-0000-4000-8000-000000000075', 'shipment', '9b000000-0000-4000-8000-000000000021',
+        '9a000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000003');
+insert into public.approvals (id, entity_type, entity_id, approver_role, requested_by)
+values ('9b000000-0000-4000-8000-000000000076', 'shipment', '9b000000-0000-4000-8000-000000000021',
+        'senior_logistics_manager', '9a000000-0000-4000-8000-000000000003');
+
+select tests.act_as('9a000000-0000-4000-8000-000000000002'); -- the director
+-- S5f. Without a decision neither the comment nor the time changes; the client never sends the time.
+select tests.expect_error($$
+  update public.approvals set comment = 'Без решения' where id = '9b000000-0000-4000-8000-000000000075'
+$$, 'только вместе с решением');
+select tests.expect_error($$
+  update public.approvals set decided_at = now() where id = '9b000000-0000-4000-8000-000000000075'
+$$, 'permission denied');
+select tests.expect_error($$
+  update public.approvals set status = 'approved', decided_at = timestamptz '2000-01-01'
+  where id = '9b000000-0000-4000-8000-000000000073'
+$$, 'permission denied');
+update public.approvals set status = 'approved', comment = 'Согласовано' where id = '9b000000-0000-4000-8000-000000000073';
+update public.approvals set status = 'rejected', comment = 'Нет документов' where id = '9b000000-0000-4000-8000-000000000076';
+-- S5f. A decided request does not change: status, comment and time are fixed.
 select tests.expect_error($$
   update public.approvals set status = 'rejected' where id = '9b000000-0000-4000-8000-000000000073'
 $$, 'уже обработан');
+select tests.expect_error($$
+  update public.approvals set comment = 'Переписано задним числом' where id = '9b000000-0000-4000-8000-000000000073'
+$$, 'уже обработан');
+select tests.expect_error($$
+  update public.approvals set decided_at = timestamptz '2000-01-01' where id = '9b000000-0000-4000-8000-000000000073'
+$$, 'permission denied');
 reset role;
+-- The trigger enforces the same for code that bypasses column privileges (postgres here).
+select tests.expect_error($$
+  update public.approvals set decided_at = timestamptz '2000-01-01' where id = '9b000000-0000-4000-8000-000000000073'
+$$, 'уже обработан');
+select tests.expect_error($$
+  update public.approvals set comment = 'Переписано' where id = '9b000000-0000-4000-8000-000000000073'
+$$, 'уже обработан');
+select tests.expect_error($$
+  update public.approvals set decided_at = now() where id = '9b000000-0000-4000-8000-000000000075'
+$$, 'только вместе с решением');
+select tests.expect_error($$
+  update public.approvals set requested_by = '9a000000-0000-4000-8000-000000000002' where id = '9b000000-0000-4000-8000-000000000075'
+$$, 'не меняются');
 do $$
 begin
-  assert (select decided_at > now() - interval '1 minute' from public.approvals where id = '9b000000-0000-4000-8000-000000000073'),
-    'S5a: the decision time can not be backdated';
+  assert (select decided_at > now() - interval '1 minute' and comment = 'Согласовано'
+          and approver_user_id = '9a000000-0000-4000-8000-000000000002'
+          from public.approvals where id = '9b000000-0000-4000-8000-000000000073'),
+    'S5a: time set by the database, comment kept';
+  assert (select approver_user_id = '9a000000-0000-4000-8000-000000000002' and status = 'rejected'
+          and decided_at > now() - interval '1 minute'
+          from public.approvals where id = '9b000000-0000-4000-8000-000000000076'),
+    'S5f: the actual approver is recorded by the trigger';
+  assert (select status = 'pending' and comment is null and decided_at is null
+          from public.approvals where id = '9b000000-0000-4000-8000-000000000075'),
+    'S5f: the pending request is untouched';
 end;
 $$;
 set role authenticated;
@@ -263,6 +366,102 @@ select tests.act_as('9a000000-0000-4000-8000-000000000004');
 select tests.expect_error($$ select public.set_task_status('9b000000-0000-4000-8000-000000000061', 'open') $$, 'Задача не найдена');
 select tests.act_as('9a000000-0000-4000-8000-000000000003'); -- the assignee still gets the rule message
 select tests.expect_error($$ select public.set_task_status('9b000000-0000-4000-8000-000000000061', 'open') $$, 'Нельзя перевести');
+
+-- S12. A personal deny of shipments.view blocks every shipment operation, even with the UUID ---------
+-- Blind: the role grants shipments.update, shipments.change_status and inventory.receive; only
+-- shipments.view is denied. Every read returns nothing and every write is refused, directly
+-- and through each RPC; an unknown UUID gets the same answer as a real one.
+reset role;
+create temp table sec_blind_before as
+  select 'shipment' as kind, to_jsonb(s) as row from public.shipments s where s.id = '9b000000-0000-4000-8000-000000000021'
+  union all select 'item', to_jsonb(i) from public.shipment_items i where i.shipment_id = '9b000000-0000-4000-8000-000000000021'
+  union all select 'run', to_jsonb(r) from public.shipment_stage_runs r where r.shipment_id = '9b000000-0000-4000-8000-000000000021'
+  union all select 'transport', to_jsonb(t) from public.shipment_transports t where t.shipment_id = '9b000000-0000-4000-8000-000000000021'
+  union all select 'customs', to_jsonb(c) from public.customs_clearances c where c.shipment_id = '9b000000-0000-4000-8000-000000000021';
+create temp table sec_blind_history as
+  select count(*) as n from public.shipment_stage_history where shipment_id = '9b000000-0000-4000-8000-000000000021';
+set role authenticated;
+select tests.act_as('9a000000-0000-4000-8000-000000000009');
+do $$
+begin
+  assert (select private.has_permission('shipments.update')) and (select private.has_permission('shipments.change_status'))
+     and (select private.has_permission('inventory.receive')), 'S12: the role grants the shipment actions';
+  assert not (select private.has_permission('shipments.view')), 'S12: only viewing is denied';
+  assert not exists (select 1 from public.shipments where id = '9b000000-0000-4000-8000-000000000021'), 'S12: shipment unreadable';
+  assert not exists (select 1 from public.shipment_items where id = '9b000000-0000-4000-8000-000000000051'), 'S12: items unreadable';
+  assert not exists (select 1 from public.shipment_stage_runs where id = '9b000000-0000-4000-8000-000000000031'), 'S12: stages unreadable';
+  assert not exists (select 1 from public.shipment_stage_history where shipment_id = '9b000000-0000-4000-8000-000000000021'), 'S12: history unreadable';
+  assert not exists (select 1 from public.shipment_transports where id = '9b000000-0000-4000-8000-000000000041'), 'S12: transports unreadable';
+  assert not exists (select 1 from public.customs_clearances where id = '9b000000-0000-4000-8000-000000000052'), 'S12: customs unreadable';
+  assert tests.affected($q$update public.shipments set planned_arrival_date = current_date + 1 where id = '9b000000-0000-4000-8000-000000000021'$q$) = 0,
+    'S12: direct update of an editable field changes nothing';
+  assert tests.affected($q$update public.customs_clearances set declaration_number = 'BLIND'
+    where id = '9b000000-0000-4000-8000-000000000052'$q$) = 0, 'S12: customs update changes nothing';
+end;
+$$;
+select tests.expect_error($$ update public.shipments set status = 'on_hold' where id = '9b000000-0000-4000-8000-000000000021' $$, 'permission denied');
+select tests.expect_error($$
+  insert into public.shipment_items (shipment_id, product_id, ordered_quantity)
+  values ('9b000000-0000-4000-8000-000000000021', '9b000000-0000-4000-8000-000000000011', 1)
+$$, 'row-level security');
+select tests.expect_error($$
+  insert into public.customs_clearances (shipment_id, country) values ('9b000000-0000-4000-8000-000000000021', 'KZ')
+$$, 'row-level security');
+select tests.expect_error($$
+  select public.create_shipment_with_stages('BLIND', 'import', '9b000000-0000-4000-8000-000000000001', null,
+    (select id from public.routes where origin_country = 'FI' and destination_country = 'KZ' limit 1),
+    (select id from public.currencies where code = 'EUR'), (select id from public.warehouses where code = 'AKT'),
+    '9a000000-0000-4000-8000-000000000009', null, null)
+$$, 'Недостаточно прав');
+select tests.expect_error($$ select public.change_shipment_stage_status('9b000000-0000-4000-8000-000000000031', 'completed') $$, 'Недостаточно прав');
+select tests.expect_error($$ select public.add_shipment_transport('9b000000-0000-4000-8000-000000000021') $$, 'Недостаточно прав');
+select tests.expect_error($$ select public.change_shipment_operational_state('9b000000-0000-4000-8000-000000000021', 'hold', 'Blind') $$, 'Недостаточно прав');
+select tests.expect_error($$
+  select public.allocate_shipment_item('9b000000-0000-4000-8000-000000000051', '9b000000-0000-4000-8000-000000000041', 1)
+$$, 'Недостаточно прав');
+select tests.expect_error($$ select public.update_shipment_item('9b000000-0000-4000-8000-000000000051', 80, 0.01) $$, 'Недостаточно прав');
+select tests.expect_error($$ select public.delete_shipment_item('9b000000-0000-4000-8000-000000000051') $$, 'Недостаточно прав');
+select tests.expect_error($$ select public.change_shipment_transport_status('9b000000-0000-4000-8000-000000000041', 'loading') $$, 'Недостаточно прав');
+select tests.expect_error($$
+  select public.receive_inventory_batch('9b000000-0000-4000-8000-000000000051', (select id from public.warehouses where code = 'AKT'),
+    null, 'BLIND-1', null, current_date + 100, 1, null)
+$$, 'Недостаточно прав');
+select tests.expect_error($$ select public.update_shipment_item(gen_random_uuid(), 80, 0.01) $$, 'Недостаточно прав');
+select tests.expect_error($$ select public.change_shipment_operational_state(gen_random_uuid(), 'hold', 'Blind') $$, 'Недостаточно прав');
+reset role;
+do $$
+begin
+  -- every row of the shipment, its items, stages, transports and customs is byte-for-byte the same
+  assert not exists (
+    (select kind, row from sec_blind_before)
+    except
+    (select 'shipment', to_jsonb(s) from public.shipments s where s.id = '9b000000-0000-4000-8000-000000000021'
+     union all select 'item', to_jsonb(i) from public.shipment_items i where i.shipment_id = '9b000000-0000-4000-8000-000000000021'
+     union all select 'run', to_jsonb(r) from public.shipment_stage_runs r where r.shipment_id = '9b000000-0000-4000-8000-000000000021'
+     union all select 'transport', to_jsonb(t) from public.shipment_transports t where t.shipment_id = '9b000000-0000-4000-8000-000000000021'
+     union all select 'customs', to_jsonb(c) from public.customs_clearances c where c.shipment_id = '9b000000-0000-4000-8000-000000000021')
+  ), 'S12: the shipment and its items, stages, transports and customs are unchanged';
+  assert (select count(*) from sec_blind_before) =
+         (select 1 + (select count(*) from public.shipment_items where shipment_id = '9b000000-0000-4000-8000-000000000021')
+                   + (select count(*) from public.shipment_stage_runs where shipment_id = '9b000000-0000-4000-8000-000000000021')
+                   + (select count(*) from public.shipment_transports where shipment_id = '9b000000-0000-4000-8000-000000000021')
+                   + (select count(*) from public.customs_clearances where shipment_id = '9b000000-0000-4000-8000-000000000021')),
+    'S12: no rows were added to the shipment';
+  assert (select count(*) from public.shipment_stage_history where shipment_id = '9b000000-0000-4000-8000-000000000021')
+       = (select n from sec_blind_history), 'S12: no stage history was written';
+  assert (select ordered_quantity = 90 and unit_price = 9.99 from public.shipment_items where id = '9b000000-0000-4000-8000-000000000051'),
+    'S12: the item is unchanged';
+  assert (select status <> 'on_hold' and hold_reason is null from public.shipments where id = '9b000000-0000-4000-8000-000000000021'), 'S12: the shipment is not on hold';
+  assert (select status = 'planned' from public.shipment_transports where id = '9b000000-0000-4000-8000-000000000041'), 'S12: the transport is unchanged';
+  assert (select status = 'in_progress' from public.shipment_stage_runs where id = '9b000000-0000-4000-8000-000000000031'), 'S12: the stage is unchanged';
+  assert not exists (select 1 from public.shipments where project_code = 'BLIND'), 'S12: no shipment was created';
+  assert not exists (select 1 from public.inventory_batches where batch_number = 'BLIND-1'), 'S12: nothing was received';
+  assert (select count(*) from public.shipment_transports where shipment_id = '9b000000-0000-4000-8000-000000000021') = 2, 'S12: no transport was added';
+end;
+$$;
+drop table sec_blind_before, sec_blind_history;
+set role authenticated;
+select tests.act_as('9a000000-0000-4000-8000-000000000003');
 
 -- S7a–b. Shipment status and lock change only through the RPCs ---------------------------------------
 select tests.expect_error($$
