@@ -27,5 +27,6 @@ Migration order:
 16. `202609272300_database_security_hardening.sql` — fixes of the database security audit: no anon access, employees need a role, protected audit log and personal overrides, forgery-proof approvals, notifications that follow object permissions, shipment status, stages, transports and items only through RPCs (new `add_shipment_transport`). See `docs/security-audit.md`.
 17. `202609272400_shipment_transport_receiving.sql` — one-time, atomic vehicle receiving: discrepancies, batches, inventory balances and movements, and automatic completion of warehouse receiving stages. See `docs/shipment-receiving.md`.
 18. `202609272500_customer_orders_fefo.sql` — customer orders, atomic FEFO reservations, remaining shelf-life checks, controlled FEFO overrides and guarantee letters. See `docs/customer-orders-fefo.md`.
+19. `202609272600_stickers_marking.sql` — customer-specific sticker layouts with approval, print-run calculation and application accounting, plus marking-code orders. See `docs/stickers-marking.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

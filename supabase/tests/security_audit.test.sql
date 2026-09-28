@@ -41,6 +41,7 @@ create table tests.sec_exec_allow (role_name text, fn text, primary key (role_na
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
   'public.add_shipment_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
+  'public.add_sticker_template_version', 'public.change_sticker_order_status', 'public.create_marking_code_order', 'public.create_sticker_order', 'public.create_sticker_template',
   'public.add_customer_order_item', 'public.archive_document', 'public.archive_document_template', 'public.cancel_customer_order', 'public.cancel_listing_card',
   'public.change_shipment_operational_state', 'public.change_shipment_stage_status',
   'public.change_sale_guarantee_status', 'public.change_shipment_transport_status', 'public.change_task_due', 'public.create_customer_order',
@@ -52,6 +53,7 @@ select 'authenticated', unnest(array[
   'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
   'public.reserve_customer_order_item_fefo', 'public.reserve_customer_order_item_override', 'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
   'public.transfer_inventory_batch', 'public.update_shipment_item', 'public.write_off_inventory',
+  'public.decide_sticker_template_version', 'public.record_sticker_application', 'public.submit_sticker_template_version', 'public.update_marking_code_order',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
