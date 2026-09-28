@@ -56,6 +56,8 @@ select 'authenticated', unnest(array[
   'public.decide_sticker_template_version', 'public.record_sticker_application', 'public.submit_sticker_template_version', 'public.update_marking_code_order',
   'public.add_exchange_rate', 'public.create_expense', 'public.confirm_expense', 'public.allocate_expense', 'public.mark_expense_paid', 'public.calculate_shipment_cost', 'public.approve_shipment_cost',
   'public.configure_integration', 'public.resolve_synchronization_error',
+  'public.create_forecast', 'public.create_forecast_version', 'public.upsert_forecast_line', 'public.remove_forecast_line',
+  'public.submit_forecast', 'public.review_forecast', 'public.approve_forecast', 'public.archive_forecast',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',

@@ -31,5 +31,6 @@ Migration order:
 20. `202609272700_finance_costing.sql` — append-only exchange rates, shipment expenses, controlled allocation and versioned landed-cost approval. See `docs/finance-costing.md`.
 21. `202609272800_integration_registry.sql` — safe integration registry, server-written synchronization journal, errors and manual mappings. See `docs/integrations.md`.
 22. `202609272900_operational_analytics.sql` — permission gate for RLS-preserving operational analytics. See `docs/operational-analytics.md`.
+23. `202609273000_sales_forecasts.sql` — versioned sales forecasts by product, customer, warehouse and period, with commercial review and final approval. See `docs/sales-forecasts.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
