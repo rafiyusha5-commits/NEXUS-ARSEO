@@ -141,14 +141,14 @@ begin
   if v_transport.is_locked or v_transport.shipment_status in ('on_hold', 'cancelled', 'closed') then
     raise exception 'Поставка недоступна для приёмки';
   end if;
-  if v_transport.status <> 'arrived' then
-    raise exception 'Сначала отметьте автомобиль как прибывший';
-  end if;
   if exists (
     select 1 from public.shipment_transport_receipts
     where shipment_transport_id = p_transport_id
   ) then
     raise exception 'Этот автомобиль уже принят';
+  end if;
+  if v_transport.status <> 'arrived' then
+    raise exception 'Сначала отметьте автомобиль как прибывший';
   end if;
 
   if p_location_id is not null then
