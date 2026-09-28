@@ -10,6 +10,7 @@ const navigation = [
   { label: "Задачи", href: "/tasks", key: "tasks" },
   { label: "Уведомления", href: "/notifications", key: "notifications" },
   { label: "Поставки", href: "/shipments", key: "shipments" },
+  { label: "Клиентские заказы", href: "/sales", key: "sales" },
   { label: "Клиенты", href: "/counterparties", key: "counterparties" },
   { label: "Поставщики", href: "/suppliers", key: "suppliers" },
   { label: "Товары", href: "/products", key: "products" },
