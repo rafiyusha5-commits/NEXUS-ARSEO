@@ -74,6 +74,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272700_finance_costing.sql" >/dev/null
 # Integration registry and replaceable RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272800_integration_registry.sql" >/dev/null
+# Operational analytics adds an idempotent permission grant.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272900_operational_analytics.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
