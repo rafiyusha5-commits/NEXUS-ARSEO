@@ -21,7 +21,14 @@ export async function login(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) loginError("credentials");
+  if (error) {
+    if (error.status === 0 || error.name === "AuthRetryableFetchError") {
+      loginError("connection");
+    }
+
+    if (error.status === 429) loginError("rate_limit");
+    loginError("credentials");
+  }
   redirect("/");
 }
 
