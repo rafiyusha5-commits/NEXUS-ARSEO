@@ -58,6 +58,8 @@ select 'authenticated', unnest(array[
   'public.configure_integration', 'public.resolve_synchronization_error',
   'public.create_forecast', 'public.create_forecast_version', 'public.upsert_forecast_line', 'public.remove_forecast_line',
   'public.submit_forecast', 'public.review_forecast', 'public.approve_forecast', 'public.archive_forecast',
+  'public.create_purchase_plan', 'public.create_purchase_plan_version', 'public.upsert_purchase_plan_line', 'public.remove_purchase_plan_line',
+  'public.submit_purchase_plan', 'public.review_purchase_plan', 'public.approve_purchase_plan', 'public.create_purchase_plan_shipment', 'public.archive_purchase_plan',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',

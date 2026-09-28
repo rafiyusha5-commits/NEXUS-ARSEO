@@ -12,6 +12,7 @@ const navigation = [
   { label: "Интеграции", href: "/integrations", key: "integrations" },
   { label: "Аналитика", href: "/analytics", key: "analytics" },
   { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
+  { label: "План закупок", href: "/purchase-plans", key: "purchase-plans" },
   { label: "Поставки", href: "/shipments", key: "shipments" },
   { label: "Клиентские заказы", href: "/sales", key: "sales" },
   { label: "Финансы и себестоимость", href: "/finance", key: "finance" },
