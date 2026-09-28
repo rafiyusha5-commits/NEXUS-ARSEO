@@ -29,5 +29,6 @@ Migration order:
 18. `202609272500_customer_orders_fefo.sql` — customer orders, atomic FEFO reservations, remaining shelf-life checks, controlled FEFO overrides and guarantee letters. See `docs/customer-orders-fefo.md`.
 19. `202609272600_stickers_marking.sql` — customer-specific sticker layouts with approval, print-run calculation and application accounting, plus marking-code orders. See `docs/stickers-marking.md`.
 20. `202609272700_finance_costing.sql` — append-only exchange rates, shipment expenses, controlled allocation and versioned landed-cost approval. See `docs/finance-costing.md`.
+21. `202609272800_integration_registry.sql` — safe integration registry, server-written synchronization journal, errors and manual mappings. See `docs/integrations.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

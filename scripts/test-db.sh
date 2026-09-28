@@ -72,6 +72,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272600_stickers_marking.sql" >/dev/null
 # Finance and costing are idempotent and re-applied before tests.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272700_finance_costing.sql" >/dev/null
+# Integration registry and replaceable RPCs are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272800_integration_registry.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

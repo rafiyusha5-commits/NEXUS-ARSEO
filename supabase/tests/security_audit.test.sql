@@ -55,13 +55,14 @@ select 'authenticated', unnest(array[
   'public.transfer_inventory_batch', 'public.update_shipment_item', 'public.write_off_inventory',
   'public.decide_sticker_template_version', 'public.record_sticker_application', 'public.submit_sticker_template_version', 'public.update_marking_code_order',
   'public.add_exchange_rate', 'public.create_expense', 'public.confirm_expense', 'public.allocate_expense', 'public.mark_expense_paid', 'public.calculate_shipment_cost', 'public.approve_shipment_cost',
+  'public.configure_integration', 'public.resolve_synchronization_error',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
   'private.is_registered_document_file', 'private.is_registered_template_file', 'private.listing_card_is_draft',
   'private.template_is_active'])
 union all
-select 'service_role', unnest(array['public.generate_deadline_notifications', 'private.barcode_key']);
+select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key']);
 
 do $$
 declare

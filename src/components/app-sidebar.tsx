@@ -23,6 +23,7 @@ const navigation = [
   { label: "Карты ввода/вывода", href: "/listing-cards", key: "listing-cards" },
   { label: "Стикеры и маркировка", href: "/stickers", key: "stickers" },
   { label: "Финансы и себестоимость", href: "/finance", key: "finance" },
+  { label: "Интеграции", href: "/integrations", key: "integrations" },
   { label: "Пользователи", href: "/admin/users", key: "users", managerOnly: true },
   { label: "Роли и права", href: "/admin/roles", key: "roles", managerOnly: true },
   { label: "Журнал действий", href: "/audit", key: "audit", managerOnly: true },
