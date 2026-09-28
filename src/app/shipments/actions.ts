@@ -110,3 +110,56 @@ export async function changeShipmentOperationalState(formData:FormData){
   const messages:Record<string,string>={hold:"Поставка приостановлена",resume:"Поставка возобновлена",cancel:"Поставка отменена"};
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(messages[action])}`);
 }
+
+export async function receiveShipmentTransport(formData:FormData){
+  const {profile,supabase}=await requireUser();
+  const shipmentId=uuid(formData,"shipment_id");
+  const transportId=uuid(formData,"transport_id");
+  const itemIds=formData.getAll("item_id").map((value)=>typeof value==="string"?value.trim():"");
+  const accepted=formData.getAll("accepted_quantity").map((value)=>typeof value==="string"?value.trim():"");
+  const damaged=formData.getAll("damaged_quantity").map((value)=>typeof value==="string"?value.trim():"");
+  const batches=formData.getAll("batch_number").map((value)=>typeof value==="string"?value.trim():"");
+  const manufactured=formData.getAll("manufacture_date").map((value)=>typeof value==="string"?value.trim():"");
+  const expires=formData.getAll("expiry_date").map((value)=>typeof value==="string"?value.trim():"");
+  const reasons=formData.getAll("discrepancy_reason").map((value)=>typeof value==="string"?value.trim():"");
+  const lengths=[itemIds.length,accepted.length,damaged.length,batches.length,manufactured.length,expires.length,reasons.length];
+  if(!itemIds.length||lengths.some((length)=>length!==itemIds.length)){
+    redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent("Позиции приёмки переданы не полностью")}`);
+  }
+  const lines=itemIds.map((itemId,index)=>{
+    if(!uuidPattern.test(itemId))throw new Error("Некорректная позиция приёмки");
+    const acceptedQuantity=Number(accepted[index]);
+    const damagedQuantity=damaged[index]?Number(damaged[index]):0;
+    if(!Number.isFinite(acceptedQuantity)||acceptedQuantity<0||!Number.isFinite(damagedQuantity)||damagedQuantity<0){
+      throw new Error("Количество при приёмке не может быть отрицательным");
+    }
+    return {
+      item_id:itemId,
+      accepted_quantity:acceptedQuantity,
+      damaged_quantity:damagedQuantity,
+      batch_number:batches[index]||null,
+      manufacture_date:manufactured[index]||null,
+      expiry_date:expires[index]||null,
+      discrepancy_reason:reasons[index]||null,
+    };
+  });
+  const locationId=uuid(formData,"location_id",false);
+  const performedByName=text(formData,"performed_by_name")||profile.full_name;
+  const {error}=await supabase.rpc("receive_shipment_transport",{
+    p_transport_id:transportId,
+    p_location_id:locationId,
+    p_lines:lines,
+    p_performed_by_name:performedByName,
+    p_notes:text(formData,"notes")||null,
+  });
+  if(error){
+    redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath(`/shipments/${shipmentId}`);
+  revalidatePath(`/shipments/${shipmentId}/receiving`);
+  revalidatePath("/inventory");
+  revalidatePath("/inventory/movements");
+  revalidatePath("/shipments");
+  revalidatePath("/");
+  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Автомобиль принят. Партии и остатки зарегистрированы.")}`);
+}

@@ -25,5 +25,6 @@ Migration order:
 14. `202609272100_shipment_execution.sql` — atomic allocation of shipment items between vehicles, transport progress and controlled hold, resume and cancellation actions.
 15. `202609272200_shipment_tasks_notifications.sql` — shipment tasks (links to shipments and stages, status rules, `tasks.manage`) and in-app notifications for task assignment, deadlines, blocked stages and approvals, with idempotent deadline generation. See `docs/tasks-notifications.md`.
 16. `202609272300_database_security_hardening.sql` — fixes of the database security audit: no anon access, employees need a role, protected audit log and personal overrides, forgery-proof approvals, notifications that follow object permissions, shipment status, stages, transports and items only through RPCs (new `add_shipment_transport`). See `docs/security-audit.md`.
+17. `202609272400_shipment_transport_receiving.sql` — one-time, atomic vehicle receiving: discrepancies, batches, inventory balances and movements, and automatic completion of warehouse receiving stages. See `docs/shipment-receiving.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

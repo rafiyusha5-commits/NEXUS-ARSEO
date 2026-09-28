@@ -62,9 +62,10 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272100_shipment_execution.sql" >/dev/null
 # Tasks and notifications: columns, policies, triggers and functions are re-created.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272200_shipment_tasks_notifications.sql" >/dev/null
-# The security hardening replaces policies and functions of 1600 and 2200 re-applied above,
-# so it has to come last.
+# The security hardening replaces policies and functions of 1600 and 2200 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272300_database_security_hardening.sql" >/dev/null
+# Receiving is applied after hardening so its explicitly granted RPC remains available.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272400_shipment_transport_receiving.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
