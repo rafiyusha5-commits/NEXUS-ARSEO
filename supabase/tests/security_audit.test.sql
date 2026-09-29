@@ -65,6 +65,7 @@ select 'authenticated', unnest(array[
   'public.create_sale_from_commercial_program', 'public.archive_commercial_program',
   'public.my_external_document_permissions', 'public.update_my_external_profile', 'public.register_external_document', 'public.record_external_document_access',
   'public.set_document_external_access', 'public.configure_external_client', 'public.set_external_client_access',
+  'public.create_shipment_milestone', 'public.complete_shipment_milestone', 'public.cancel_shipment_milestone', 'public.my_shipment_calendar',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',

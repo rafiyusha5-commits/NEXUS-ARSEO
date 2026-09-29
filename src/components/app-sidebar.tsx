@@ -15,6 +15,7 @@ const navigation = [
   { label: "План закупок", href: "/purchase-plans", key: "purchase-plans" },
   { label: "Промо и спецзаказы", href: "/commercial-programs", key: "commercial-programs" },
   { label: "Поставки", href: "/shipments", key: "shipments" },
+  { label: "Календарь", href: "/calendar", key: "calendar" },
   { label: "Клиентские заказы", href: "/sales", key: "sales" },
   { label: "Финансы и себестоимость", href: "/finance", key: "finance" },
   { label: "Клиенты", href: "/counterparties", key: "counterparties" },

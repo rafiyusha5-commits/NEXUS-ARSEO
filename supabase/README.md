@@ -35,5 +35,6 @@ Migration order:
 24. `202609273100_purchase_plans.sql` — versioned supplier purchase plans with packaging rounding, two-step approval and controlled creation of an RVI shipment. See `docs/purchase-plans.md`.
 25. `202609273200_commercial_programs.sql` — versioned promotions, special customer orders and exact-batch low-shelf-life clearance, linked to forecasts and customer orders. See `docs/commercial-programs.md`.
 26. `202609273300_external_client_portal.sql` — isolated customer document portal, explicit per-client sharing, external account permissions and audited access.
+27. `202609273400_shipment_calendar.sql` — unified shipment calendar, plan/fact deviations and additional controlled milestones. See `docs/shipment-calendar.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
