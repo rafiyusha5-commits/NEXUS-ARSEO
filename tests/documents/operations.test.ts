@@ -20,7 +20,7 @@ const HEX = "0123456789abcdef0123456789abcdef";
 const FILE_HASH = "1".repeat(64);
 
 const allow = (overrides: Partial<DocumentPermissions> = {}): DocumentPermissions => ({
-  view: true, create: true, update: true, approve: true, archive: true, manage_types: false, manage_requirements: false, ...overrides,
+  view: true, create: true, update: true, approve: true, archive: true, manage_types: false, manage_requirements: false, share_external: false, ...overrides,
 });
 
 type Call = { name: string; args: unknown[] };

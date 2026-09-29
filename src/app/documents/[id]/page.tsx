@@ -15,6 +15,7 @@ import {
   decideDocumentReviewAction,
   removeDocumentLinkAction,
   submitDocumentForReviewAction,
+  setDocumentExternalAccessAction,
   updateDocumentAction,
 } from "../actions";
 
@@ -36,12 +37,12 @@ export default async function DocumentPage({
   const permissions = await loadDocumentPermissions(supabase);
   if (!permissions.view) notFound();
 
-  const [{ data: document }, { data: versions }, { data: links }, { data: types }, { data: currencies }, { data: approvals, error: approvalsError }] = await Promise.all([
+  const [{ data: document }, { data: versions }, { data: links }, { data: types }, { data: currencies }, { data: approvals, error: approvalsError }, { data: customers }] = await Promise.all([
     supabase
       .from("documents")
       .select(
         "id, document_type_id, document_number, title, description, document_date, valid_until, status, language, amount, " +
-          "current_version, original_filename, mime_type, file_size_bytes, created_at, updated_at, archived_at, archive_reason, " +
+          "current_version, original_filename, mime_type, file_size_bytes, created_at, updated_at, archived_at, archive_reason, counterparty_id, visibility, source, " +
           "type:document_types(name_ru, name_en, name_kk, category, has_validity_period), currency:currencies(id, code), " +
           "uploader:profiles!documents_uploaded_by_fkey(full_name), archiver:profiles!documents_archived_by_fkey(full_name)",
       )
@@ -66,6 +67,7 @@ export default async function DocumentPage({
       .eq("entity_type", "document")
       .eq("entity_id", id)
       .order("requested_at", { ascending: false }),
+    supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name"),
   ]);
 
   if (!document) notFound();
@@ -74,6 +76,7 @@ export default async function DocumentPage({
     document_date: string | null; valid_until: string | null; status: string; language: string | null; amount: number | null;
     current_version: number; original_filename: string | null; mime_type: string | null; file_size_bytes: number | null;
     created_at: string; updated_at: string; archived_at: string | null; archive_reason: string | null;
+    counterparty_id: string | null; visibility: string; source: string;
     type: { name_ru: string; name_en: string | null; name_kk: string | null; has_validity_period: boolean } | null;
     currency: { id: string; code: string } | null; uploader: Named; archiver: Named;
   };
@@ -130,6 +133,22 @@ export default async function DocumentPage({
           <article className="summary-card"><p>Сумма</p><strong>{doc.amount !== null ? `${Number(doc.amount).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ${currency?.code ?? ""}` : "—"}</strong><small>по документу</small></article>
           <article className="summary-card"><p>Зарегистрировал</p><strong>{uploader?.full_name ?? "—"}</strong><small>{formatDateTime(doc.created_at)}</small></article>
         </section>
+
+        {permissions.share_external && !archived && (
+          <section className="panel admin-section">
+            <div className="panel-heading"><div><p className="eyebrow">Кабинет клиента</p><h2>Доступ внешнего клиента</h2></div>
+              <span className={`doc-badge ${doc.visibility === "shared_with_counterparty" ? "doc-status-approved" : "doc-archive-badge"}`}>{doc.visibility === "shared_with_counterparty" ? "Открыт клиенту" : "Только ARSEO"}</span>
+            </div>
+            <form action={setDocumentExternalAccessAction} className="doc-subform">
+              <input type="hidden" name="document_id" value={doc.id} />
+              <input type="hidden" name="shared" value="true" />
+              <label>Клиент<select name="counterparty_id" required defaultValue={doc.counterparty_id ?? ""}><option value="" disabled>Выберите клиента</option>{(customers ?? []).map((customer) => <option key={customer.id} value={customer.id}>{customer.legal_name}</option>)}</select></label>
+              <button className="primary" type="submit">Открыть клиенту</button>
+            </form>
+            {doc.visibility === "shared_with_counterparty" && <form action={setDocumentExternalAccessAction} className="inline-form"><input type="hidden" name="document_id" value={doc.id} /><input type="hidden" name="shared" value="false" /><button className="ghost danger-text" type="submit">Закрыть внешний доступ</button></form>}
+            <p className="form-help">Клиент увидит документ только при активной учётной записи и включённом праве просмотра. Изменение записывается в журнал действий.</p>
+          </section>
+        )}
 
         <section className="panel admin-section">
           <div className="panel-heading">

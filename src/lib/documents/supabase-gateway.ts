@@ -11,6 +11,7 @@ const NO_PERMISSIONS: DocumentPermissions = {
   archive: false,
   manage_types: false,
   manage_requirements: false,
+  share_external: false,
 };
 
 // Uses the signed-in user's session only: every call is checked by RLS and Storage
@@ -27,6 +28,7 @@ export async function loadDocumentPermissions(supabase: SupabaseClient): Promise
     archive: flags.archive === true,
     manage_types: flags.manage_types === true,
     manage_requirements: flags.manage_requirements === true,
+    share_external: flags.share_external === true,
   };
 }
 

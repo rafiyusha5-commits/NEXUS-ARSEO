@@ -82,6 +82,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273100_purchase_plans.sql" >/dev/null
 # Promotions, special orders and low-shelf-life programs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273200_commercial_programs.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273300_external_client_portal.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

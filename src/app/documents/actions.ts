@@ -154,6 +154,24 @@ export async function updateDocumentAction(formData: FormData) {
   redirect(withMessage(back, "success", "Реквизиты сохранены"));
 }
 
+export async function setDocumentExternalAccessAction(formData: FormData) {
+  const { supabase } = await requireUser();
+  const documentId = text(formData, "document_id");
+  const shared = text(formData, "shared") === "true";
+  const counterpartyId = optional(formData, "counterparty_id");
+  const back = isUuid(documentId) ? `/documents/${documentId}` : "/documents";
+  if (!isUuid(documentId) || (shared && (!counterpartyId || !isUuid(counterpartyId)))) redirect(withMessage(back, "error", "Выберите клиента"));
+  const { error } = await supabase.rpc("set_document_external_access", {
+    p_document_id: documentId,
+    p_counterparty_id: shared ? counterpartyId : null,
+    p_shared: shared,
+  });
+  if (error) redirect(withMessage(back, "error", error.message));
+  revalidatePath(back);
+  revalidatePath("/portal/documents");
+  redirect(withMessage(back, "success", shared ? "Документ открыт выбранному клиенту" : "Доступ клиента закрыт"));
+}
+
 export async function addDocumentLinkAction(formData: FormData) {
   const { supabase } = await requireUser();
   const documentId = text(formData, "document_id");

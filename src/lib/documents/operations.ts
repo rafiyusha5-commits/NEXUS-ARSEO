@@ -26,6 +26,7 @@ export type DocumentPermissions = {
   archive: boolean;
   manage_types: boolean;
   manage_requirements: boolean;
+  share_external: boolean;
 };
 
 export type StorageFailure = { message: string; statusCode?: string | number | null };

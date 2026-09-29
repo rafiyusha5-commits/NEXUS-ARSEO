@@ -13,9 +13,12 @@ export type AccessProfile = {
   job_title: string | null;
   locale: string;
   is_active: boolean;
+  user_type: "employee" | "external";
+  counterparty_id: string | null;
+  phone: string | null;
 };
 
-export async function requireUser() {
+async function loadAccessContext() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -26,7 +29,7 @@ export async function requireUser() {
   const [{ data: profile }, { data: assignments }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, full_name, job_title, locale, is_active")
+      .select("id, full_name, job_title, locale, is_active, user_type, counterparty_id, phone")
       .eq("id", user.id)
       .single(),
     supabase
@@ -47,6 +50,18 @@ export async function requireUser() {
     profile: profile as AccessProfile,
     roles,
   };
+}
+
+export async function requireUser() {
+  const context = await loadAccessContext();
+  if (context.profile.user_type === "external") redirect("/portal/documents");
+  return context;
+}
+
+export async function requirePortalUser() {
+  const context = await loadAccessContext();
+  if (context.profile.user_type !== "external" || !context.profile.counterparty_id) redirect("/");
+  return context;
 }
 
 export async function requireAccessManager() {
