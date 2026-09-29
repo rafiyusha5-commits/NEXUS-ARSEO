@@ -13,6 +13,8 @@ export const TEMPLATE_PERMISSION_CODES = [
   "templates.approve",
   "templates.change_status",
   "templates.export",
+  "templates.generate",
+  "templates.generate_prices",
 ] as const;
 
 export async function loadTemplatePermissions(supabase: SupabaseClient): Promise<TemplatePermissions> {
@@ -26,6 +28,8 @@ export async function loadTemplatePermissions(supabase: SupabaseClient): Promise
     approve: flags["templates.approve"],
     change_status: flags["templates.change_status"],
     export: flags["templates.export"],
+    generate: flags["templates.generate"],
+    generate_prices: flags["templates.generate_prices"],
   };
 }
 

@@ -8,6 +8,12 @@ import { randomHex, sha256Hex } from "@/lib/documents/supabase-gateway.ts";
 import { addTemplateVersion, registerTemplateWithFile } from "@/lib/templates/operations.ts";
 import { type TemplateMetadata, parseTemplateVariables, validateTemplateMetadata, variablesToSchema } from "@/lib/templates/rules.ts";
 import { createTemplateGateway } from "@/lib/templates/supabase-gateway.ts";
+import { loadTemplatePermissions } from "@/lib/templates/supabase-gateway.ts";
+import { loadPermissions } from "@/lib/permissions.ts";
+import { loadGenerationPreview } from "@/lib/templates/generation-service.ts";
+import { DOCX_MIME,renderDocxTemplate } from "@/lib/templates/generation-docx.ts";
+import { generatedFileName } from "@/lib/templates/generation.ts";
+import { DOCUMENT_BUCKET,buildDocumentStoragePath,normalizeFileName } from "@/lib/documents/files.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -47,6 +53,26 @@ function templatePath(formData: FormData) {
 }
 
 const deps = { newId: () => crypto.randomUUID(), randomHex, sha256Hex };
+
+export async function generateDocumentAction(formData:FormData){
+ const templateId=text(formData,"template_id"),shipmentId=text(formData,"shipment_id");
+ const back=UUID.test(templateId)?`/templates/${templateId}/generate?shipment=${encodeURIComponent(shipmentId)}`:"/templates";
+ if(!UUID.test(templateId)||!UUID.test(shipmentId))redirect(withMessage(back,"error","Выберите шаблон и поставку"));
+ const{supabase}=await requireUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);if(!can.generate)redirect(withMessage(back,"error","Недостаточно прав для формирования документа"));
+ if(!access["documents.create"]||!access["shipments.view"])redirect(withMessage(back,"error","Для формирования нужны права на создание документов и просмотр поставок"));
+ const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
+ let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось подготовить данные"));}
+ if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
+ const version=preview.template.current as Record<string,unknown>;const storage=supabase.storage.from(DOCUMENT_BUCKET);
+ const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",downloadError?.message||"Файл шаблона не найден"));
+ let bytes:Uint8Array;try{bytes=renderDocxTemplate(new Uint8Array(await source.arrayBuffer()),preview.data);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось заполнить шаблон"));}
+ const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();const filename=generatedFileName(String(version.original_filename),String(preview.data.shipment_number));const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());
+ const{error:uploadError}=await storage.upload(path,bytes,{contentType:DOCX_MIME,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",`Не удалось сохранить сформированный файл: ${uploadError.message}`));
+ const checksum=await sha256Hex(bytes);const title=text(formData,"title")||`${preview.template.name} · ${preview.data.shipment_number}`;const number=text(formData,"document_number")||null;
+ const{error:registerError}=await supabase.rpc("register_generated_document",{p_generation_id:generationId,p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_document_id:documentId,p_title:title.slice(0,300),p_storage_path:path,p_original_filename:filename,p_document_number:number,p_document_date:new Date().toISOString().slice(0,10),p_language:preview.template.language,p_checksum_sha256:checksum,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
+ if(registerError){await storage.remove([path]);redirect(withMessage(back,"error",`Документ не зарегистрирован: ${registerError.message}`));}
+ revalidatePath("/templates");revalidatePath(`/templates/${templateId}`);revalidatePath("/documents");revalidatePath(`/shipments/${shipmentId}`);redirect(`/documents/${documentId}?success=${encodeURIComponent("Документ сформирован из шаблона")}`);
+}
 
 export async function createTemplateAction(formData: FormData) {
   const { supabase, user } = await requireUser();

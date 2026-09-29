@@ -36,5 +36,6 @@ Migration order:
 25. `202609273200_commercial_programs.sql` — versioned promotions, special customer orders and exact-batch low-shelf-life clearance, linked to forecasts and customer orders. See `docs/commercial-programs.md`.
 26. `202609273300_external_client_portal.sql` — isolated customer document portal, explicit per-client sharing, external account permissions and audited access.
 27. `202609273400_shipment_calendar.sql` — unified shipment calendar, plan/fact deviations and additional controlled milestones. See `docs/shipment-calendar.md`.
+28. `202609273500_document_generation.sql` — protected DOCX generation from approved shipment templates with an immutable input snapshot. See `docs/document-generation.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

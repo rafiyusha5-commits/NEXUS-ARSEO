@@ -21,6 +21,8 @@ export type TemplatePermissions = {
   approve: boolean;
   change_status: boolean;
   export: boolean;
+  generate: boolean;
+  generate_prices: boolean;
 };
 
 export type RegisterTemplateCall = {

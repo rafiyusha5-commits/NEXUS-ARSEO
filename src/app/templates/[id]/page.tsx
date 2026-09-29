@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
+import { loadPermissions } from "@/lib/permissions";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL, formatFileSize } from "@/lib/documents/files.ts";
 import { formatDateTime } from "@/lib/documents/labels.ts";
 import {
@@ -45,7 +46,7 @@ export default async function TemplatePage({
   const notices = await searchParams;
   if (!UUID.test(id)) notFound();
   const { profile, roles, supabase } = await requireUser();
-  const can = await loadTemplatePermissions(supabase);
+  const [can, generationAccess] = await Promise.all([loadTemplatePermissions(supabase), loadPermissions(supabase, ["documents.create", "shipments.view"] as const)]);
   if (!can.view) notFound();
 
   const [{ data }, { data: versions }, { data: types }] = await Promise.all([
@@ -71,6 +72,10 @@ export default async function TemplatePage({
   const actions = availableTemplateActions(template, can);
   const variables = schemaToVariables(template.variables_schema);
   const currentVersion = (versions ?? []).find((version) => version.is_current);
+  const canGenerate = can.generate && generationAccess["documents.create"] && generationAccess["shipments.view"] && template.status === "approved" && template.is_active && currentVersion?.mime_type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const { data: generations } = can.generate
+    ? await supabase.from("document_generations").select("id, generated_at, contains_prices, shipment:shipments(id, shipment_number), document:documents(id, title)").eq("template_id", id).order("generated_at", { ascending: false }).limit(20)
+    : { data: [] };
   const { data: counterparties } = actions.includes("edit")
     ? await supabase.from("counterparties").select("id, legal_name, short_name, roles").eq("status", "active").order("legal_name").limit(500)
     : { data: [] };
@@ -85,6 +90,7 @@ export default async function TemplatePage({
           <div className="topbar-actions">
             <span className={`doc-badge template-status-${template.status}`}>{templateStatusLabel[template.status] ?? template.status}</span>
             {!archived && <span className={`doc-badge ${template.is_active ? "doc-optional" : "doc-archive-badge"}`}>{template.is_active ? "Включён" : "Отключён"}</span>}
+            {canGenerate && <Link className="primary button-link" href={`/templates/${template.id}/generate`}>Сформировать документ</Link>}
             <Link className="ghost button-link" href="/templates">К каталогу</Link>
           </div>
         </header>
@@ -172,6 +178,11 @@ export default async function TemplatePage({
             ))}
           </div>
         </section>
+
+        {can.generate && <section className="panel admin-section">
+          <div className="panel-heading"><div><p className="eyebrow">Автозаполнение</p><h2>Сформированные документы</h2></div><span className="page-count">{generations?.length ?? 0}</span></div>
+          <div className="compact-list">{(generations ?? []).map((generation) => { const shipment = one(generation.shipment); const document = one(generation.document); return <div className="doc-link-row" key={generation.id}><div><strong>{document?.title ?? "Документ"}</strong><small>{shipment?.shipment_number ?? "Поставка"} · {formatDateTime(generation.generated_at)}{generation.contains_prices ? " · с ценами" : ""}</small></div>{document && <Link className="ghost button-link compact" href={`/documents/${document.id}`}>Открыть</Link>}</div>; })}{!generations?.length && <div className="empty-state">По этому шаблону документы ещё не формировались.</div>}</div>
+        </section>}
 
         {actions.includes("edit") && (
           <section className="panel admin-section">

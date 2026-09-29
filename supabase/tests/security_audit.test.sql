@@ -66,10 +66,11 @@ select 'authenticated', unnest(array[
   'public.my_external_document_permissions', 'public.update_my_external_profile', 'public.register_external_document', 'public.record_external_document_access',
   'public.set_document_external_access', 'public.configure_external_client', 'public.set_external_client_access',
   'public.create_shipment_milestone', 'public.complete_shipment_milestone', 'public.cancel_shipment_milestone', 'public.my_shipment_calendar',
+  'public.register_generated_document',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
-  'private.is_registered_document_file', 'private.is_registered_template_file', 'private.listing_card_is_draft',
+  'private.is_registered_document_file', 'private.is_registered_template_file', 'private.can_view_generated_document', 'private.can_read_registered_document_file', 'private.listing_card_is_draft',
   'private.template_is_active', 'private.is_external_client', 'private.external_has_permission',
   'private.external_can_access_document', 'private.external_can_read_document_file'])
 union all

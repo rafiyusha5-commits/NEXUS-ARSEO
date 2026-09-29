@@ -91,7 +91,7 @@ describe("template storage path", () => {
 function fakeGateway(options: { can?: Partial<TemplatePermissions>; state?: { archived: boolean; checksums: string[] } | null; registerError?: string } = {}) {
   const calls: { name: string; args: unknown[] }[] = [];
   const can: TemplatePermissions = {
-    view: true, create: true, update: true, upload: true, archive: true, approve: true, change_status: true, export: true, ...options.can,
+    view: true, create: true, update: true, upload: true, archive: true, approve: true, change_status: true, export: true, generate: true, generate_prices: true, ...options.can,
   };
   const gateway: TemplateGateway = {
     async permissions() { return can; },
