@@ -33,5 +33,6 @@ Migration order:
 22. `202609272900_operational_analytics.sql` — permission gate for RLS-preserving operational analytics. See `docs/operational-analytics.md`.
 23. `202609273000_sales_forecasts.sql` — versioned sales forecasts by product, customer, warehouse and period, with commercial review and final approval. See `docs/sales-forecasts.md`.
 24. `202609273100_purchase_plans.sql` — versioned supplier purchase plans with packaging rounding, two-step approval and controlled creation of an RVI shipment. See `docs/purchase-plans.md`.
+25. `202609273200_commercial_programs.sql` — versioned promotions, special customer orders and exact-batch low-shelf-life clearance, linked to forecasts and customer orders. See `docs/commercial-programs.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
