@@ -38,5 +38,6 @@ Migration order:
 27. `202609273400_shipment_calendar.sql` — unified shipment calendar, plan/fact deviations and additional controlled milestones. See `docs/shipment-calendar.md`.
 28. `202609273500_document_generation.sql` — protected DOCX generation from approved shipment templates with an immutable input snapshot. See `docs/document-generation.md`.
 29. `202609273600_source_document_extraction.sql` — version-bound extraction and exception review for uploaded shipment sources, plus protected XLSX output generation. See `docs/source-document-extraction.md`.
+30. `202609273700_export_document_package.sql` — selected export package generation: filled shipment workbook plus printable CMR, ТТН and packing-list PDFs with one immutable source snapshot.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

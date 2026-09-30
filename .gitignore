@@ -26,6 +26,7 @@
 .DS_Store
 *.pem
 /local-imports/
+/tmp/
 
 # debug
 npm-debug.log*
