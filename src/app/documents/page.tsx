@@ -15,6 +15,7 @@ import {
   todayIso,
 } from "@/lib/documents/rules.ts";
 import { loadDocumentPermissions } from "@/lib/documents/supabase-gateway.ts";
+import { BulkDocumentUpload } from "@/components/documents/bulk-document-upload";
 import { registerDocumentAction } from "./actions";
 
 type SearchParams = {
@@ -283,7 +284,17 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
 
         {!migrationMissing && permissions.create && (
           <section className="panel admin-section" id="register">
-            <div className="panel-heading"><div><p className="eyebrow">Новый документ</p><h2>Регистрация и загрузка файла</h2></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Пакетная загрузка</p><h2>Загрузить несколько документов</h2></div><a className="ghost button-link compact" href="#register-one">Подробная регистрация одного файла</a></div>
+            <BulkDocumentUpload
+              types={activeTypes.map(type => ({ id: type.id, code: type.code, name: type.name_ru, category: type.category }))}
+              primaryLink={prefillLink ? `${prefillLink.entity_type}:${prefillLink.entity_id}` : undefined}
+            />
+          </section>
+        )}
+
+        {!migrationMissing && permissions.create && (
+          <section className="panel admin-section" id="register-one">
+            <div className="panel-heading"><div><p className="eyebrow">Один документ</p><h2>Регистрация с полными реквизитами</h2></div></div>
             {!activeTypes.length ? (
               <div className="empty-state">В справочнике нет активных типов документов. Обратитесь к администратору.</div>
             ) : (
