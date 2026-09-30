@@ -58,4 +58,8 @@ describe("shipment document generation data", () => {
   it("creates a stable DOCX file name", () => {
     assert.equal(generatedFileName("CMR клиента.docx", "IMP/2026 42"), "CMR-клиента-IMP-2026-42.docx");
   });
+
+  it("preserves the XLSX extension for a generated shipment workbook", () => {
+    assert.equal(generatedFileName("Отгрузка заказ HS-41.1 Fazer.xlsx", "EXP/2026 17"), "Отгрузка-заказ-HS-41.1-Fazer-EXP-2026-17.xlsx");
+  });
 });

@@ -87,6 +87,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273400_shipment_calendar.sql" >/dev/null
 # Document generation provenance and its registration RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273500_document_generation.sql" >/dev/null
+# Source extraction, review and XLSX output support are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273600_source_document_extraction.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

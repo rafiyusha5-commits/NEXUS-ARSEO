@@ -72,7 +72,7 @@ export default async function TemplatePage({
   const actions = availableTemplateActions(template, can);
   const variables = schemaToVariables(template.variables_schema);
   const currentVersion = (versions ?? []).find((version) => version.is_current);
-  const canGenerate = can.generate && generationAccess["documents.create"] && generationAccess["shipments.view"] && template.status === "approved" && template.is_active && currentVersion?.mime_type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const canGenerate = can.generate && generationAccess["documents.create"] && generationAccess["shipments.view"] && template.status === "approved" && template.is_active && ["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(currentVersion?.mime_type));
   const { data: generations } = can.generate
     ? await supabase.from("document_generations").select("id, generated_at, contains_prices, shipment:shipments(id, shipment_number), document:documents(id, title)").eq("template_id", id).order("generated_at", { ascending: false }).limit(20)
     : { data: [] };

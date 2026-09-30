@@ -37,5 +37,6 @@ Migration order:
 26. `202609273300_external_client_portal.sql` — isolated customer document portal, explicit per-client sharing, external account permissions and audited access.
 27. `202609273400_shipment_calendar.sql` — unified shipment calendar, plan/fact deviations and additional controlled milestones. See `docs/shipment-calendar.md`.
 28. `202609273500_document_generation.sql` — protected DOCX generation from approved shipment templates with an immutable input snapshot. See `docs/document-generation.md`.
+29. `202609273600_source_document_extraction.sql` — version-bound extraction and exception review for uploaded shipment sources, plus protected XLSX output generation. See `docs/source-document-extraction.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

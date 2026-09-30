@@ -77,7 +77,8 @@ export function missingGenerationFields(variables:TemplateVariable[],data:Record
 }
 
 export function generatedFileName(templateName:string,shipmentNumber:string){
- const stem=templateName.replace(/\.docx$/i,"").replace(/[^A-Za-zА-Яа-яӘәҒғҚқҢңӨөҰұҮүҺһІі0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,70)||"document";
+ const extension=templateName.toLowerCase().endsWith(".xlsx")?"xlsx":"docx";
+ const stem=templateName.replace(/\.(docx|xlsx)$/i,"").replace(/[^A-Za-zА-Яа-яӘәҒғҚқҢңӨөҰұҮүҺһІі0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,70)||"document";
  const shipment=shipmentNumber.replace(/[^A-Za-z0-9._-]+/g,"-").slice(0,40)||"shipment";
- return `${stem}-${shipment}.docx`;
+ return `${stem}-${shipment}.${extension}`;
 }

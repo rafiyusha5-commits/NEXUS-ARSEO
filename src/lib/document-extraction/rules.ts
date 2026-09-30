@@ -1,0 +1,133 @@
+export const EXTRACTION_VERSION = "rules-v1";
+
+export type ExtractionEvidence = { label: string; value: string; confidence: number };
+export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
+export type ExtractionResult = {
+  data: Record<string, unknown>;
+  evidence: Record<string, ExtractionEvidence>;
+  conflicts: ExtractionConflict[];
+};
+
+type Pattern = { field: string; label: string; expressions: RegExp[]; confidence?: number };
+
+const patterns: Pattern[] = [
+  { field: "order_number", label: "Номер заказа", expressions: [/заказ(?:а|у)?\s*(?:№|#|номер)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,40})/iu] },
+  { field: "invoice_number", label: "Номер инвойса", expressions: [/(?:invoice|инвойс|сч[её]т[- ]фактура)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,40})/iu] },
+  { field: "contract_number", label: "Номер договора", expressions: [/(?:договор(?:-заявк[аи])?|контракт)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,60})/iu] },
+  { field: "cmr_number", label: "Номер CMR", expressions: [/CMR\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
+  { field: "ttn_number", label: "Номер ТТН", expressions: [/ТТН\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
+  { field: "packing_list_number", label: "Номер упаковочного листа", expressions: [/упаковочн(?:ый|ого)\s+лист(?:а)?\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
+  { field: "waybill_number", label: "Номер накладной", expressions: [/(?:накладная|накладной)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,40})/iu] },
+  { field: "esf_number", label: "Номер ЭСФ", expressions: [/(?:ЭСФ|электронн\S*\s+сч[её]т[- ]фактур\S*)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,40})/iu] },
+  { field: "driver_name", label: "Водитель", expressions: [/(?:водитель|ФИО\s+водителя|фамилия\s+и\s+инициалы\s+водителя)\s*[:—-]?\s*([А-ЯA-Z][А-ЯA-ZЁа-яa-zё .-]{5,100})/iu] },
+  { field: "driver_document", label: "Документ водителя", expressions: [/(?:удостоверени\S*\s+водителя|паспорт\/удостоверение|документ)\s*[:—-]?\s*([^\n]{5,180})/iu] },
+  { field: "driver_phone", label: "Телефон водителя", expressions: [/(?:телефон\S*\s+водителя|тел\.?|моб\.?)\s*[:—-]?\s*(\+?[0-9][0-9 ()-]{7,20})/iu] },
+  { field: "vehicle_plate", label: "Госномер автомобиля", expressions: [/(?:гос\.?\s*номер\s+(?:авто|тягача)|регистрац\S*\s+номер\s+тягача)\s*[:—-]?\s*([A-ZА-Я0-9 -]{4,20})/iu] },
+  { field: "vehicle_make", label: "Марка автомобиля", expressions: [/(?:марка\s+(?:авто|тягача)|автомобиль)\s*[:—-]?\s*([A-ZА-Я][A-ZА-Я0-9 .\/-]{2,50})/iu] },
+  { field: "trailer_plate", label: "Госномер прицепа", expressions: [/(?:гос\.?\s*номер\s+(?:прицепа|полуприцепа)|прицеп\s+(?:№|номер)?)\s*[:—-]?\s*([A-ZА-Я0-9 -]{4,20})/iu] },
+  { field: "trailer_make", label: "Марка прицепа", expressions: [/(?:марка\s+(?:прицепа|полуприцепа))\s*[:—-]?\s*([A-ZА-Я][A-ZА-Я0-9 .\/-]{2,60})/iu] },
+  { field: "carrier_name", label: "Перевозчик", expressions: [/(?:наименование\s+перевозчика|перевозчик)\s*[:—-]?\s*([^\n]{3,160})/iu] },
+  { field: "loading_address", label: "Адрес погрузки", expressions: [/(?:адрес|пункт|место)\s+погрузки\s*[:—-]?\s*([^\n]{5,250})/iu] },
+  { field: "unloading_address", label: "Адрес разгрузки", expressions: [/(?:адрес|пункт|место)\s+(?:разгрузки|выгрузки)\s*[:—-]?\s*([^\n]{5,300})/iu] },
+  { field: "seals", label: "Номера пломб", expressions: [/(?:номер(?:а)?\s+пломб|пломб[аы])\s*[:—-]?\s*([A-ZА-Я0-9,; /-]{3,100})/iu] },
+  { field: "temperature_setpoint", label: "Температурный режим", expressions: [/(?:температурн\S*\s+режим)\s*[:—-]?\s*([+−-]?[0-9]{1,2}\s*(?:°?C)?\s*(?:[-–—]\s*[+]?[0-9]{1,2}\s*°?C?)?)/iu] },
+  { field: "pallet_count", label: "Количество паллет", expressions: [/(?:количество|кол-во|к-во)\s+(?:паллет|поддонов)\s*[:—-]?\s*([0-9]{1,5})/iu] },
+  { field: "gross_weight_kg", label: "Вес брутто", expressions: [/(?:вес|масса)\s+брутто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
+  { field: "net_weight_kg", label: "Вес нетто", expressions: [/(?:вес|масса)\s+нетто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
+  { field: "incoterms", label: "Условия поставки", expressions: [/(?:условия\s+(?:поставки|оплаты)|incoterms?)\s*[:—-]?\s*([^\n]{3,180})/iu] },
+];
+
+const datePatterns: Array<[string, string, RegExp[]]> = [
+  ["order_date", "Дата заказа", [/(?:дата\s+заказа)\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
+  ["shipping_date", "Дата отгрузки", [/(?:дата\s+отгрузки(?:\s+по\s+документам)?)\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
+  ["invoice_date", "Дата инвойса", [/(?:дата\s+(?:инвойса|сч[её]та[- ]фактуры))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
+  ["contract_date", "Дата договора", [/(?:дата\s+(?:договора|контракта))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
+];
+
+function clean(value: string) {
+  return value.replace(/\s+/g, " ").replace(/^[\s:;,.–—-]+|[\s:;,]+$/g, "").trim();
+}
+
+function isoDate(value: string) {
+  const parts = value.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+  if (!parts) return clean(value);
+  const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+  return `${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+}
+
+export function extractShipmentFields(rawText: string): ExtractionResult {
+  const text = rawText.replace(/\r/g, "\n").replace(/[\t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n");
+  const data: Record<string, unknown> = {};
+  const evidence: Record<string, ExtractionEvidence> = {};
+  for (const pattern of patterns) {
+    for (const expression of pattern.expressions) {
+      const match = expression.exec(text);
+      if (!match?.[1]) continue;
+      const value = clean(match[1]);
+      if (!value) continue;
+      data[pattern.field] = ["pallet_count"].includes(pattern.field) ? Number(value.replace(/\s/g, "")) : value;
+      evidence[pattern.field] = { label: pattern.label, value, confidence: pattern.confidence ?? 0.85 };
+      break;
+    }
+  }
+  for (const [field, label, expressions] of datePatterns) {
+    for (const expression of expressions) {
+      const match = expression.exec(text);
+      if (!match?.[1]) continue;
+      const value = isoDate(match[1]);
+      data[field] = value;
+      evidence[field] = { label, value, confidence: 0.9 };
+      break;
+    }
+  }
+  return { data, evidence, conflicts: [] };
+}
+
+export function conflictsAcrossDocuments(results: Array<{ documentId: string; result: ExtractionResult }>) {
+  const values = new Map<string, Map<string, string[]>>();
+  for (const { documentId, result } of results) {
+    for (const [field, raw] of Object.entries(result.data)) {
+      if (raw === null || typeof raw === "object") continue;
+      const value = String(raw).trim();
+      if (!value) continue;
+      const normalized = value.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
+      const byValue = values.get(field) ?? new Map<string, string[]>();
+      byValue.set(normalized, [...(byValue.get(normalized) ?? []), documentId]);
+      values.set(field, byValue);
+    }
+  }
+  const conflicts: ExtractionConflict[] = [];
+  for (const [field, byValue] of values) {
+    if (byValue.size < 2) continue;
+    conflicts.push({ field, values: [...byValue.keys()], documents: [...new Set([...byValue.values()].flat())] });
+  }
+  return conflicts;
+}
+
+export function mergeConfirmedSourceData(base: Record<string, unknown>, sources: Array<Record<string, unknown>>) {
+  const merged = { ...base };
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      if (value === null || value === "" || value === undefined) continue;
+      if (key === "items" && Array.isArray(value) && value.length) merged.items = value;
+      else merged[key] = value;
+    }
+  }
+  const transports = Array.isArray(merged.transports) ? [...merged.transports] as Array<Record<string, unknown>> : [];
+  if (transports.length) {
+    transports[0] = {
+      ...transports[0],
+      carrier_name: merged.carrier_name || transports[0].carrier_name,
+      vehicle_plate: merged.vehicle_plate || transports[0].vehicle_plate,
+      vehicle_make: merged.vehicle_make || transports[0].vehicle_make,
+      trailer_plate: merged.trailer_plate || transports[0].trailer_plate,
+      trailer_make: merged.trailer_make || transports[0].trailer_make,
+      driver_name: merged.driver_name || transports[0].driver_name,
+      driver_phone: merged.driver_phone || transports[0].driver_phone,
+      driver_document: merged.driver_document || transports[0].driver_document,
+      temperature_setpoint: merged.temperature_setpoint || transports[0].temperature_setpoint,
+    };
+    merged.transports = transports;
+  }
+  return merged;
+}

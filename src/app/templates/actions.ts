@@ -12,6 +12,7 @@ import { loadTemplatePermissions } from "@/lib/templates/supabase-gateway.ts";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { loadGenerationPreview } from "@/lib/templates/generation-service.ts";
 import { DOCX_MIME,renderDocxTemplate } from "@/lib/templates/generation-docx.ts";
+import { XLSX_MIME,renderShipmentWorkbookTemplate } from "@/lib/templates/generation-xlsx.ts";
 import { generatedFileName } from "@/lib/templates/generation.ts";
 import { DOCUMENT_BUCKET,buildDocumentStoragePath,normalizeFileName } from "@/lib/documents/files.ts";
 
@@ -65,9 +66,9 @@ export async function generateDocumentAction(formData:FormData){
  if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;const storage=supabase.storage.from(DOCUMENT_BUCKET);
  const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",downloadError?.message||"Файл шаблона не найден"));
- let bytes:Uint8Array;try{bytes=renderDocxTemplate(new Uint8Array(await source.arrayBuffer()),preview.data);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось заполнить шаблон"));}
+ let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?await renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось заполнить шаблон"));}
  const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();const filename=generatedFileName(String(version.original_filename),String(preview.data.shipment_number));const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());
- const{error:uploadError}=await storage.upload(path,bytes,{contentType:DOCX_MIME,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",`Не удалось сохранить сформированный файл: ${uploadError.message}`));
+ const outputMime=mime===XLSX_MIME?XLSX_MIME:DOCX_MIME;const{error:uploadError}=await storage.upload(path,bytes,{contentType:outputMime,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",`Не удалось сохранить сформированный файл: ${uploadError.message}`));
  const checksum=await sha256Hex(bytes);const title=text(formData,"title")||`${preview.template.name} · ${preview.data.shipment_number}`;const number=text(formData,"document_number")||null;
  const{error:registerError}=await supabase.rpc("register_generated_document",{p_generation_id:generationId,p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_document_id:documentId,p_title:title.slice(0,300),p_storage_path:path,p_original_filename:filename,p_document_number:number,p_document_date:new Date().toISOString().slice(0,10),p_language:preview.template.language,p_checksum_sha256:checksum,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
  if(registerError){await storage.remove([path]);redirect(withMessage(back,"error",`Документ не зарегистрирован: ${registerError.message}`));}
