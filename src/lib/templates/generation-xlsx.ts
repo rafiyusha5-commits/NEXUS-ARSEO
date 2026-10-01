@@ -14,6 +14,8 @@ const dateValue = (value: unknown) => {
   if (!raw) return "";
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+  const ru = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (ru) return new Date(Date.UTC(Number(ru[3]), Number(ru[2]) - 1, Number(ru[1])));
   return raw;
 };
 const rowStyle = (source: ExcelJS.Row, target: ExcelJS.Row) => {
@@ -27,6 +29,37 @@ const rowStyle = (source: ExcelJS.Row, target: ExcelJS.Row) => {
     if (cell.fill) output.fill = { ...cell.fill };
     if (cell.font) output.font = { ...cell.font };
   });
+};
+
+const cellAddress = (column: number, row: number) => {
+  let letters = "";
+  for (let value = column; value > 0; value = Math.floor((value - 1) / 26)) {
+    letters = String.fromCharCode(65 + ((value - 1) % 26)) + letters;
+  }
+  return `${letters}${row}`;
+};
+
+const rangeBounds = (range: string) => {
+  const match = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(range);
+  if (!match) return null;
+  const column = (letters: string) => [...letters].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0);
+  return { left: column(match[1]), top: Number(match[2]), right: column(match[3]), bottom: Number(match[4]) };
+};
+
+// ExcelJS does not reliably move merged ranges when rows are spliced. The ARSEO
+// packing-list footer contains merged signature/address cells below the product
+// table, so move those ranges explicitly before expanding the table.
+const insertRowsPreservingMerges = (sheet: ExcelJS.Worksheet, start: number, count: number) => {
+  if (count <= 0) return;
+  const merges = [...(((sheet.model as unknown as { merges?: string[] }).merges) ?? [])];
+  const moving = merges.map(range => ({ range, bounds: rangeBounds(range) })).filter(row => row.bounds && row.bounds.bottom >= start) as Array<{ range: string; bounds: NonNullable<ReturnType<typeof rangeBounds>> }>;
+  for (const { range } of moving) sheet.unMergeCells(range);
+  sheet.spliceRows(start, 0, ...Array.from({ length: count }, () => []));
+  for (const { bounds } of moving) {
+    const top = bounds.top >= start ? bounds.top + count : bounds.top;
+    const bottom = bounds.bottom + count;
+    sheet.mergeCells(`${cellAddress(bounds.left, top)}:${cellAddress(bounds.right, bottom)}`);
+  }
 };
 
 function firstTransport(data: Record<string, unknown>) {
@@ -75,9 +108,15 @@ export async function renderShipmentWorkbookTemplate(template: Uint8Array, data:
 
   const items = Array.isArray(data.items) ? data.items as Array<Record<string, unknown>> : [];
   const detailStart = 17, detailCapacity = 7, detailTotalBase = 24;
+  // The supplied HS-41.1 sample merges the first two rows for one product with
+  // two expiry batches. Generated rows represent independent positions, so the
+  // inherited merges must be removed before values are written.
+  for (const range of ["A17:A18", "B17:B18", "C17:C18", "H17:H18"]) {
+    if (lines.getCell(range.split(":")[0]).isMerged) lines.unMergeCells(range);
+  }
   if (items.length > detailCapacity) {
     const extra = items.length - detailCapacity;
-    lines.spliceRows(detailTotalBase, 0, ...Array.from({ length: extra }, () => []));
+    insertRowsPreservingMerges(lines, detailTotalBase, extra);
     for (let row = detailTotalBase; row < detailTotalBase + extra; row++) rowStyle(lines.getRow(detailStart), lines.getRow(row));
   }
   const detailTotal = detailTotalBase + Math.max(0, items.length - detailCapacity);
@@ -101,7 +140,7 @@ export async function renderShipmentWorkbookTemplate(template: Uint8Array, data:
   const packingStart = 12, packingCapacity = 6, packingTotalBase = 18;
   if (items.length > packingCapacity) {
     const extra = items.length - packingCapacity;
-    packing.spliceRows(packingTotalBase, 0, ...Array.from({ length: extra }, () => []));
+    insertRowsPreservingMerges(packing, packingTotalBase, extra);
     for (let row = packingTotalBase; row < packingTotalBase + extra; row++) rowStyle(packing.getRow(packingStart), packing.getRow(row));
   }
   const packingTotal = packingTotalBase + Math.max(0, items.length - packingCapacity);
