@@ -20,14 +20,14 @@ export default async function SalesPage({searchParams}:{searchParams:Promise<{er
     <header className="topbar"><div><p className="eyebrow">Продажи</p><h1>Заказы покупателей</h1></div><span className="page-count">{sales?.length??0} заказов</span></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609272500_customer_orders_fefo.sql</strong> в Supabase.</div>}
-    <section className="panel admin-section"><p className="eyebrow">Новый заказ</p><h2>Создать заказ покупателя</h2><form action={createCustomerOrder} className="reference-form">
+    <details className="panel admin-section create-disclosure"><summary><span><small>Новый заказ</small><strong>Создать заказ покупателя</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body"><form action={createCustomerOrder} className="reference-form">
       <label>Клиент<select name="customer_id" required defaultValue=""><option value="" disabled>Выберите клиента</option>{customers?.map(c=><option key={c.id} value={c.id}>{c.short_name||c.legal_name}{c.min_remaining_shelf_life_pct!=null?` · ОСГ ≥ ${c.min_remaining_shelf_life_pct}%`:""}</option>)}</select></label>
       <label>Склад отгрузки<select name="warehouse_id" required defaultValue=""><option value="" disabled>Выберите склад</option>{warehouses?.map(w=><option key={w.id} value={w.id}>{w.code} · {name(w.name)}</option>)}</select></label>
       <label>Плановая дата отгрузки<input name="planned_shipment_date" type="date" required min={new Date().toISOString().slice(0,10)}/></label>
       <label>Валюта<select name="currency_id" defaultValue=""><option value="">Не выбрана</option>{currencies?.map(c=><option key={c.id} value={c.id}>{c.code}</option>)}</select></label>
       <label>Контракт<select name="contract_id" defaultValue=""><option value="">Без контракта</option>{contracts?.map(c=>{const party=one(c.counterparty);return <option key={c.id} value={c.id}>{party?.short_name||party?.legal_name} · № {c.number}</option>;})}</select></label>
       <label>Комментарий<input name="notes"/></label><button className="primary" type="submit" disabled={Boolean(error)}>Создать заказ</button>
-    </form></section>
+    </form></div></details>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Реестр</p><h2>Заказы покупателей</h2></div></div><div className="reference-list">
       {sales?.map(s=>{const customer=one(s.customer);const warehouse=one(s.warehouse);return <Link className="reference-row" href={`/sales/${s.id}`} key={s.id}><div><strong>{s.sale_number}</strong><small>{customer?.short_name||customer?.legal_name}</small></div><span className="status">{statusLabel[s.status]??s.status}</span><span className="reference-meta">{warehouse?.code} · {new Intl.DateTimeFormat("ru-RU").format(new Date(s.planned_shipment_date))}</span></Link>;})}
       {!sales?.length&&!error&&<p className="empty-state">Клиентских заказов пока нет.</p>}

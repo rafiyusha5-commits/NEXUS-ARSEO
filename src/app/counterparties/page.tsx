@@ -45,8 +45,9 @@ export default async function CounterpartiesPage({ searchParams }: { searchParam
         {filters.map(([value, label]) => <Link className={selectedType === value ? "active" : ""} href={value === "all" ? "/counterparties" : `/counterparties?type=${value}`} key={value}>{label}</Link>)}
       </nav>
 
-      <section className="panel admin-section">
-        <div className="panel-heading"><div><p className="eyebrow">Новая запись</p><h2>Добавить контрагента</h2></div></div>
+      <details className="panel admin-section create-disclosure">
+        <summary><span><small>Новая запись</small><strong>Добавить контрагента</strong></span><b aria-hidden="true">+</b></summary>
+        <div className="create-disclosure-body">
         <p className="form-help">У одной организации можно отметить несколько ролей. Например, завод одновременно является производителем и поставщиком.</p>
         <form action={createCounterparty} className="reference-form counterparty-form">
           <label className="wide-field">Юридическое название<input name="legal_name" required /></label>
@@ -65,7 +66,8 @@ export default async function CounterpartiesPage({ searchParams }: { searchParam
           </fieldset>
           <button className="primary" type="submit" disabled={Boolean(error)}>Добавить</button>
         </form>
-      </section>
+        </div>
+      </details>
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Единый справочник</p><h2>{filters.find(([value]) => value === selectedType)?.[1]}</h2></div></div>
         <div className="reference-list">

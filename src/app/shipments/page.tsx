@@ -25,7 +25,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
     <header className="topbar"><div><p className="eyebrow">Закупки и логистика</p><h1>Поступления и поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609270003_phase2_shipments.sql</strong> в Supabase.</div>}
-    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Новая операция</p><h2>Оформить поступление или поставку</h2></div></div>
+    <details className="panel admin-section create-disclosure"><summary><span><small>Новая операция</small><strong>Оформить поступление или поставку</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">
       <form action={createShipment} className="shipment-form">
         <label>Код проекта<input name="project_code" placeholder="RVI-01"/></label>
         <label>Тип<select name="type" defaultValue="import"><option value="import">Импорт</option><option value="export">Экспорт</option><option value="domestic_transfer">Перемещение по Казахстану</option></select></label>
@@ -38,7 +38,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
         <label>Готовность товара<input name="planned_ready_date" type="date"/></label><label>Прибытие в Казахстан<input name="planned_arrival_date" type="date"/></label>
         <button className="primary" type="submit">Создать поставку</button>
       </form><p className="form-help">Номер и 18 этапов процесса создаются автоматически. Условные этапы можно включить позже.</p>
-    </section>
+    </div></details>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Реестр</p><h2>Поставки в работе</h2></div><div className="shipment-filters"><Link href="/shipments">Все</Link><Link href="/shipments?status=planning">Планирование</Link><Link href="/shipments?status=in_transit">В пути</Link><Link href="/shipments?status=customs">Таможня</Link></div></div>
       <div className="shipment-list">{shipments?.map((shipment)=>{const supplier=one(shipment.supplier);const route=one(shipment.route);const warehouse=one(shipment.warehouse);const responsible=one(shipment.responsible);return <Link className="shipment-row" href={`/shipments/${shipment.id}`} key={shipment.id}>
         <div><strong>{shipment.shipment_number}</strong><small>{shipment.project_code||"Без кода проекта"}</small></div>
