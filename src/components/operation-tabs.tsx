@@ -12,18 +12,20 @@ export function OperationTabs({
   children,
   defaultTab,
   activeTab,
+  ariaLabel = "Разделы операции",
 }: {
   tabs: OperationTab[];
   children: ReactNode;
   defaultTab?: string;
   activeTab?: string;
+  ariaLabel?: string;
 }) {
   const selectedTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : defaultTab ?? tabs[0]?.id ?? "";
   const panels = Children.toArray(children);
 
   return (
     <div className="operation-tabs">
-      <div className="operation-tab-list" role="tablist" aria-label="Разделы поставки">
+      <div className="operation-tab-list" role="tablist" aria-label={ariaLabel}>
         {tabs.map((tab) => (
           <Link
             aria-controls={`operation-panel-${tab.id}`}
