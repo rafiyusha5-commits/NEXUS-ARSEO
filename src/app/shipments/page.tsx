@@ -22,10 +22,10 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
   const suppliers=counterparties?.filter((party)=>party.roles?.includes("supplier")||party.roles?.includes("manufacturer"))??[];
   const customers=counterparties?.filter((party)=>party.roles?.includes("customer"))??[];
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
-    <header className="topbar"><div><p className="eyebrow">Фаза 2 · Операционный контур</p><h1>Поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>
+    <header className="topbar"><div><p className="eyebrow">Закупки и логистика</p><h1>Поступления и поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609270003_phase2_shipments.sql</strong> в Supabase.</div>}
-    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Новая поставка</p><h2>Создать по шаблону RVI</h2></div></div>
+    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Новая операция</p><h2>Оформить поступление или поставку</h2></div></div>
       <form action={createShipment} className="shipment-form">
         <label>Код проекта<input name="project_code" placeholder="RVI-01"/></label>
         <label>Тип<select name="type" defaultValue="import"><option value="import">Импорт</option><option value="export">Экспорт</option><option value="domestic_transfer">Перемещение по Казахстану</option></select></label>
