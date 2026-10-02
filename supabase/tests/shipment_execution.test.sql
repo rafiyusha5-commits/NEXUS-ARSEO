@@ -45,6 +45,21 @@ select public.create_shipment_with_stages(
   'd7000000-0000-4000-8000-000000000001',current_date,current_date+14
 );
 
+do $$
+declare v_shipment uuid;
+begin
+  select shipment_id into v_shipment from tests.shipment_execution_context;
+  assert (
+    select count(*) = 2
+    from public.shipment_stage_runs run
+    join public.shipment_stages stage on stage.id = run.stage_id
+    where run.shipment_id = v_shipment
+      and stage.code in ('broker_processing','customs_clearance')
+      and run.is_required
+      and run.status = 'pending'
+  ), 'import shipment activates mandatory broker and customs stages';
+end $$;
+
 -- Vehicles are added through the RPC: direct writes to shipment_transports are closed
 -- by 202609272300_database_security_hardening.sql.
 select public.add_shipment_transport(shipment_id) from tests.shipment_execution_context;
