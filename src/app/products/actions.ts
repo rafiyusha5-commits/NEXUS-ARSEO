@@ -5,6 +5,12 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const identifierTypes = new Set(["supplier_sku", "gtin", "unit_barcode", "box_barcode"]);
+const packagingUnits = new Set(["piece", "box", "layer", "pallet", "truck"]);
+const value = (formData: FormData, key: string) => String(formData.get(key) ?? "").trim();
+const productUrl = (id: string, tab: string, kind: "error" | "success", message: string) => `/products/${id}?tab=${tab}&${kind}=${encodeURIComponent(message)}`;
+
 export async function createProduct(formData: FormData) {
   const { supabase } = await requireUser();
   const sku = String(formData.get("internal_sku") ?? "").trim();
@@ -41,4 +47,47 @@ export async function createProduct(formData: FormData) {
   }
   revalidatePath("/products");
   redirect("/products?success=" + encodeURIComponent("Карточка товара создана."));
+}
+
+export async function addProductIdentifier(formData: FormData) {
+  const { supabase } = await requireUser();
+  const productId = value(formData, "product_id");
+  const identifierType = value(formData, "identifier_type");
+  const identifierValue = value(formData, "value");
+  const counterpartyId = value(formData, "counterparty_id");
+  if (!uuidPattern.test(productId)) redirect("/products?error=" + encodeURIComponent("Товар не найден."));
+  if (!identifierTypes.has(identifierType) || !identifierValue || (identifierType === "supplier_sku" && !uuidPattern.test(counterpartyId))) {
+    redirect(productUrl(productId, "identifiers", "error", "Заполните тип, значение и поставщика для артикула поставщика."));
+  }
+  const { error } = await supabase.from("product_identifiers").insert({
+    product_id: productId,
+    identifier_type: identifierType,
+    value: identifierValue,
+    counterparty_id: identifierType === "supplier_sku" ? counterpartyId : null,
+    packaging_uom: value(formData, "packaging_uom") || null,
+    is_primary: formData.get("is_primary") === "on",
+  });
+  if (error) redirect(productUrl(productId, "identifiers", "error", error.message));
+  revalidatePath(`/products/${productId}`);
+  redirect(productUrl(productId, "identifiers", "success", "Идентификатор добавлен."));
+}
+
+export async function addProductPackaging(formData: FormData) {
+  const { supabase } = await requireUser();
+  const productId = value(formData, "product_id");
+  const uom = value(formData, "uom");
+  const units = Number(value(formData, "units_per_parent"));
+  if (!uuidPattern.test(productId)) redirect("/products?error=" + encodeURIComponent("Товар не найден."));
+  if (!packagingUnits.has(uom) || !Number.isFinite(units) || units <= 0) redirect(productUrl(productId, "packaging", "error", "Укажите единицу и количество больше нуля."));
+  const numberOrNull = (key: string) => { const raw = value(formData, key); return raw ? Number(raw) : null; };
+  const payload = {
+    product_id: productId, uom, units_per_parent: units,
+    gross_weight_kg: numberOrNull("gross_weight_kg"), net_weight_kg: numberOrNull("net_weight_kg"), volume_m3: numberOrNull("volume_m3"),
+    length_cm: numberOrNull("length_cm"), width_cm: numberOrNull("width_cm"), height_cm: numberOrNull("height_cm"),
+  };
+  if (Object.values(payload).some((item) => typeof item === "number" && (!Number.isFinite(item) || item < 0))) redirect(productUrl(productId, "packaging", "error", "Вес, объём и размеры должны быть неотрицательными числами."));
+  const { error } = await supabase.from("product_packaging").insert(payload);
+  if (error) redirect(productUrl(productId, "packaging", "error", error.message));
+  revalidatePath(`/products/${productId}`);
+  redirect(productUrl(productId, "packaging", "success", "Упаковка добавлена."));
 }

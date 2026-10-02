@@ -162,9 +162,9 @@ export function ReferenceImportForm() {
             Цены, себестоимость и условия договоров не загружаются — такие колонки отклоняются. Формат: docs/reference-import.md.
           </p>
           <p className="ri-templates">
-            Шаблоны: <a href="/products/import/template?kind=counterparties">контрагенты</a> · <a href="/products/import/template?kind=products">товары</a> ·{" "}
-            <a href="/products/import/template?kind=identifiers">идентификаторы</a> · <a href="/products/import/template?kind=packaging">упаковка</a> ·{" "}
-            <a href="/products/import/template?kind=json">JSON</a>
+            Шаблоны: <Link href="/products/import/template?kind=counterparties">контрагенты</Link> · <Link href="/products/import/template?kind=products">товары</Link> ·{" "}
+            <Link href="/products/import/template?kind=identifiers">идентификаторы</Link> · <Link href="/products/import/template?kind=packaging">упаковка</Link> ·{" "}
+            <Link href="/products/import/template?kind=json">JSON</Link>
           </p>
         </div>
         <div className="import-actions">
