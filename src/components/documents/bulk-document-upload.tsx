@@ -18,11 +18,12 @@ type UploadRow = {
 
 const rowKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
-export function BulkDocumentUpload({ types, primaryLink }: { types: UploadType[]; primaryLink?: string }) {
+export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }: { types: UploadType[]; primaryLink?: string; autoExtractShipmentId?: string }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<UploadRow[]>([]);
   const [running, setRunning] = useState(false);
+  const [batchMessage, setBatchMessage] = useState("");
   const selected = rows.filter(row => row.checked && row.state !== "done");
   const allChecked = rows.length > 0 && rows.every(row => row.checked || row.state === "done");
   const typeOptions = useMemo(() => types.map(({ id, code, name }) => ({ id, code, name })), [types]);
@@ -53,6 +54,7 @@ export function BulkDocumentUpload({ types, primaryLink }: { types: UploadType[]
       return;
     }
     setRunning(true);
+    setBatchMessage("");
     let completed = 0;
     for (const row of queue) {
       update(row.key, { state: "uploading", message: "Загружается…" });
@@ -69,6 +71,17 @@ export function BulkDocumentUpload({ types, primaryLink }: { types: UploadType[]
         update(row.key, { state: "error", message: error instanceof Error ? error.message : "Ошибка загрузки" });
       }
     }
+    if (completed && autoExtractShipmentId) {
+      setBatchMessage("Документы загружены. Система распознаёт комплект и сверяет данные…");
+      try {
+        const response = await fetch(`/api/shipments/${autoExtractShipmentId}/sources/extract`, { method: "POST" });
+        const result = await response.json() as { ok?: boolean; error?: string; summary?: { confirmed: number; review: number; failed: number } };
+        if (!response.ok || !result.ok || !result.summary) throw new Error(result.error || "Не удалось распознать комплект");
+        setBatchMessage(`Распознано: ${result.summary.confirmed}; требует проверки: ${result.summary.review}; не прочитано: ${result.summary.failed}.`);
+      } catch (error) {
+        setBatchMessage(`Файлы сохранены, но автоматическое распознавание не завершено: ${error instanceof Error ? error.message : "ошибка"}. Можно повторить его кнопкой ниже.`);
+      }
+    }
     setRunning(false);
     if (completed) router.refresh();
   }
@@ -79,6 +92,7 @@ export function BulkDocumentUpload({ types, primaryLink }: { types: UploadType[]
       {rows.length > 0 && <><label className="check-label"><input type="checkbox" checked={allChecked} onChange={event => setRows(current => current.map(row => row.state === "done" ? row : { ...row, checked: event.target.checked }))} /> Выбрать все</label><button className="primary" type="button" disabled={running || !selected.length} onClick={uploadSelected}>Загрузить отмеченные ({selected.length})</button></>}
     </div>
     <p className="form-help">Каждый отмеченный файл загружается отдельно, поэтому ошибка одного документа не отменяет остальные. Максимальный размер одного файла — {MAX_DOCUMENT_FILE_SIZE_LABEL}.</p>
+    {batchMessage && <div className="setup-notice">{batchMessage}</div>}
     {rows.length > 0 && <div className="table-wrap"><table className="data-table bulk-upload-table"><thead><tr><th></th><th>Файл</th><th>Тип документа</th><th>Название</th><th>Состояние</th></tr></thead><tbody>{rows.map(row => <tr key={row.key} className={row.state === "error" ? "has-error" : ""}>
       <td><input aria-label={`Загрузить ${row.file.name}`} type="checkbox" checked={row.checked} disabled={running || row.state === "done"} onChange={event => update(row.key, { checked: event.target.checked, state: row.state === "error" ? "ready" : row.state })} /></td>
       <td><strong>{row.file.name}</strong><small>{(row.file.size / 1024).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} КБ</small></td>

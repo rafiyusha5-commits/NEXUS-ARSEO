@@ -64,14 +64,24 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
       <AppSidebar profile={profile} roles={roles} active="templates" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Документооборот</p><h1>Шаблоны документов</h1></div>
+          <div><p className="eyebrow">Документооборот</p><h1>Библиотека образцов</h1></div>
           <div className="topbar-actions">
-            {can.create && <a className="primary button-link" href="#create">+ Новый шаблон</a>}
+            {can.create && <a className="primary button-link" href="#create">+ Загрузить образец</a>}
             {can.view && <span className="page-count">{templates.length} в выборке</span>}
           </div>
         </header>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
+        <section className="panel admin-section">
+          <div className="panel-heading"><div><p className="eyebrow">Как это работает</p><h2>Образец не является готовым документом поставки</h2></div></div>
+          <p className="form-help">Загрузите правильно оформленный CMR, ТТН, упаковочный лист или карту ввода один раз. При работе с поставкой система создаст отдельную копию, подставит подтверждённые данные из инвойса, договора-заявки, автомобиля и водителя, а исходный образец останется неизменным.</p>
+          <div className="shipment-summary-grid">
+            <article className="summary-card"><p>Перевозка</p><strong>CMR и ТТН</strong><small>Данные поставщика, покупателя, маршрута, авто и водителя</small></article>
+            <article className="summary-card"><p>Товары</p><strong>Упаковочный лист</strong><small>Позиции, количество, упаковка, нетто и брутто</small></article>
+            <article className="summary-card"><p>Покупатели</p><strong>Карты ввода</strong><small>Индивидуальная форма ввода новинок в ассортимент клиента</small></article>
+            <article className="summary-card"><p>Товар</p><strong>Стикеры и маркировка</strong><small>Размер, форма и содержание для конкретного товара</small><Link className="text-button" href="/stickers">Открыть макеты →</Link></article>
+          </div>
+        </section>
         {migrationMissing && (
           <div className="setup-notice">Шаблоны ещё не подключены к базе. Администратору: примените миграцию <strong>202609271700_document_templates_listing_cards.sql</strong> (docs/templates-listing-cards.md).</div>
         )}
@@ -91,8 +101,8 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
                 <option value="">Все типы</option>
                 {(types ?? []).map((type) => <option value={type.id} key={type.id}>{type.name_ru}</option>)}
               </select></label>
-              <label>Направление<select name="direction" defaultValue={directionFilter}>
-                <option value="">Ввод и вывод</option>
+              <label>Применение<select name="direction" defaultValue={directionFilter}>
+                <option value="">Все области</option>
                 {TEMPLATE_DIRECTIONS.map((direction) => <option value={direction} key={direction}>{templateDirectionLabel[direction]}</option>)}
               </select></label>
               <label>Язык<select name="language" defaultValue={languageFilter}>
@@ -131,7 +141,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
                 );
               })}
               {!templates.length && !listError && (
-                <div className="empty-state">{hasFilters ? "По заданным условиям шаблонов нет." : "Шаблонов пока нет. Загрузите первый шаблон с помощью формы ниже."}</div>
+                <div className="empty-state">{hasFilters ? "По заданным условиям образцов нет." : "Образцов пока нет. Загрузите первый готовый документ с помощью формы ниже."}</div>
               )}
             </div>
           </section>
@@ -139,7 +149,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
 
         {can.create && !migrationMissing && (
           <section className="panel admin-section" id="create">
-            <div className="panel-heading"><div><p className="eyebrow">Новый шаблон</p><h2>Создание шаблона и загрузка файла</h2></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Новый образец</p><h2>Загрузить готовый документ и задать правило</h2></div></div>
             <TemplateCreateForm
               action={createTemplateAction}
               types={types ?? []}

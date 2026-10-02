@@ -20,8 +20,8 @@ export const templateLanguageLabel: Record<string, string> = {
 };
 
 export const templateDirectionLabel: Record<string, string> = {
-  input: "Ввод от поставщика",
-  output: "Вывод для покупателя",
+  input: "Для поставки / от поставщика",
+  output: "Для покупателя",
 };
 
 export type TemplateVariable = { key: string; label: string };

@@ -14,7 +14,7 @@ export const CARD_STATUSES = [
 export type CardStatus = (typeof CARD_STATUSES)[number];
 export const CARD_UOMS = ["piece", "box", "layer", "pallet"] as const;
 
-export const cardTypeLabel: Record<string, string> = { input: "Ввод от поставщика", output: "Вывод для покупателя" };
+export const cardTypeLabel: Record<string, string> = { input: "Историческая карта поставщика", output: "Ввод товара в ассортимент покупателя" };
 export const cardStatusLabel: Record<string, string> = {
   draft: "Черновик",
   submitted: "Отправлена контрагенту",

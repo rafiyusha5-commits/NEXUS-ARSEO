@@ -3,11 +3,11 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ListingCardCreateForm } from "@/components/listing-card-create-form";
 import { requireUser } from "@/lib/auth/access";
 import { formatDate, formatDateTime } from "@/lib/documents/labels.ts";
-import { CARD_STATUSES, CARD_TYPES, cardStatusLabel, cardTypeLabel } from "@/lib/listing-cards/rules.ts";
+import { CARD_STATUSES, cardStatusLabel } from "@/lib/listing-cards/rules.ts";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { createCardAction } from "./actions";
 
-type SearchParams = { type?: string; status?: string; counterparty?: string; all?: string; error?: string; success?: string };
+type SearchParams = { status?: string; counterparty?: string; all?: string; error?: string; success?: string };
 type Row = {
   id: string; card_number: string; version: number; card_type: string; status: string; title: string | null;
   effective_date: string | null; created_at: string;
@@ -24,7 +24,6 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
   const { profile, roles, supabase } = await requireUser();
   const can = await loadPermissions(supabase, PERMISSIONS);
 
-  const typeFilter = (CARD_TYPES as readonly string[]).includes(params.type ?? "") ? params.type! : "";
   const statusFilter = (CARD_STATUSES as readonly string[]).includes(params.status ?? "") ? params.status! : "";
   const counterpartyFilter = UUID.test(params.counterparty ?? "") ? params.counterparty! : "";
   const showHistory = params.all === "1";
@@ -35,9 +34,9 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
     let query = supabase
       .from("product_listing_cards")
       .select("id, card_number, version, card_type, status, title, effective_date, created_at, counterparty:counterparties!product_listing_cards_counterparty_id_fkey(legal_name, short_name), items:product_listing_card_items(count)")
+      .eq("card_type", "output")
       .order("created_at", { ascending: false })
       .limit(300);
-    if (typeFilter) query = query.eq("card_type", typeFilter);
     if (statusFilter) query = query.eq("status", statusFilter);
     else if (!showHistory) query = query.not("status", "in", "(superseded,cancelled)");
     if (counterpartyFilter) query = query.eq("counterparty_id", counterpartyFilter);
@@ -55,14 +54,14 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
       ? supabase.from("document_templates").select("id, name, language, flow_direction, counterparty_id").eq("status", "approved").eq("is_active", true).order("name")
       : Promise.resolve({ data: [] }),
   ]);
-  const hasFilters = Boolean(typeFilter || statusFilter || counterpartyFilter || showHistory);
+  const hasFilters = Boolean(statusFilter || counterpartyFilter || showHistory);
 
   return (
     <main className="app-shell">
       <AppSidebar profile={profile} roles={roles} active="listing-cards" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Поставщики и покупатели</p><h1>Карты ввода и вывода</h1></div>
+          <div><p className="eyebrow">Покупатели · Новинки</p><h1>Карты ввода товаров</h1></div>
           <div className="topbar-actions">
             {can["listing_cards.create"] && !migrationMissing && <a className="primary button-link" href="#create">+ Новая карта</a>}
             {can["listing_cards.view"] && <span className="page-count">{cards.length} в выборке</span>}
@@ -74,19 +73,15 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
           <div className="setup-notice">Карты ещё не подключены к базе. Администратору: примените миграцию <strong>202609271700_document_templates_listing_cards.sql</strong> (docs/templates-listing-cards.md).</div>
         )}
         {!can["listing_cards.view"] && !migrationMissing && (
-          <section className="panel admin-section"><div className="empty-state">Нет доступа к картам ввода и вывода. Обратитесь к администратору.</div></section>
+          <section className="panel admin-section"><div className="empty-state">Нет доступа к картам ввода товаров. Обратитесь к администратору.</div></section>
         )}
 
         {can["listing_cards.view"] && !migrationMissing && (
           <section className="panel admin-section">
-            <div className="panel-heading"><div><p className="eyebrow">Реестр</p><h2>Карты контрагентов</h2></div>
+            <div className="panel-heading"><div><p className="eyebrow">Реестр</p><h2>Карты ввода новинок покупателям</h2></div>
               {hasFilters && <Link className="text-button" href="/listing-cards">Сбросить фильтры</Link>}
             </div>
             <form className="doc-filters" method="get">
-              <label>Тип<select name="type" defaultValue={typeFilter}>
-                <option value="">Ввод и вывод</option>
-                {CARD_TYPES.map((type) => <option value={type} key={type}>{cardTypeLabel[type]}</option>)}
-              </select></label>
               <label>Статус<select name="status" defaultValue={statusFilter}>
                 <option value="">Действующие</option>
                 {CARD_STATUSES.map((status) => <option value={status} key={status}>{cardStatusLabel[status]}</option>)}
@@ -105,7 +100,7 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
                 return (
                   <Link className={`doc-row${["superseded", "cancelled"].includes(card.status) ? " doc-archived" : ""}`} href={`/listing-cards/${card.id}`} key={card.id}>
                     <div className="doc-main">
-                      <span className="doc-type">{cardTypeLabel[card.card_type] ?? card.card_type}</span>
+                      <span className="doc-type">Ввод товара в ассортимент</span>
                       <strong>{card.card_number} · версия {card.version}</strong>
                       <small>{counterparty ? counterparty.short_name || counterparty.legal_name : "Контрагент недоступен"}{card.title ? ` · ${card.title}` : ""}</small>
                     </div>
@@ -127,7 +122,7 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
           <section className="panel admin-section" id="create">
             <div className="panel-heading"><div><p className="eyebrow">Новая карта</p><h2>Создать черновик карты</h2></div></div>
             {!counterparties?.length ? (
-              <div className="empty-state">Нет активных поставщиков или покупателей. Сначала добавьте их в разделе «Контрагенты».</div>
+              <div className="empty-state">Нет активных покупателей. Сначала добавьте их в справочник покупателей.</div>
             ) : (
               <ListingCardCreateForm action={createCardAction} parties={counterparties ?? []} templates={templates ?? []} />
             )}

@@ -20,7 +20,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Продажи", items: [
     { label: "Заказы покупателей", href: "/sales", key: "sales" },
     { label: "Промо и спецзаказы", href: "/commercial-programs", key: "commercial-programs" },
-    { label: "Карты ввода и вывода", href: "/listing-cards", key: "listing-cards" },
+    { label: "Карты ввода товаров", href: "/listing-cards", key: "listing-cards" },
   ] },
   { label: "Логистика", items: [
     { label: "Календарь перевозок", href: "/calendar", key: "calendar" },
@@ -42,7 +42,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Документы", items: [
     { label: "Журнал документов", href: "/documents", key: "documents" },
-    { label: "Шаблоны документов", href: "/templates", key: "templates" },
+    { label: "Библиотека образцов", href: "/templates", key: "templates" },
   ] },
   { label: "Планирование", items: [
     { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
