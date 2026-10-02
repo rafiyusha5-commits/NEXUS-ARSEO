@@ -71,11 +71,11 @@ export default async function CounterpartiesPage({ searchParams }: { searchParam
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Единый справочник</p><h2>{filters.find(([value]) => value === selectedType)?.[1]}</h2></div></div>
         <div className="reference-list">
-          {visible.map((party) => <article className="reference-row" key={party.id}>
+          {visible.map((party) => <Link className="reference-row counterparty-row-link" href={`/counterparties/${party.id}`} key={party.id}>
             <div><strong>{party.short_name || party.legal_name}</strong><small>{party.legal_name}{party.tax_id ? ` · ${party.tax_id}` : ""}</small></div>
             <div className="tag-list">{party.roles.filter((role: string) => roleNames[role]).map((role: string) => <span className="reference-tag" key={role}>{roleNames[role]}</span>)}{party.status !== "active" && <span className="reference-tag accent">{party.status === "archived" ? "Архив" : "Приостановлен"}</span>}</div>
-            <span className="reference-meta">{party.country}{party.min_remaining_shelf_life_pct != null ? ` · ОСГ ≥ ${party.min_remaining_shelf_life_pct}%` : ""}</span>
-          </article>)}
+            <span className="reference-meta">{party.country}{party.min_remaining_shelf_life_pct != null ? ` · ОСГ ≥ ${party.min_remaining_shelf_life_pct}%` : ""} · Открыть →</span>
+          </Link>)}
           {!error && !visible.length && <p className="empty-state">Контрагентов этого типа пока нет.</p>}
         </div>
       </section>
