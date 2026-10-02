@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 
+const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function createWarehouse(formData: FormData) {
   const { supabase } = await requireUser();
   const code = String(formData.get("code") ?? "").trim().toUpperCase();
@@ -19,8 +21,10 @@ export async function createWarehouse(formData: FormData) {
 export async function createLocation(formData: FormData) {
   const { supabase } = await requireUser();
   const warehouseId=String(formData.get("warehouse_id")??""); const code=String(formData.get("code")??"").trim().toUpperCase(); const zone=String(formData.get("zone")??"");
-  if(!warehouseId||!code||!zone) redirect("/warehouses?error="+encodeURIComponent("Заполните склад, код и тип зоны."));
+  const returnTo=String(formData.get("return_to")??"");
+  const target=uuidPattern.test(returnTo)?`/warehouses/${returnTo}?tab=zones`:"/warehouses?tab=main";
+  if(!warehouseId||!code||!zone) redirect(target+"&error="+encodeURIComponent("Заполните склад, код и тип зоны."));
   const {error}=await supabase.from("warehouse_locations").insert({warehouse_id:warehouseId,code,zone});
-  if(error) redirect("/warehouses?error="+encodeURIComponent(error.message));
-  revalidatePath("/warehouses"); redirect("/warehouses?success="+encodeURIComponent("Зона склада добавлена."));
+  if(error) redirect(target+"&error="+encodeURIComponent(error.message));
+  revalidatePath("/warehouses");revalidatePath(`/warehouses/${warehouseId}`);redirect(target+"&success="+encodeURIComponent("Зона склада добавлена."));
 }

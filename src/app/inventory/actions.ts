@@ -48,15 +48,18 @@ export async function issueFifo(data:FormData){
 
 export async function setBatchStatus(data:FormData){
   const {supabase}=await requireUser();
+  const batchId=uuid(data,"batch_id");
+  const returnTo=text(data,"return_to");
+  const target=uuidPattern.test(returnTo)?`/inventory/${returnTo}?tab=main`:"/inventory?tab=main";
   const status=text(data,"status");
-  if(!["available","quarantine","blocked"].includes(status))redirect(`/inventory?error=${encodeURIComponent("Выберите корректное состояние партии")}`);
+  if(!["available","quarantine","blocked"].includes(status))redirect(`${target}&error=${encodeURIComponent("Выберите корректное состояние партии")}`);
   const {error}=await supabase.rpc("set_inventory_batch_status",{
-    p_batch_id:uuid(data,"batch_id"),
+    p_batch_id:batchId,
     p_status:status,
     p_reason:text(data,"reason")||null,
   });
-  if(error)redirect(`/inventory?error=${encodeURIComponent(error.message)}`);
-  revalidatePath("/inventory");
+  if(error)redirect(`${target}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/inventory");revalidatePath(`/inventory/${batchId}`);
   const label=status==="available"?"разблокирована":status==="quarantine"?"отправлена в карантин":"заблокирована";
-  redirect(`/inventory?success=${encodeURIComponent(`Партия ${label}`)}`);
+  redirect(`${target}&success=${encodeURIComponent(`Партия ${label}`)}`);
 }
