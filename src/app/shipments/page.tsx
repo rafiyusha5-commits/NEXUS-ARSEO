@@ -19,7 +19,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
     supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),
     supabase.from("profiles").select("id,full_name").eq("is_active",true).order("full_name"),
   ]);
-  const suppliers=counterparties?.filter((party)=>party.roles?.includes("supplier")||party.roles?.includes("manufacturer"))??[];
+  const suppliers=counterparties?.filter((party)=>party.roles?.includes("manufacturer"))??[];
   const customers=counterparties?.filter((party)=>party.roles?.includes("customer"))??[];
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Закупки и логистика</p><h1>Поступления и поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>

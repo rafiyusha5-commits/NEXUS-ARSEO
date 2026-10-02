@@ -33,7 +33,8 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Стикеры и маркировка", href: "/stickers", key: "stickers" },
   ] },
   { label: "Справочники", items: [
-    { label: "Контрагенты", href: "/counterparties", key: "counterparties" },
+    { label: "Покупатели", href: "/counterparties", key: "counterparties" },
+    { label: "Поставщики", href: "/suppliers", key: "suppliers" },
     { label: "Товары", href: "/products", key: "products" },
   ] },
   { label: "Финансы", items: [
@@ -88,12 +89,12 @@ export function AppSidebar({
         {navigationGroups.map((group) => {
           const items = group.items.filter((item) => !item.managerOnly || isManager);
           if (!items.length) return null;
-          const containsActive = items.some((item) => item.key === active || (active === "suppliers" && item.key === "counterparties"));
+          const containsActive = items.some((item) => item.key === active);
           return <details className="sidebar-group" open={containsActive || group.label === "Главная"} key={group.label}>
             <summary>{group.label}<span aria-hidden="true">⌄</span></summary>
             <div className="sidebar-group-links">
               {items.map((item) => (
-                <Link className={item.key === active || (active === "suppliers" && item.key === "counterparties") ? "active" : ""} href={item.href} key={item.key}>
+                <Link className={item.key === active ? "active" : ""} href={item.href} key={item.key}>
                   {item.label}
                   {item.key === "notifications" && (
                     <Suspense fallback={null}>

@@ -7,12 +7,11 @@ import { requireUser } from "@/lib/auth/access";
 export async function createSupplier(formData: FormData) {
   const { supabase } = await requireUser();
   const legalName = String(formData.get("legal_name") ?? "").trim();
-  const role = String(formData.get("role") ?? "");
   const country = String(formData.get("country") ?? "").trim().toUpperCase();
-  if (!legalName || !["manufacturer", "supplier"].includes(role) || !/^[A-Z]{2}$/.test(country)) {
-    redirect("/suppliers?error=" + encodeURIComponent("Укажите название, тип поставщика и двухбуквенный код страны."));
+  if (!legalName || !/^[A-Z]{2}$/.test(country)) {
+    redirect("/suppliers?error=" + encodeURIComponent("Укажите название завода и двухбуквенный код страны."));
   }
-  const roles = role === "manufacturer" ? ["manufacturer", "supplier"] : ["supplier"];
+  const roles = ["manufacturer", "supplier"];
   const { error } = await supabase.from("counterparties").insert({
     legal_name: legalName,
     short_name: String(formData.get("short_name") ?? "").trim() || null,

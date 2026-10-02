@@ -17,7 +17,7 @@ export async function createProduct(formData: FormData) {
   const nameRu = String(formData.get("name_ru") ?? "").trim();
   const manufacturerId = String(formData.get("manufacturer_id") ?? "");
   const category = String(formData.get("category") ?? "");
-  if (!sku || !nameRu || !manufacturerId || !PRODUCT_CATEGORIES.includes(category as (typeof PRODUCT_CATEGORIES)[number])) redirect("/products?error=" + encodeURIComponent("Заполните артикул, название, производителя и категорию."));
+  if (!sku || !nameRu || !uuidPattern.test(manufacturerId) || !PRODUCT_CATEGORIES.includes(category as (typeof PRODUCT_CATEGORIES)[number])) redirect("/products?error=" + encodeURIComponent("Заполните артикул, название, завод-поставщик и категорию."));
 
   const { data: product, error } = await supabase.from("products").insert({
     internal_sku: sku,

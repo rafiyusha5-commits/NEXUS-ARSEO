@@ -30,7 +30,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
     supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
-    supabase.from("products").select("id,internal_sku,name,brand").eq("status","active").order("internal_sku"),
+    supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku"),
     supabase.from("shipment_items").select("id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,unit_price,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
@@ -38,6 +38,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     supabase.from("shipment_stage_history").select("id,from_status,to_status,performed_by_name,reason,created_at,run:shipment_stage_runs(stage:shipment_stages(name),transport:shipment_transports(sequence_no)),user:profiles!shipment_stage_history_changed_by_fkey(full_name)").eq("shipment_id",id).order("created_at",{ascending:false}),
   ]);
   if(error||!shipment)notFound();
+  const availableProducts=(products??[]).filter((product)=>shipment.type!=="import"||product.product_suppliers?.some((link)=>link.supplier_id===shipment.supplier_id&&link.status==="active"));
   const supplier=one(shipment.supplier); const customer=one(shipment.customer); const route=one(shipment.route);
   const warehouse=one(shipment.warehouse); const currency=one(shipment.currency); const responsible=one(shipment.responsible);
   const canEdit=!shipment.is_locked&&!['on_hold','cancelled','closed'].includes(shipment.status);
@@ -72,9 +73,9 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     </>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Заказ поставщику</p><h2>Позиции</h2></div><span className="page-count">{items?.length??0}</span></div>
         {canEdit&&<form action={addShipmentItem} className="shipment-subform"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="currency_id" value={currency?.id??""}/>
-          <label>Товар<select name="product_id" required defaultValue=""><option value="" disabled>Выберите товар</option>{products?.map((product)=><option value={product.id} key={product.id}>{product.internal_sku} · {name(product.name)}</option>)}</select></label>
+          <label>Товар<select name="product_id" required defaultValue=""><option value="" disabled>Выберите товар поставщика</option>{availableProducts.map((product)=><option value={product.id} key={product.id}>{product.internal_sku} · {name(product.name)}</option>)}</select></label>
           <label>Количество<input name="ordered_quantity" type="number" min="0.001" step="0.001" required/></label><label>Ед. изм.<select name="uom" defaultValue="piece"><option value="piece">Штуки</option><option value="box">Коробки</option><option value="pallet">Паллеты</option></select></label><label>Цена за единицу<input name="unit_price" type="number" min="0" step="0.0001"/></label><button className="primary" type="submit">Добавить</button>
-        </form>}
+        </form>}{canEdit&&shipment.type==="import"&&!availableProducts.length&&<p className="form-help">У этого поставщика нет активных товаров. Сначала привяжите товары в карточке поставщика или товара.</p>}
         <div className="shipment-item-list">{items?.map((item)=>{const product=one(item.product);const transport=one(item.transport);return <article className="shipment-item-card" key={item.id}>
           <div className="shipment-item-heading"><div><strong>{name(product?.name)}</strong><small>{product?.internal_sku} · {product?.brand||"Без бренда"}</small></div><span className={transport?"allocation-badge allocated":"allocation-badge"}>{transport?`Автомобиль №${transport.sequence_no}`:"Не распределено"}</span></div>
           {canEdit&&<div className="shipment-item-actions">

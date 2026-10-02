@@ -22,7 +22,7 @@ export default async function PurchasePlansPage({searchParams}:{searchParams:Pro
  ]);const plans=(rawPlans??[])as Plan[];const selected=plans.find(item=>item.id===query.plan)??plans[0]??null;const detail=Boolean(selected&&access.has("purchase_plans.detail"));
  const [linesResult,productsResult,routesResult,warehousesResult,currenciesResult,profilesResult]=await Promise.all([
   detail?supabase.from("purchase_plan_lines").select("*,product:products(internal_sku,name)").eq("purchase_plan_id",selected!.id).order("planned_order_date"):Promise.resolve({data:[]}),
-  detail?supabase.from("products").select("id,internal_sku,name,product_packaging(uom,units_per_parent)").eq("status","active").eq("manufacturer_id",selected!.supplier_id).order("internal_sku"):Promise.resolve({data:[]}),
+  detail?supabase.from("products").select("id,internal_sku,name,product_packaging(uom,units_per_parent),product_suppliers!inner(supplier_id,status)").eq("status","active").eq("product_suppliers.supplier_id",selected!.supplier_id).eq("product_suppliers.status","active").order("internal_sku"):Promise.resolve({data:[]}),
   detail?supabase.from("routes").select("id,name").eq("status","active").order("origin_country"):Promise.resolve({data:[]}),
   detail?supabase.from("warehouses").select("id,code,name").eq("status","active").eq("is_virtual",false).order("code"):Promise.resolve({data:[]}),
   detail?supabase.from("currencies").select("id,code").eq("is_active",true).order("code"):Promise.resolve({data:[]}),

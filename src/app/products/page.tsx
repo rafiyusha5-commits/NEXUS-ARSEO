@@ -6,12 +6,14 @@ import Link from "next/link";
 import { createProduct } from "./actions";
 
 type Manufacturer = { id?: string; legal_name: string };
+type ProductSupplier = { status: string; supplier: Manufacturer | Manufacturer[] | null };
 type ProductRow = {
   id: string; internal_sku: string; name: Record<string, string>; brand: string | null; category: string;
   hs_code: string | null; shelf_life_days: number | null; requires_marking: boolean; requires_sticker: boolean;
   counterparties: Manufacturer | Manufacturer[] | null;
   product_identifiers: { identifier_type: string; value: string }[];
   product_packaging: { uom: string; units_per_parent: number | string; gross_weight_kg: number | string | null; net_weight_kg: number | string | null }[];
+  product_suppliers: ProductSupplier[];
 };
 
 function manufacturerOf(product: ProductRow) {
@@ -22,12 +24,13 @@ function unique(values: (string | null | undefined)[]) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;search_by?:string;manufacturer?:string;brand?:string;category?:string}> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;search_by?:string;manufacturer?:string;supplier?:string;brand?:string;category?:string}> }) {
   const { profile, roles, supabase } = await requireUser();
   const params = await searchParams;
-  const [{data,error},{data: manufacturers}] = await Promise.all([
-    supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg)").order("internal_sku"),
-    supabase.from("counterparties").select("id, legal_name").overlaps("roles", ["manufacturer","supplier"]).eq("status","active").order("legal_name"),
+  const [{data,error},{data: manufacturers},{data: suppliers}] = await Promise.all([
+    supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg), product_suppliers(status,supplier:counterparties!product_suppliers_supplier_id_fkey(id,legal_name))").order("internal_sku"),
+    supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name"),
+    supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name"),
   ]);
   const products = ((data ?? []) as ProductRow[]).sort((a,b) => {
     const ma=manufacturerOf(a)?.legal_name ?? ""; const mb=manufacturerOf(b)?.legal_name ?? "";
@@ -45,6 +48,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       packaging: product.product_packaging,
     }, params.q ?? "", searchBy) &&
     (!params.manufacturer || manufacturerOf(product)?.legal_name === params.manufacturer) &&
+    (!params.supplier || product.product_suppliers.some(link => link.status === "active" && (Array.isArray(link.supplier) ? link.supplier[0]?.id : link.supplier?.id) === params.supplier)) &&
     (!params.brand || product.brand === params.brand) &&
     (!params.category || product.category === params.category));
   const grouped = Map.groupBy(filtered, product => manufacturerOf(product)?.legal_name ?? "Производитель не указан");
@@ -60,10 +64,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <label className="catalog-search">Поиск товара<input name="q" defaultValue={params.q ?? ""} placeholder="Введите поисковое значение" /></label>
           <label className="catalog-search-mode">Искать по<select name="search_by" defaultValue={searchBy}><option value="all">Везде</option><option value="barcode">Штрихкоду</option><option value="article">Артикулу</option><option value="name">Названию</option><option value="weight">Граммажу / весу</option><option value="brand">Бренду</option><option value="manufacturer">Производителю</option><option value="category">Категории</option><option value="hs_code">ТН ВЭД</option></select></label>
           <label>Производитель<select name="manufacturer" defaultValue={params.manufacturer ?? ""}><option value="">Все производители</option>{manufacturerOptions.map(value=><option key={value}>{value}</option>)}</select></label>
+          <label>Поставщик (завод)<select name="supplier" defaultValue={params.supplier ?? ""}><option value="">Все заводы</option>{(suppliers ?? []).map(value=><option value={value.id} key={value.id}>{value.legal_name}</option>)}</select></label>
           <label>Бренд<select name="brand" defaultValue={params.brand ?? ""}><option value="">Все бренды</option>{brandOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Категория<select name="category" defaultValue={params.category ?? ""}><option value="">Все категории</option>{categoryOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <button className="primary" type="submit">Показать</button>
-          {(params.q || params.manufacturer || params.brand || params.category) && <Link className="ghost button-link" href="/products">Сбросить</Link>}
+          {(params.q || params.manufacturer || params.supplier || params.brand || params.category) && <Link className="ghost button-link" href="/products">Сбросить</Link>}
         </form>
       </section>
 
@@ -71,14 +76,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         <form action={createProduct} className="reference-form product-form">
           <label>Внутренний артикул<input name="internal_sku" required /></label><label>Название RU<input name="name_ru" required /></label>
           <label>Название EN<input name="name_en" /></label><label>Название KZ<input name="name_kk" /></label>
-          <label>Производитель<select name="manufacturer_id" required defaultValue=""><option value="" disabled>Выберите</option>{(manufacturers ?? []).map(m=><option value={m.id} key={m.id}>{m.legal_name}</option>)}</select></label>
+          <label>Завод-поставщик<select name="manufacturer_id" required defaultValue=""><option value="" disabled>Выберите</option>{(manufacturers ?? []).map(m=><option value={m.id} key={m.id}>{m.legal_name}</option>)}</select></label>
           <label>Бренд<input name="brand" /></label><label>Категория<select name="category" required defaultValue=""><option value="" disabled>Выберите</option>{PRODUCT_CATEGORIES.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Артикул поставщика<input name="supplier_sku" /></label><label>GTIN<input name="gtin" /></label>
           <label>ШК единицы<input name="unit_barcode" /></label><label>ШК короба<input name="box_barcode" /></label><label>ТН ВЭД<input name="hs_code" /></label>
           <label>Срок годности, дней<input name="shelf_life_days" type="number" min="1" /></label><label>Страна происхождения<input name="country_of_origin" maxLength={2} placeholder="FI" /></label>
           <label className="check-label"><input name="requires_sticker" type="checkbox" /> Нужна стикеровка</label><label className="check-label"><input name="requires_marking" type="checkbox" /> Нужен Честный знак</label>
           <button className="primary" type="submit" disabled={Boolean(error) || !manufacturers?.length}>Создать товар</button>
-        </form>{!manufacturers?.length && !error && <p className="form-help">Сначала добавьте производителя или поставщика в разделе «Поставщики».</p>}
+        </form>{!manufacturers?.length && !error && <p className="form-help">Сначала добавьте завод-поставщик в разделе «Поставщики».</p>}
       </section>
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Реестр номенклатуры</p><h2>Папки товаров</h2></div></div><div className="catalog-tree">

@@ -29,11 +29,10 @@ export default async function CounterpartyPage({ params, searchParams }: { param
   const { data: party } = await supabase.from("counterparties").select("*,default_currency:currencies!counterparties_default_currency_id_fkey(code)").eq("id", id).maybeSingle();
   if (!party) notFound();
 
-  const [{ data: contacts }, { data: contracts }, { data: manufactured }, { data: supplierIdentifiers }, { data: shipments }, { data: sales }, { data: cards }, { data: links }, { data: templates }, { data: currencies }] = await Promise.all([
+  const [{ data: contacts }, { data: contracts }, { data: supplierProducts }, { data: shipments }, { data: sales }, { data: cards }, { data: links }, { data: templates }, { data: currencies }] = await Promise.all([
     supabase.from("counterparties_contacts").select("*").eq("counterparty_id", id).is("archived_at", null).order("is_primary", { ascending: false }).order("full_name"),
     supabase.from("contracts").select("*,currency:currencies(code),terms:contract_terms(*,product:products(internal_sku,name))").eq("counterparty_id", id).is("archived_at", null).order("created_at", { ascending: false }),
-    supabase.from("products").select("id,internal_sku,name,brand,category,status").eq("manufacturer_id", id).order("internal_sku"),
-    supabase.from("product_identifiers").select("value,product:products(id,internal_sku,name,brand,category,status)").eq("counterparty_id", id).eq("identifier_type", "supplier_sku"),
+    supabase.from("product_suppliers").select("status,product:products(id,internal_sku,name,brand,category,status,identifiers:product_identifiers(identifier_type,value,counterparty_id))").eq("supplier_id",id),
     supabase.from("shipments").select("id,shipment_number,type,status,planned_ready_date,planned_arrival_date,supplier_id,customer_id").or(`supplier_id.eq.${id},customer_id.eq.${id}`).order("created_at", { ascending: false }).limit(100),
     supabase.from("sales").select("id,sale_number,status,sale_date,planned_shipment_date,currency:currencies(code),items:sale_items(product:products(id,internal_sku,name,brand,category,status))").eq("customer_id", id).order("created_at", { ascending: false }).limit(100),
     supabase.from("product_listing_cards").select("id,card_number,card_type,title,status,effective_date,created_at,items:product_listing_card_items(product:products(id,internal_sku,name,brand,category,status))").eq("counterparty_id", id).order("created_at", { ascending: false }),
@@ -45,8 +44,7 @@ export default async function CounterpartyPage({ params, searchParams }: { param
   const documentIds = [...new Set((links ?? []).map((link) => link.document_id))];
   const { data: documents } = documentIds.length ? await supabase.from("documents").select("id,title,document_number,status,document_date,valid_until,type:document_types(name_ru)").in("id", documentIds).is("archived_at", null).order("created_at", { ascending: false }) : { data: [] };
   const productMap = new Map<string, { id: string; internal_sku: string; name: unknown; brand: string | null; category: string; status: string; supplierArticle?: string }>();
-  for (const product of manufactured ?? []) productMap.set(product.id, product);
-  for (const identifier of supplierIdentifiers ?? []) { const product = one(identifier.product); if (product) productMap.set(product.id, { ...product, supplierArticle: identifier.value }); }
+  for (const link of supplierProducts ?? []) { const product = one(link.product); if (product) { const identifiers = "identifiers" in product && Array.isArray(product.identifiers) ? product.identifiers : []; const supplierArticle=identifiers.find((item: {identifier_type:string;counterparty_id:string})=>item.identifier_type==="supplier_sku"&&item.counterparty_id===id)?.value; productMap.set(product.id,{...product,supplierArticle}); } }
   for (const card of cards ?? []) for (const item of card.items ?? []) { const product = one(item.product); if (product && !productMap.has(product.id)) productMap.set(product.id, product); }
   for (const sale of sales ?? []) for (const item of sale.items ?? []) { const product = one(item.product); if (product && !productMap.has(product.id)) productMap.set(product.id, product); }
   const products = [...productMap.values()].sort((left, right) => left.internal_sku.localeCompare(right.internal_sku, "ru"));
@@ -63,8 +61,8 @@ export default async function CounterpartyPage({ params, searchParams }: { param
     ...(cards ?? []).map((card) => ({ at: card.created_at as string, title: `Создана карта ${card.card_number}`, detail: card.card_type === "input" ? "Ввод товара" : "Вывод товара" })),
   ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
 
-  return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="counterparties"/><section className="workspace admin-workspace">
-    <header className="topbar"><div><p className="eyebrow">Карточка контрагента</p><h1>{party.short_name || party.legal_name}</h1></div><div className="topbar-actions"><span className={`status counterparty-${party.status}`}>{statusNames[party.status] ?? party.status}</span><Link className="ghost button-link" href="/counterparties">К справочнику</Link></div></header>
+  return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active={party.roles.includes("customer")?"counterparties":"suppliers"}/><section className="workspace admin-workspace">
+    <header className="topbar"><div><p className="eyebrow">{party.roles.includes("customer")?"Карточка покупателя":"Карточка поставщика"}</p><h1>{party.short_name || party.legal_name}</h1></div><div className="topbar-actions"><span className={`status counterparty-${party.status}`}>{statusNames[party.status] ?? party.status}</span><Link className="ghost button-link" href={party.roles.includes("customer")?"/counterparties":"/suppliers"}>К справочнику</Link></div></header>
     {notices.error && <div className="login-error admin-message">{notices.error}</div>}{notices.success && <div className="login-success admin-message">{notices.success}</div>}
     <OperationTabs ariaLabel="Разделы карточки контрагента" activeTab={notices.tab} defaultTab="main" tabs={[
       { id: "main", label: "Основное" }, { id: "details", label: "Реквизиты" }, { id: "contacts", label: "Контакты", badge: contacts?.length ?? 0 },
