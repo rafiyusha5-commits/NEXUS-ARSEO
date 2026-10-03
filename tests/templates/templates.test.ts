@@ -137,6 +137,7 @@ describe("template operations", () => {
     const fake = fakeGateway({ registerError: "duplicate key value violates unique constraint" });
     const result = await registerTemplateWithFile(fake.gateway, deps, metadata, docx());
     assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error, "Шаблон не создан. Повторите попытку");
     assert.equal(fake.called("removeFile").length, 1);
   });
 

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const value = (formData: FormData, key: string) => {
@@ -24,7 +25,7 @@ export async function extractShipmentSourcesAction(formData: FormData) {
 
   let summary;
   try { summary = await extractShipmentSources(supabase, shipmentId); }
-  catch (error) { redirect(back(shipmentId, "error", error instanceof Error ? error.message : "Не удалось распознать документы")); }
+  catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы."))); }
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", `Распознано автоматически: ${summary.confirmed}; требуется проверка: ${summary.review}; не прочитано: ${summary.failed}`));
 }
@@ -35,7 +36,7 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   if (!UUID.test(shipmentId) || !UUID.test(extractionId)) redirect("/shipments?error=Некорректные данные");
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("confirm_shipment_source_extraction", { p_extraction_id: extractionId });
-  if (error) redirect(back(shipmentId, "error", error.message));
+  if (error) redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось подтвердить распознанные данные.")));
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }

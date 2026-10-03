@@ -118,7 +118,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
               </select></label>
               <button className="primary" type="submit">Показать</button>
             </form>
-            {listError && !migrationMissing && <div className="login-error admin-message">Не удалось загрузить шаблоны: {listError}</div>}
+            {listError && !migrationMissing && <div className="login-error admin-message">Не удалось загрузить библиотеку образцов.</div>}
             <div className="doc-list">
               {templates.map((template) => {
                 const counterparty = one(template.counterparty);

@@ -161,6 +161,7 @@ describe("registering a document", () => {
     const rejected = fakeGateway({ registerError: "Связанный объект не найден или недоступен" });
     const result = await registerDocumentWithFile(rejected.gateway, deps, metadata(), shipmentLink, pdfFile());
     assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error, "Документ не зарегистрирован. Повторите попытку");
     const [upload] = rejected.called("uploadFile");
     const [removal] = rejected.called("removeFile");
     assert.equal(removal?.args[0], upload.args[0]);
@@ -238,10 +239,10 @@ describe("archiving", () => {
     assert.equal(fake.called("removeFile").length, 0);
   });
 
-  it("passes database errors to the user", async () => {
+  it("does not expose database errors to the user", async () => {
     const fake = fakeGateway({ archiveError: "Документ не найден или уже находится в архиве" });
     const result = await archiveDocument(fake.gateway, DOC_ID, "Повторно");
-    assert.deepEqual(result, { ok: false, code: "failed", error: "Документ не найден или уже находится в архиве" });
+    assert.deepEqual(result, { ok: false, code: "failed", error: "Документ не перенесён в архив. Повторите попытку" });
   });
 });
 

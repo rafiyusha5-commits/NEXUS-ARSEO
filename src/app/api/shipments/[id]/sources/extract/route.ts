@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -20,6 +21,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     revalidatePath(`/shipments/${id}`);
     return Response.json({ ok: true, summary });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Не удалось распознать документы" }, { status: 400 });
+    return Response.json({ ok: false, error: publicErrorMessage(error, "Не удалось распознать документы.") }, { status: 400 });
   }
 }

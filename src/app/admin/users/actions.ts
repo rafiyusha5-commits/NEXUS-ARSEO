@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAccessManager } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function usersRedirect(kind: "success" | "error", message: string): never {
@@ -34,7 +35,7 @@ export async function inviteUser(formData: FormData) {
   });
 
   if (error || !data.user) {
-    usersRedirect("error", error?.message ?? "Supabase не создал приглашение.");
+    usersRedirect("error", publicErrorMessage(error,"Не удалось отправить приглашение."));
   }
 
   const { error: profileError } = await supabase
@@ -73,7 +74,7 @@ export async function setUserActive(formData: FormData) {
     })
     .eq("id", userId);
 
-  if (error) usersRedirect("error", error.message);
+  if (error) usersRedirect("error", publicErrorMessage(error,"Не удалось изменить доступ сотрудника."));
   revalidatePath("/admin/users");
   usersRedirect("success", makeActive ? "Доступ сотрудника восстановлен." : "Доступ сотрудника отключён.");
 }
@@ -89,7 +90,7 @@ export async function assignRole(formData: FormData) {
     role_id: roleId,
     assigned_by: user.id,
   });
-  if (error) usersRedirect("error", error.code === "23505" ? "Эта роль уже назначена." : error.message);
+  if (error) usersRedirect("error", error.code === "23505" ? "Эта роль уже назначена." : publicErrorMessage(error,"Не удалось назначить роль."));
   revalidatePath("/admin/users");
   usersRedirect("success", "Роль назначена.");
 }
@@ -105,7 +106,7 @@ export async function removeRole(formData: FormData) {
     .delete()
     .eq("user_id", userId)
     .eq("role_id", roleId);
-  if (error) usersRedirect("error", error.message);
+  if (error) usersRedirect("error", publicErrorMessage(error,"Не удалось снять роль."));
   revalidatePath("/admin/users");
   usersRedirect("success", "Роль снята.");
 }

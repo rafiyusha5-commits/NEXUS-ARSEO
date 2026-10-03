@@ -93,7 +93,7 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
               <label className="check-label"><input type="checkbox" name="all" value="1" defaultChecked={showHistory} /> Показать заменённые и отменённые</label>
               <button className="primary" type="submit">Показать</button>
             </form>
-            {listError && <div className="login-error admin-message">Не удалось загрузить карты: {listError}</div>}
+            {listError && <div className="login-error admin-message">Не удалось загрузить карты ввода.</div>}
             <div className="doc-list">
               {cards.map((card) => {
                 const counterparty = one(card.counterparty);

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const allowedRoles = new Set(["manufacturer", "supplier", "customer", "carrier", "broker", "printing_house", "other"]);
 const allowedLocales = new Set(["ru", "kk", "en"]);
@@ -53,14 +54,14 @@ export async function importCounterparties(formData: FormData) {
   const { data: currencies, error: currencyError } = currencyCodes.length
     ? await supabase.from("currencies").select("id, code").in("code", currencyCodes)
     : { data: [], error: null };
-  if (currencyError) go("error", currencyError.message);
+  if (currencyError) go("error", publicErrorMessage(currencyError,"Не удалось проверить справочник валют."));
   const currencyIds = new Map((currencies ?? []).map((currency) => [currency.code, currency.id]));
   const missingCurrency = currencyCodes.find((code) => !currencyIds.has(code));
   if (missingCurrency) go("error", `В справочнике валют нет кода ${missingCurrency}.`);
 
   const countries = [...new Set(cleaned.map((row) => row.country))];
   const { data: existing, error: existingError } = await supabase.from("counterparties").select("legal_name, country, tax_id").in("country", countries);
-  if (existingError) go("error", existingError.message);
+  if (existingError) go("error", publicErrorMessage(existingError,"Не удалось проверить существующих контрагентов."));
   const existingKeys = new Set((existing ?? []).flatMap((item) => [
     item.tax_id ? `tax:${item.country}:${String(item.tax_id).toLocaleLowerCase("ru-RU")}` : "",
     `name:${item.country}:${item.legal_name.trim().toLocaleLowerCase("ru-RU")}`,
@@ -91,7 +92,7 @@ export async function importCounterparties(formData: FormData) {
     notes: String(row.notes ?? "").trim() || null,
     status: "active",
   }))).select("id");
-  if (error || !inserted) go("error", error?.message ?? "Supabase не создал контрагентов.");
+  if (error || !inserted) go("error", publicErrorMessage(error,"Не удалось импортировать контрагентов."));
 
   revalidatePath("/counterparties");
   go("success", `Импортировано контрагентов: ${inserted.length}${skipped ? `. Пропущено дублей: ${skipped}` : ""}.`);

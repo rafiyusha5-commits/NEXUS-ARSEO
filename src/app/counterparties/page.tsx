@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createCounterparty } from "./actions";
 
 export default async function CounterpartiesPage({ searchParams }: { searchParams: Promise<{error?: string; success?: string}> }) {
@@ -12,7 +13,7 @@ export default async function CounterpartiesPage({ searchParams }: { searchParam
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="counterparties"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Справочники · Продажи</p><h1>Покупатели</h1></div><div className="topbar-actions"><span className="page-count">{buyers?.length ?? 0} организаций</span><Link className="ghost button-link" href="/counterparties/import">Импорт из файла</Link></div></header>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
-    {error&&<div className="setup-notice">Не удалось загрузить покупателей: <strong>{error.message}</strong></div>}
+    {error&&<div className="setup-notice"><strong>{publicErrorMessage(error,"Не удалось загрузить покупателей.")}</strong></div>}
     <details className="panel admin-section create-disclosure"><summary><span><small>Новая запись</small><strong>Добавить покупателя</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">
       <form action={createCounterparty} className="reference-form counterparty-form"><input type="hidden" name="roles" value="customer"/>
         <label className="wide-field">Юридическое название<input name="legal_name" required/></label><label>Короткое название<input name="short_name"/></label>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { notificationLink } from "@/lib/notifications/rules.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,7 +27,7 @@ function notificationId(formData: FormData): string {
 export async function markNotificationReadAction(formData: FormData) {
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("mark_notification_read", { p_notification_id: notificationId(formData) });
-  if (error) go("error", error.message);
+  if (error) go("error", publicErrorMessage(error,"Не удалось отметить уведомление."));
   refresh();
   go("success", "Уведомление отмечено прочитанным.");
 }
@@ -34,7 +35,7 @@ export async function markNotificationReadAction(formData: FormData) {
 export async function markAllNotificationsReadAction() {
   const { supabase } = await requireUser();
   const { data, error } = await supabase.rpc("mark_all_notifications_read");
-  if (error) go("error", error.message);
+  if (error) go("error", publicErrorMessage(error,"Не удалось отметить уведомления."));
   refresh();
   go("success", data ? `Отмечено прочитанными: ${data}.` : "Непрочитанных уведомлений нет.");
 }
@@ -52,7 +53,7 @@ export async function openNotificationAction(formData: FormData) {
   if (error || !data) go("error", "Уведомление не найдено.");
   if (!data.is_read) {
     const { error: readError } = await supabase.rpc("mark_notification_read", { p_notification_id: id });
-    if (readError) go("error", readError.message);
+    if (readError) go("error", publicErrorMessage(readError,"Не удалось открыть уведомление."));
     refresh();
   }
   const link = notificationLink(data);

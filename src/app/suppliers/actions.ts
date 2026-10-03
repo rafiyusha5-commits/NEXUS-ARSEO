@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 export async function createSupplier(formData: FormData) {
   const { supabase } = await requireUser();
@@ -20,7 +21,7 @@ export async function createSupplier(formData: FormData) {
     tax_id: String(formData.get("tax_id") ?? "").trim() || null,
     preferred_locale: String(formData.get("preferred_locale") ?? "en"),
   });
-  if (error) redirect("/suppliers?error=" + encodeURIComponent(error.message));
+  if (error) redirect("/suppliers?error=" + encodeURIComponent(publicErrorMessage(error,"Не удалось добавить поставщика.")));
   revalidatePath("/suppliers");
   revalidatePath("/products");
   redirect("/suppliers?success=" + encodeURIComponent("Поставщик добавлен."));

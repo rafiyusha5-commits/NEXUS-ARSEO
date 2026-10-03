@@ -236,7 +236,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                 <button className="primary" type="submit">Показать</button>
               </form>
 
-              {listError && <div className="login-error admin-message">Не удалось загрузить реестр: {listError}</div>}
+              {listError && <div className="login-error admin-message">Не удалось загрузить реестр документов.</div>}
 
               <div className="doc-list">
                 {documents.map((document) => {

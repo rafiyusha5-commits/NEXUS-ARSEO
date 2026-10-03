@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAccessManager } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 function rolesRedirect(kind: "success" | "error", message: string): never {
   redirect(`/admin/roles?${kind}=${encodeURIComponent(message)}`);
@@ -19,7 +20,7 @@ export async function setRoleEnabled(formData: FormData) {
   }
 
   const { error } = await supabase.from("app_roles").update({ is_enabled: enabled }).eq("id", roleId);
-  if (error) rolesRedirect("error", error.message);
+  if (error) rolesRedirect("error", publicErrorMessage(error,"Не удалось изменить состояние роли."));
   revalidatePath("/admin/roles");
   rolesRedirect("success", enabled ? "Роль включена." : "Роль отключена.");
 }
@@ -38,7 +39,7 @@ export async function setRolePermission(formData: FormData) {
       )
     : await supabase.from("role_permissions").delete().eq("role_id", roleId).eq("permission_id", permissionId);
 
-  if (error) rolesRedirect("error", error.message);
+  if (error) rolesRedirect("error", publicErrorMessage(error,"Не удалось изменить права роли."));
   revalidatePath("/admin/roles");
   rolesRedirect("success", grant ? "Право выдано роли." : "Право отозвано у роли.");
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePortalUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { buildDocumentStoragePath, checkDocumentFile, DOCUMENT_BUCKET, matchesFileSignature, normalizeFileName } from "@/lib/documents/files.ts";
 import { isUuid } from "@/lib/documents/rules.ts";
 import { randomHex, sha256Hex } from "@/lib/documents/supabase-gateway.ts";
@@ -24,7 +25,7 @@ export async function uploadPortalDocument(formData: FormData) {
   const id = crypto.randomUUID();
   const path = buildDocumentStoragePath(id, normalizeFileName(file.name), randomHex());
   const { error: uploadError } = await supabase.storage.from(DOCUMENT_BUCKET).upload(path, bytes, { contentType: check.mimeType, upsert: false });
-  if (uploadError) redirect(back("error", uploadError.message));
+  if (uploadError) redirect(back("error", publicErrorMessage(uploadError,"Не удалось загрузить файл.")));
   const { error } = await supabase.rpc("register_external_document", {
     p_document_id: id,
     p_document_type_id: typeId,
@@ -39,7 +40,7 @@ export async function uploadPortalDocument(formData: FormData) {
   });
   if (error) {
     await supabase.storage.from(DOCUMENT_BUCKET).remove([path]);
-    redirect(back("error", error.message));
+    redirect(back("error", publicErrorMessage(error,"Не удалось зарегистрировать документ.")));
   }
   revalidatePath("/portal/documents");
   redirect(back("success", "Документ загружен"));

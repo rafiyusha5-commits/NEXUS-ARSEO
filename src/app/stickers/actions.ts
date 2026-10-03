@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(d:FormData,k:string){const v=d.get(k);return typeof v==="string"?v.trim():"";}
@@ -10,7 +11,7 @@ function uuid(d:FormData,k:string,required=true){const v=text(d,k);if(!v&&!requi
 function num(d:FormData,k:string){const v=Number(text(d,k));if(!Number.isFinite(v))throw new Error(`Некорректное число: ${k}`);return v;}
 function content(d:FormData){const raw=text(d,"content");if(!raw)return {};try{const parsed=JSON.parse(raw);if(!parsed||Array.isArray(parsed)||typeof parsed!=="object")throw new Error();return parsed;}catch{throw new Error("Поля макета должны быть корректным JSON-объектом");}}
 function go(message:string,kind:"success"|"error"="success"){redirect(`/stickers?${kind}=${encodeURIComponent(message)}`);}
-async function run(name:string,args:Record<string,unknown>,success:string){const {supabase}=await requireUser();const {error}=await supabase.rpc(name,args);if(error)go(error.message,"error");revalidatePath("/stickers");go(success);}
+async function run(name:string,args:Record<string,unknown>,success:string){const {supabase}=await requireUser();const {error}=await supabase.rpc(name,args);if(error)go(publicErrorMessage(error,"Не удалось выполнить операцию со стикерами."),"error");revalidatePath("/stickers");go(success);}
 
 export async function createStickerTemplate(d:FormData){
  const languages=d.getAll("languages").filter((v):v is string=>typeof v==="string");

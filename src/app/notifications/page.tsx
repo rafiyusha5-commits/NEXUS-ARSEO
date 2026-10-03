@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { formatDateTime } from "@/lib/documents/labels.ts";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { URGENT_NOTIFICATION_TYPES, notificationLink, notificationTypeLabel } from "@/lib/notifications/rules.ts";
@@ -82,7 +83,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         {migrationMissing && (
           <div className="setup-notice">Уведомления о задачах и поставках ещё не подключены. Администратору: примените миграцию <strong>202609272200_shipment_tasks_notifications.sql</strong> (docs/tasks-notifications.md).</div>
         )}
-        {error && !migrationMissing && <div className="login-error admin-message">Не удалось загрузить уведомления: {error.message}</div>}
+        {error && !migrationMissing && <div className="login-error admin-message">{publicErrorMessage(error, "Не удалось загрузить уведомления.")}</div>}
 
         <section className="panel admin-section">
           <div className="panel-heading"><div><p className="eyebrow">Требуют внимания</p><h2>Непрочитанные</h2></div><span className="page-count">{unreadItems.length}</span></div>

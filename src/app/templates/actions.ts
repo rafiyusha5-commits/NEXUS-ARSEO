@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import type { UploadedFile } from "@/lib/documents/operations.ts";
 import { randomHex, sha256Hex } from "@/lib/documents/supabase-gateway.ts";
 import { addTemplateVersion, registerTemplateWithFile } from "@/lib/templates/operations.ts";
@@ -72,12 +73,12 @@ export async function generateExportPackageAction(formData:FormData){
  const{supabase}=await requireUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);
  if(!can.generate||!access["documents.create"]||!access["shipments.view"])redirect(withMessage(back,"error","Недостаточно прав для формирования комплекта"));
  const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
- let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось подготовить данные"));}
+ let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документов.")));}
  if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;if(String(version.mime_type)!==XLSX_MIME)redirect(withMessage(back,"error","Экспортный комплект формируется только из утверждённой книги XLSX"));
  const generationData:Record<string,unknown>=preview.data;
  const storage=supabase.storage.from(DOCUMENT_BUCKET);const{data:source,error:downloadError}=await storage.download(String(version.storage_path));
- if(downloadError||!source)redirect(withMessage(back,"error",downloadError?.message||"Файл шаблона не найден"));
+ if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
  const shipmentNumber=String(preview.data.shipment_number),templateBytes=new Uint8Array(await source.arrayBuffer());
  const uploadedPaths:string[]=[];const files:Array<Record<string,unknown>>=[];
  try{
@@ -86,12 +87,12 @@ export async function generateExportPackageAction(formData:FormData){
    const filename=key==="workbook"?generatedFileName(String(version.original_filename),shipmentNumber):`${config.label.replace(/\s+/g,"-")}-${shipmentNumber.replace(/[^A-Za-zА-Яа-я0-9._-]+/g,"-")}.pdf`;
    const bytes=key==="workbook"?await renderShipmentWorkbookTemplate(templateBytes,preview.data):await renderShipmentPdf(key as ExportPdfKind,preview.data);
    const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());const contentType=key==="workbook"?XLSX_MIME:"application/pdf";
-   const{error:uploadError}=await storage.upload(path,bytes,{contentType,upsert:false,cacheControl:"0"});if(uploadError)throw new Error(`Не удалось сохранить ${config.label}: ${uploadError.message}`);
+   const{error:uploadError}=await storage.upload(path,bytes,{contentType,upsert:false,cacheControl:"0"});if(uploadError)throw uploadError;
    uploadedPaths.push(path);files.push({generation_id:generationId,document_id:documentId,document_type_code:config.code,title:`${config.label} · ${shipmentNumber}`,storage_path:path,original_filename:filename,document_number:String(generationData[`${key}_number`]||shipmentNumber),output_format:config.format,checksum_sha256:await sha256Hex(bytes)});
   }
   const{error}=await supabase.rpc("register_generated_document_package",{p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_files:files,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
-  if(error)throw new Error(`Комплект не зарегистрирован: ${error.message}`);
- }catch(error){if(uploadedPaths.length)await storage.remove(uploadedPaths);redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось сформировать комплект"));}
+  if(error)throw error;
+ }catch(error){if(uploadedPaths.length)await storage.remove(uploadedPaths);redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось сформировать комплект документов.")));}
  revalidatePath("/templates");revalidatePath(`/templates/${templateId}`);revalidatePath("/documents");revalidatePath(`/shipments/${shipmentId}`);
  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Сформирован комплект: ${selected.length} документ(а)`)}`);
 }
@@ -103,16 +104,16 @@ export async function generateDocumentAction(formData:FormData){
  const{supabase}=await requireUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);if(!can.generate)redirect(withMessage(back,"error","Недостаточно прав для формирования документа"));
  if(!access["documents.create"]||!access["shipments.view"])redirect(withMessage(back,"error","Для формирования нужны права на создание документов и просмотр поставок"));
  const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
- let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось подготовить данные"));}
+ let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документа.")));}
  if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;const storage=supabase.storage.from(DOCUMENT_BUCKET);
- const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",downloadError?.message||"Файл шаблона не найден"));
- let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?await renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",error instanceof Error?error.message:"Не удалось заполнить шаблон"));}
+ const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
+ let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?await renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось заполнить шаблон.")));}
  const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();const filename=generatedFileName(String(version.original_filename),String(preview.data.shipment_number));const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());
- const outputMime=mime===XLSX_MIME?XLSX_MIME:DOCX_MIME;const{error:uploadError}=await storage.upload(path,bytes,{contentType:outputMime,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",`Не удалось сохранить сформированный файл: ${uploadError.message}`));
+ const outputMime=mime===XLSX_MIME?XLSX_MIME:DOCX_MIME;const{error:uploadError}=await storage.upload(path,bytes,{contentType:outputMime,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",publicErrorMessage(uploadError,"Не удалось сохранить сформированный файл.")));
  const checksum=await sha256Hex(bytes);const title=text(formData,"title")||`${preview.template.name} · ${preview.data.shipment_number}`;const number=text(formData,"document_number")||null;
  const{error:registerError}=await supabase.rpc("register_generated_document",{p_generation_id:generationId,p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_document_id:documentId,p_title:title.slice(0,300),p_storage_path:path,p_original_filename:filename,p_document_number:number,p_document_date:new Date().toISOString().slice(0,10),p_language:preview.template.language,p_checksum_sha256:checksum,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
- if(registerError){await storage.remove([path]);redirect(withMessage(back,"error",`Документ не зарегистрирован: ${registerError.message}`));}
+ if(registerError){await storage.remove([path]);redirect(withMessage(back,"error",publicErrorMessage(registerError,"Не удалось зарегистрировать сформированный документ.")));}
  revalidatePath("/templates");revalidatePath(`/templates/${templateId}`);revalidatePath("/documents");revalidatePath(`/shipments/${shipmentId}`);redirect(`/documents/${documentId}?success=${encodeURIComponent("Документ сформирован из шаблона")}`);
 }
 
@@ -158,7 +159,7 @@ export async function updateTemplateAction(formData: FormData) {
     .eq("id", id)
     .select("status");
   if (updateError) {
-    const message = updateError.code === "23505" ? "Шаблон с таким названием, типом и языком уже есть" : updateError.message;
+    const message = updateError.code === "23505" ? "Шаблон с таким названием, типом и языком уже есть" : publicErrorMessage(updateError,"Не удалось сохранить шаблон.");
     redirect(withMessage(back, "error", message));
   }
   if (!data?.length) redirect(withMessage(back, "error", "Изменения не сохранены: нет права или шаблон в архиве"));
@@ -171,7 +172,7 @@ async function callTemplateRpc(formData: FormData, rpc: string, args: Record<str
   const { supabase } = await requireUser();
   const { id, back } = templatePath(formData);
   const { error } = await supabase.rpc(rpc, { p_template_id: id, ...args });
-  if (error) redirect(withMessage(back, "error", error.message));
+  if (error) redirect(withMessage(back, "error", publicErrorMessage(error,"Не удалось выполнить действие с шаблоном.")));
   revalidatePath(back);
   revalidatePath("/templates");
   redirect(withMessage(back, "success", success));

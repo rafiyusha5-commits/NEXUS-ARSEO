@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
@@ -54,7 +55,7 @@ export async function runReferenceImport(payload: string, mode: "preview" | "app
     }
     const message = /import_reference_data/.test(error.message) && /schema cache|does not exist/.test(error.message)
       ? "Импорт ещё не подключён к базе. Администратору: примените миграцию 202609271900_reference_data_import.sql."
-      : error.message;
+      : publicErrorMessage(error,"Не удалось обработать импорт справочника.");
     return { ok: false, message, ...(report ? { report } : {}) };
   }
 

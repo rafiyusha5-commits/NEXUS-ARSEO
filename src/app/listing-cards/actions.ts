@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { type CardHeaderInput, parseDecimal, validateCardHeader, validateCardItem } from "@/lib/listing-cards/rules.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,7 +37,7 @@ function cardPath(formData: FormData) {
 function friendly(message: string, code?: string) {
   if (code === "23505") return "Такая запись уже есть (например, товар уже добавлен в карту или у версии уже есть следующая)";
   if (code === "42501" || /row-level security/.test(message)) return "Недостаточно прав или карта уже не является черновиком";
-  return message;
+  return publicErrorMessage({ code, message }, "Не удалось выполнить действие с картой ввода.");
 }
 
 export async function createCardAction(formData: FormData) {

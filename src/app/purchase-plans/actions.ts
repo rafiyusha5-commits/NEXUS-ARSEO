@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { PublicError, publicErrorMessage } from "@/lib/errors/public-message";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function val(data:FormData,key:string){const value=data.get(key);return typeof value==="string"?value.trim():"";}
-function uid(data:FormData,key:string,required=true){const value=val(data,key);if(!value&&!required)return null;if(!UUID.test(value))throw new Error(`Проверьте поле ${key}`);return value;}
-function num(data:FormData,key:string){const value=Number(val(data,key));if(!Number.isFinite(value)||value<0)throw new Error(`Проверьте поле ${key}`);return value;}
-function message(error:unknown){return error instanceof Error?error.message:"Не удалось выполнить действие";}
+function uid(data:FormData,key:string,required=true){const value=val(data,key);if(!value&&!required)return null;if(!UUID.test(value))throw new PublicError(`Проверьте поле ${key}`);return value;}
+function num(data:FormData,key:string){const value=Number(val(data,key));if(!Number.isFinite(value)||value<0)throw new PublicError(`Проверьте поле ${key}`);return value;}
+function message(error:unknown){return publicErrorMessage(error);}
 function target(id:string|null,kind:"success"|"error",text:string){return `/purchase-plans?${id?`plan=${id}&`:""}${kind}=${encodeURIComponent(text)}`;}
 
 export async function createPurchasePlan(data:FormData){let created:string|null=null;try{const{supabase}=await requireUser();const{data:id,error}=await supabase.rpc("create_purchase_plan",{p_name:val(data,"name"),p_forecast_id:uid(data,"forecast_id"),p_supplier_id:uid(data,"supplier_id")});if(error)throw error;created=id as string;}catch(error){redirect(target(null,"error",message(error)));}revalidatePath("/purchase-plans");redirect(target(created,"success","Черновик плана закупок создан"));}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createXlsx, type XlsxCell } from "@/lib/xlsx";
 
 type LocalizedText = { ru?: string; en?: string; kk?: string } | null;
@@ -71,7 +72,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .from("product_suppliers")
     .select("status,is_primary,product:products(internal_sku,name,brand,category,country_of_origin,hs_code,temperature_regime,temperature_range,shelf_life_days,base_uom,requires_marking,requires_sticker,status,identifiers:product_identifiers(identifier_type,value,counterparty_id),packaging:product_packaging(uom,units_per_parent,gross_weight_kg,net_weight_kg,volume_m3,length_cm,width_cm,height_cm))")
     .eq("supplier_id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: publicErrorMessage(error, "Не удалось подготовить список товаров.") }, { status: 500 });
 
   const links = (data ?? []) as unknown as SupplierLink[];
   const rows: XlsxCell[][] = links

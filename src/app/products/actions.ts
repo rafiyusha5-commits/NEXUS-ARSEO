@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -33,7 +34,7 @@ export async function createProduct(formData: FormData) {
     requires_sticker: formData.get("requires_sticker") === "on",
     status: "active",
   }).select("id").single();
-  if (error || !product) redirect("/products?error=" + encodeURIComponent(error?.message ?? "Товар не создан."));
+  if (error || !product) redirect("/products?error=" + encodeURIComponent(publicErrorMessage(error,"Товар не создан.")));
 
   const identifiers = [
     { type: "supplier_sku", value: String(formData.get("supplier_sku") ?? "").trim(), counterparty_id: manufacturerId },
@@ -43,7 +44,7 @@ export async function createProduct(formData: FormData) {
   ].filter((item) => item.value).map((item) => ({ product_id: product.id, identifier_type: item.type, value: item.value, counterparty_id: item.counterparty_id, is_primary: item.type === "supplier_sku" || item.type === "gtin" }));
   if (identifiers.length) {
     const { error: identifierError } = await supabase.from("product_identifiers").insert(identifiers);
-    if (identifierError) redirect("/products?error=" + encodeURIComponent("Товар создан, но идентификаторы требуют проверки: " + identifierError.message));
+    if (identifierError) redirect("/products?error=" + encodeURIComponent(publicErrorMessage(identifierError,"Товар создан, но идентификаторы требуют проверки.")));
   }
   revalidatePath("/products");
   redirect("/products?success=" + encodeURIComponent("Карточка товара создана."));
@@ -67,7 +68,7 @@ export async function addProductIdentifier(formData: FormData) {
     packaging_uom: value(formData, "packaging_uom") || null,
     is_primary: formData.get("is_primary") === "on",
   });
-  if (error) redirect(productUrl(productId, "identifiers", "error", error.message));
+  if (error) redirect(productUrl(productId, "identifiers", "error", publicErrorMessage(error,"Не удалось добавить идентификатор.")));
   revalidatePath(`/products/${productId}`);
   redirect(productUrl(productId, "identifiers", "success", "Идентификатор добавлен."));
 }
@@ -87,7 +88,7 @@ export async function addProductPackaging(formData: FormData) {
   };
   if (Object.values(payload).some((item) => typeof item === "number" && (!Number.isFinite(item) || item < 0))) redirect(productUrl(productId, "packaging", "error", "Вес, объём и размеры должны быть неотрицательными числами."));
   const { error } = await supabase.from("product_packaging").insert(payload);
-  if (error) redirect(productUrl(productId, "packaging", "error", error.message));
+  if (error) redirect(productUrl(productId, "packaging", "error", publicErrorMessage(error,"Не удалось добавить упаковку.")));
   revalidatePath(`/products/${productId}`);
   redirect(productUrl(productId, "packaging", "success", "Упаковка добавлена."));
 }

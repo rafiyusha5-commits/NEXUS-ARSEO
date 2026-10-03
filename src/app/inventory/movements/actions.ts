@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
@@ -20,7 +21,7 @@ export async function createInventoryOperation(data:FormData){
   p_to_warehouse_id:uuid(data,"to_warehouse_id",false),p_reference:text(data,"reference")||null,
   p_reason:text(data,"reason")||null,p_performed_by_name:text(data,"performed_by_name")||null,
  });
- if(error)redirect(`/inventory/movements?error=${encodeURIComponent(error.message)}`);
+ if(error)redirect(`/inventory/movements?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось создать складской документ."))}`);
  refresh(String(id));redirect(`${back(String(id),"items")}&success=${encodeURIComponent("Черновик создан. Добавьте товары и проведите документ.")}`);
 }
 
@@ -31,21 +32,21 @@ export async function addInventoryOperationLine(data:FormData){
   p_document_id:documentId,p_source_balance_id:uuid(data,"source_balance_id"),p_to_location_id:uuid(data,"to_location_id",false),
   p_quantity:value,p_adjustment_direction:text(data,"adjustment_direction")||null,p_notes:text(data,"notes")||null,
  });
- if(error)redirect(`${back(documentId,"items")}&error=${encodeURIComponent(error.message)}`);
+ if(error)redirect(`${back(documentId,"items")}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось добавить товар в документ."))}`);
  refresh(documentId);redirect(`${back(documentId,"items")}&success=${encodeURIComponent("Товар добавлен в документ")}`);
 }
 
 export async function removeInventoryOperationLine(data:FormData){
  const{supabase}=await requireUser();const documentId=uuid(data,"document_id")!;
  const{error}=await supabase.rpc("remove_inventory_operation_line",{p_line_id:uuid(data,"line_id")});
- if(error)redirect(`${back(documentId,"items")}&error=${encodeURIComponent(error.message)}`);
+ if(error)redirect(`${back(documentId,"items")}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось удалить строку документа."))}`);
  refresh(documentId);redirect(`${back(documentId,"items")}&success=${encodeURIComponent("Строка удалена")}`);
 }
 
 export async function postInventoryOperation(data:FormData){
  const{supabase}=await requireUser();const documentId=uuid(data,"document_id")!;
  const{error}=await supabase.rpc("post_inventory_operation_document",{p_document_id:documentId});
- if(error)redirect(`${back(documentId)}&error=${encodeURIComponent(error.message)}`);
+ if(error)redirect(`${back(documentId)}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось провести складской документ."))}`);
  refresh(documentId);redirect(`${back(documentId)}&success=${encodeURIComponent("Документ проведён. Остатки и движения обновлены.")}`);
 }
 
@@ -53,6 +54,6 @@ export async function cancelInventoryOperation(data:FormData){
  const{supabase}=await requireUser();const documentId=uuid(data,"document_id")!;const reason=text(data,"reason");
  if(!reason)redirect(`${back(documentId,"history")}&error=${encodeURIComponent("Укажите причину отмены")}`);
  const{error}=await supabase.rpc("cancel_inventory_operation_document",{p_document_id:documentId,p_reason:reason});
- if(error)redirect(`${back(documentId,"history")}&error=${encodeURIComponent(error.message)}`);
+ if(error)redirect(`${back(documentId,"history")}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось отменить складской документ."))}`);
  refresh(documentId);redirect(`${back(documentId,"history")}&success=${encodeURIComponent("Документ отменён, движения сторнированы.")}`);
 }

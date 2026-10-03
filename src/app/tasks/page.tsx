@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { formatDateTime } from "@/lib/documents/labels.ts";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions.ts";
 import {
   TASK_PRIORITIES,
@@ -152,7 +153,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <button className="ghost compact" type="submit">Показать</button>
               </form>
             )}
-            {error && <div className="login-error admin-message">Не удалось загрузить задачи: {error.message}</div>}
+            {error && <div className="login-error admin-message">{publicErrorMessage(error, "Не удалось загрузить задачи.")}</div>}
 
             <div className="task-list">
               {tasks.map((task) => {

@@ -110,7 +110,7 @@ export async function registerTemplateWithFile(
   });
   if (registerError) {
     await gateway.removeFile(path);
-    return fail("failed", `Шаблон не создан: ${registerError}`);
+    return fail("failed", "Шаблон не создан. Повторите попытку");
   }
   return { ok: true, value: templateId };
 }
@@ -150,7 +150,7 @@ export async function addTemplateVersion(
   });
   if (insertError) {
     await gateway.removeFile(path);
-    return fail("failed", `Версия не сохранена: ${insertError}`);
+    return fail("failed", "Версия шаблона не сохранена. Повторите попытку");
   }
   return { ok: true, value: null };
 }

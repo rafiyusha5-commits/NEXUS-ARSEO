@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireAccessManager } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 type AuditRow = {
   id: number;
@@ -42,7 +43,7 @@ export default async function AuditPage() {
           <div><p className="eyebrow">Безопасность и история</p><h1>Журнал действий</h1></div>
           <span className="page-count">Последние {rows.length} событий</span>
         </header>
-        {error && <div className="login-error admin-message">Не удалось загрузить журнал: {error.message}</div>}
+        {error && <div className="login-error admin-message">{publicErrorMessage(error, "Не удалось загрузить журнал действий.")}</div>}
         <section className="panel admin-section">
           <div className="audit-list">
             {rows.length === 0 && <p className="empty-state">Записей пока нет. Новые изменения прав и профилей появятся здесь автоматически.</p>}

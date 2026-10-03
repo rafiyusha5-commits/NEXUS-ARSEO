@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(data:FormData,key:string){const value=data.get(key);return typeof value==="string"?value.trim():"";}
@@ -23,7 +24,7 @@ export async function receiveBatch(data:FormData){
     p_quantity:quantity,
     p_notes:text(data,"notes")||null,
   });
-  if(error)redirect(`/inventory?error=${encodeURIComponent(error.message)}`);
+  if(error)redirect(`/inventory?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось выдать товар."))}`);
   revalidatePath("/inventory");revalidatePath("/warehouses");
   redirect(`/inventory?success=${encodeURIComponent("Партия принята и добавлена в остатки")}`);
 }
@@ -40,7 +41,7 @@ export async function issueFifo(data:FormData){
     p_reference:text(data,"reference")||null,
     p_reason:text(data,"reason"),
   });
-  if(error)redirect(`/inventory?error=${encodeURIComponent(error.message)}`);
+  if(error)redirect(`/inventory?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус партии."))}`);
   const count=Array.isArray(allocations)?allocations.length:0;
   revalidatePath("/inventory");
   redirect(`/inventory?success=${encodeURIComponent(`Списание выполнено по FIFO, использовано партий: ${count}`)}`);
@@ -58,7 +59,7 @@ export async function setBatchStatus(data:FormData){
     p_status:status,
     p_reason:text(data,"reason")||null,
   });
-  if(error)redirect(`${target}&error=${encodeURIComponent(error.message)}`);
+  if(error)redirect(`${target}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось переместить товар."))}`);
   revalidatePath("/inventory");revalidatePath(`/inventory/${batchId}`);
   const label=status==="available"?"разблокирована":status==="quarantine"?"отправлена в карантин":"заблокирована";
   redirect(`${target}&success=${encodeURIComponent(`Партия ${label}`)}`);

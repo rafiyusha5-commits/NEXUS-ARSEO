@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 import {
   addDocumentVersion,
   archiveDocument,
@@ -147,7 +148,7 @@ export async function updateDocumentAction(formData: FormData) {
     .update({ ...metadata, title: metadata.title.trim() })
     .eq("id", documentId)
     .select("id");
-  if (updateError) redirect(withMessage(back, "error", updateError.message));
+  if (updateError) redirect(withMessage(back, "error", publicErrorMessage(updateError,"Не удалось сохранить реквизиты документа.")));
   if (!data?.length) redirect(withMessage(back, "error", "Изменения не сохранены: нет права или документ в архиве"));
   revalidatePath(back);
   revalidatePath("/documents");
@@ -166,7 +167,7 @@ export async function setDocumentExternalAccessAction(formData: FormData) {
     p_counterparty_id: shared ? counterpartyId : null,
     p_shared: shared,
   });
-  if (error) redirect(withMessage(back, "error", error.message));
+  if (error) redirect(withMessage(back, "error", publicErrorMessage(error,"Не удалось изменить доступ клиента.")));
   revalidatePath(back);
   revalidatePath("/portal/documents");
   redirect(withMessage(back, "success", shared ? "Документ открыт выбранному клиенту" : "Доступ клиента закрыт"));
@@ -189,7 +190,7 @@ export async function addDocumentLinkAction(formData: FormData) {
     link_role: link.link_role,
   });
   if (error) {
-    const message = error.code === "23505" ? "Документ уже связан с этим объектом" : error.message;
+    const message = error.code === "23505" ? "Документ уже связан с этим объектом" : publicErrorMessage(error,"Не удалось связать документ с объектом.");
     redirect(withMessage(back, "error", message));
   }
   revalidatePath(back);
@@ -211,7 +212,7 @@ export async function removeDocumentLinkAction(formData: FormData) {
     .eq("document_id", documentId)
     .is("removed_at", null)
     .select("entity_type, entity_id");
-  if (error) redirect(withMessage(back, "error", error.message));
+  if (error) redirect(withMessage(back, "error", publicErrorMessage(error,"Не удалось снять связь документа.")));
   if (!data?.length) redirect(withMessage(back, "error", "Связь не удалена: нет права или документ в архиве"));
   revalidatePath(back);
   if (data[0].entity_type === "shipment") revalidatePath(`/shipments/${data[0].entity_id}`);
@@ -230,7 +231,7 @@ export async function submitDocumentForReviewAction(formData: FormData) {
     p_document_id: documentId,
     p_comment: comment || null,
   });
-  if (error) redirect(withMessage(back, "error", error.message));
+  if (error) redirect(withMessage(back, "error", publicErrorMessage(error,"Не удалось отправить документ на согласование.")));
   revalidatePath(back);
   revalidatePath("/documents");
   redirect(withMessage(back, "success", "Документ отправлен на согласование"));
@@ -252,7 +253,7 @@ export async function decideDocumentReviewAction(formData: FormData) {
     p_decision: decision,
     p_comment: comment || null,
   });
-  if (error) redirect(withMessage(back, "error", error.message));
+  if (error) redirect(withMessage(back, "error", publicErrorMessage(error,"Не удалось сохранить решение по документу.")));
   revalidatePath(back);
   revalidatePath("/documents");
   redirect(withMessage(back, "success", decision === "approved" ? "Документ утверждён" : "Документ отклонён"));

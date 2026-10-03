@@ -101,7 +101,7 @@ export function describeStorageFailure(failure: StorageFailure) {
   if (message.includes("mime type") || status === "415") {
     return { code: "invalid" as const, error: "Хранилище не принимает этот тип файла" };
   }
-  return { code: "failed" as const, error: `Не удалось загрузить файл: ${failure.message}` };
+  return { code: "failed" as const, error: "Не удалось загрузить файл. Повторите попытку" };
 }
 
 async function readCheckedFile(file: UploadedFile) {
@@ -159,7 +159,7 @@ export async function registerDocumentWithFile(
   });
   if (registerError) {
     await gateway.removeFile(path);
-    return fail("failed", `Документ не зарегистрирован: ${registerError}`);
+    return fail("failed", "Документ не зарегистрирован. Повторите попытку");
   }
 
   return { ok: true, value: documentId };
@@ -205,7 +205,7 @@ export async function addDocumentVersion(
   });
   if (insertError) {
     await gateway.removeFile(path);
-    return fail("failed", `Версия не сохранена: ${insertError}`);
+    return fail("failed", "Версия не сохранена. Повторите попытку");
   }
   return { ok: true, value: null };
 }
@@ -222,7 +222,7 @@ export async function archiveDocument(
   if (trimmed.length < 3) return fail("invalid", "Укажите причину архивирования");
   if (trimmed.length > 500) return fail("invalid", "Причина не должна быть длиннее 500 символов");
   const error = await gateway.archiveDocument(documentId, trimmed);
-  if (error) return fail("failed", error);
+  if (error) return fail("failed", "Документ не перенесён в архив. Повторите попытку");
   return { ok: true, value: null };
 }
 

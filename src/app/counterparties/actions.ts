@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { publicErrorMessage } from "@/lib/errors/public-message";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function value(formData: FormData, key: string) { return String(formData.get(key) ?? "").trim(); }
@@ -40,7 +41,7 @@ export async function createCounterparty(formData: FormData) {
     preferred_locale: String(formData.get("preferred_locale") ?? "ru"),
     min_remaining_shelf_life_pct: formData.get("min_shelf_life") ? Number(formData.get("min_shelf_life")) : null,
   });
-  if (error) redirect("/counterparties?error=" + encodeURIComponent(error.message));
+  if (error) redirect("/counterparties?error=" + encodeURIComponent(publicErrorMessage(error,"Не удалось добавить контрагента.")));
   revalidatePath("/counterparties");
   revalidatePath("/suppliers");
   revalidatePath("/products");
@@ -62,7 +63,7 @@ export async function addCounterpartyContact(formData: FormData) {
     email: value(formData, "email") || null,
     is_primary: formData.get("is_primary") === "on",
   });
-  if (error) redirect(counterpartyUrl(counterpartyId, "contacts", error.message, "error"));
+  if (error) redirect(counterpartyUrl(counterpartyId, "contacts", publicErrorMessage(error,"Не удалось добавить контакт."), "error"));
   revalidatePath(`/counterparties/${counterpartyId}`);
   redirect(counterpartyUrl(counterpartyId, "contacts", "Контакт добавлен."));
 }
@@ -89,7 +90,7 @@ export async function addCounterpartyContract(formData: FormData) {
     incoterms: value(formData, "incoterms") || null,
     notes: value(formData, "notes") || null,
   });
-  if (error) redirect(counterpartyUrl(counterpartyId, "contracts", error.message, "error"));
+  if (error) redirect(counterpartyUrl(counterpartyId, "contracts", publicErrorMessage(error,"Не удалось добавить договор."), "error"));
   revalidatePath(`/counterparties/${counterpartyId}`);
   redirect(counterpartyUrl(counterpartyId, "contracts", "Договор добавлен."));
 }

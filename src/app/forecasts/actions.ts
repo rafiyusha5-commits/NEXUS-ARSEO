@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { PublicError, publicErrorMessage } from "@/lib/errors/public-message";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function val(data:FormData,key:string){const value=data.get(key);return typeof value==="string"?value.trim():"";}
-function uid(data:FormData,key:string,required=true){const value=val(data,key);if(!value&&!required)return null;if(!UUID.test(value))throw new Error(`Проверьте поле ${key}`);return value;}
-function amount(data:FormData,key:string){const value=Number(val(data,key));if(!Number.isFinite(value)||value<0)throw new Error(`Проверьте поле ${key}`);return value;}
-function message(error:unknown){return error instanceof Error?error.message:"Не удалось выполнить действие";}
+function uid(data:FormData,key:string,required=true){const value=val(data,key);if(!value&&!required)return null;if(!UUID.test(value))throw new PublicError(`Проверьте поле ${key}`);return value;}
+function amount(data:FormData,key:string){const value=Number(val(data,key));if(!Number.isFinite(value)||value<0)throw new PublicError(`Проверьте поле ${key}`);return value;}
+function message(error:unknown){return publicErrorMessage(error);}
 function target(id:string|null,kind:"success"|"error",text:string){return `/forecasts?${id?`forecast=${id}&`:""}${kind}=${encodeURIComponent(text)}`;}
 
 export async function createForecast(data:FormData){
