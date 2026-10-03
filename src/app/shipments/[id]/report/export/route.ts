@@ -2,14 +2,16 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/access";
 import { createXlsx, type XlsxCell } from "@/lib/xlsx";
 import { loadShipmentReport, localizedName, one, type ReportReceiptItem } from "@/lib/shipment-report";
+import { loadPermissions } from "@/lib/permissions";
 
 const date = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("ru-RU").format(new Date(value)) : "";
 const dateTime = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("ru-RU", { dateStyle:"medium", timeStyle:"short" }).format(new Date(value)) : "";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { roles, supabase } = await requireUser();
-  const report = await loadShipmentReport(supabase, id, roles);
+  const { supabase } = await requireUser();
+  const permissions = await loadPermissions(supabase, ["prices.purchase.view"] as const);
+  const report = await loadShipmentReport(supabase, id, new Set(Object.keys(permissions).filter((key) => permissions[key as keyof typeof permissions])));
   if (!report) return NextResponse.json({ error: "Поставка не найдена" }, { status: 404 });
   const supplier = one(report.shipment.supplier);
   const customer = one(report.shipment.customer);

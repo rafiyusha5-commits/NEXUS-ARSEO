@@ -21,21 +21,19 @@ grant select,insert,update on receiving_context to authenticated;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub','e7000000-0000-4000-8000-000000000001',false);
-insert into receiving_context(shipment_id,item_id,warehouse_id,location_id)
+insert into receiving_context(shipment_id,warehouse_id,location_id)
 select public.create_shipment_with_stages(
  'RCV-TEST','import','e7100000-0000-4000-8000-000000000001',null,
  (select id from public.routes where status='active' order by created_at limit 1),
  (select id from public.currencies where code='EUR'),
  (select id from public.warehouses where status='active' and not is_virtual order by code limit 1),
  'e7000000-0000-4000-8000-000000000001',current_date,current_date+14),
- 'e7300000-0000-4000-8000-000000000001',
  (select id from public.warehouses where status='active' and not is_virtual order by code limit 1),
  'e7400000-0000-4000-8000-000000000001';
 select public.add_shipment_transport(shipment_id) from receiving_context;
-update receiving_context c set transport_id=(select t.id from public.shipment_transports t where t.shipment_id=c.shipment_id and t.sequence_no=1);
-insert into public.shipment_items(id,shipment_id,product_id,ordered_quantity,uom,unit_price,currency_id)
-select item_id,shipment_id,'e7200000-0000-4000-8000-000000000001',100,'piece',1,(select id from public.currencies where code='EUR')
-from receiving_context;
+update receiving_context c set
+ transport_id=(select t.id from public.shipment_transports t where t.shipment_id=c.shipment_id and t.sequence_no=1),
+ item_id=public.create_shipment_item(c.shipment_id,'e7200000-0000-4000-8000-000000000001','piece',100,1,(select id from public.currencies where code='EUR'));
 select public.allocate_shipment_item(item_id,transport_id,100) from receiving_context;
 select public.change_shipment_transport_status(transport_id,'arrived') from receiving_context;
 reset role;

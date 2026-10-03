@@ -45,7 +45,7 @@ export async function addShipmentItem(formData:FormData){
   if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество должно быть больше нуля")}`);
   const price=priceText?Number(priceText):null;
   if(price!==null&&(!Number.isFinite(price)||price<0))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Цена не может быть отрицательной")}`);
-  const {error}=await supabase.from("shipment_items").insert({shipment_id:shipmentId,product_id:uuid(formData,"product_id"),uom:text(formData,"uom")||"piece",ordered_quantity:quantity,unit_price:price,currency_id:uuid(formData,"currency_id",false)});
+  const {error}=await supabase.rpc("create_shipment_item",{p_shipment_id:shipmentId,p_product_id:uuid(formData,"product_id"),p_uom:text(formData,"uom")||"piece",p_quantity:quantity,p_unit_price:price,p_currency_id:uuid(formData,"currency_id",false)});
   if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось добавить товар в поставку."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция добавлена")}`);
 }

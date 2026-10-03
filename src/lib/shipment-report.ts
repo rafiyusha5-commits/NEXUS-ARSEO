@@ -1,6 +1,5 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AccessRole } from "@/lib/auth/access";
 import { canViewShipmentPrices } from "@/lib/shipment-report-rules";
 
 export function localizedName(value: unknown) {
@@ -46,21 +45,26 @@ export type ShipmentReport = {
   totals: { ordered: number; confirmed: number; shipped: number; accepted: number; batches: number; movements: number; hasReceipt: boolean; reconciled: boolean };
 };
 
-export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: string, roles: AccessRole[]): Promise<ShipmentReport | null> {
+export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: string, grantedPermissions: ReadonlySet<string>): Promise<ShipmentReport | null> {
   const { data: shipment, error } = await supabase.from("shipments").select("id,shipment_number,project_code,type,status,planned_ready_date,planned_arrival_date,created_at,process_template_id,route_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name,code),currency:currencies(code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id", shipmentId).maybeSingle();
   if (error || !shipment) return null;
 
   const [transportResult, stageResult, itemResult, receiptResult, taskResult, requirementResult] = await Promise.all([
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,actual_loading_date,planned_arrival_date,actual_arrival_date,temperature_setpoint,notes").eq("shipment_id", shipmentId).order("sequence_no"),
     supabase.from("shipment_stage_runs").select("id,status,status_reason,is_required,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(id,code,name,sequence_order),transport:shipment_transports(sequence_no)").eq("shipment_id", shipmentId).order("created_at"),
-    supabase.from("shipment_items").select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,unit_price,discrepancy_reason,shipment_transport_id,product:products(internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id", shipmentId).order("created_at"),
+    supabase.from("shipment_items").select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,discrepancy_reason,shipment_transport_id,product:products(internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id", shipmentId).order("created_at"),
     supabase.from("shipment_transport_receipts").select("id,shipment_transport_id,performed_by_name,notes,received_at,transport:shipment_transports(sequence_no),items:shipment_transport_receipt_items(expected_quantity,accepted_quantity,damaged_quantity,shortage_quantity,overage_quantity,discrepancy_reason,shipment_item_id,batch:inventory_batches(batch_number,manufacture_date,expiry_date),movement:inventory_movements(quantity))").eq("shipment_id", shipmentId).order("received_at"),
     supabase.from("tasks").select("id,title,status,priority,due_at,assignee:profiles!tasks_assignee_user_id_fkey(full_name)").eq("shipment_id", shipmentId).in("status", ["open", "in_progress"]).order("due_at", { nullsFirst: false }),
     supabase.from("document_requirements").select("document_type_id,is_mandatory,due_description,shipment_type,process_template_id,route_id,stage_id,type:document_types(code,name)").eq("is_active", true),
   ]);
   const transports = (transportResult.data ?? []) as unknown as ReportTransport[];
   const stages = (stageResult.data ?? []) as unknown as ReportStage[];
-  const rawItems = (itemResult.data ?? []) as unknown as Omit<ReportItem, "accepted" | "batchQuantity" | "discrepancy">[];
+  const canViewPrices = canViewShipmentPrices(grantedPermissions);
+  const { data: priceRows } = canViewPrices
+    ? await supabase.rpc("my_shipment_item_purchase_prices", { p_shipment_id: shipmentId })
+    : { data: [] };
+  const prices = new Map((priceRows ?? []).map((row: { item_id: string; unit_price: number | string | null }) => [row.item_id, row.unit_price]));
+  const rawItems = (itemResult.data ?? []).map((item) => ({ ...item, unit_price: prices.get(item.id) ?? null })) as unknown as Omit<ReportItem, "accepted" | "batchQuantity" | "discrepancy">[];
   const receipts = (receiptResult.data ?? []) as unknown as ReportReceipt[];
 
   const targetIds = [shipmentId, ...transports.map((transport) => transport.id)];
@@ -100,6 +104,6 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
     shipment: shipment as unknown as ReportShipment, transports, stages, items, receipts,
     documents: (documents ?? []) as unknown as ReportDocument[], missingDocuments,
     tasks: (taskResult.data ?? []) as unknown as ReportTask[],
-    canViewPrices: canViewShipmentPrices(roles), totals,
+    canViewPrices, totals,
   };
 }

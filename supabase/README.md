@@ -42,5 +42,6 @@ Migration order:
 31. `202609273800_inventory_operation_documents.sql` — draft, posting and reversal lifecycle for warehouse transfers, write-offs and stock adjustments. See `docs/inventory-operation-documents.md`.
 32. `202609273900_product_supplier_catalog.sql` — explicit product-to-factory assortment, historical distributor links, and database enforcement for purchase plans and import shipments.
 33. `202609274000_import_customs_stages.sql` — makes broker and customs processing mandatory for the EU-to-Kazakhstan import process and safely repairs existing import stage runs.
+34. `202609274100_purchase_price_access.sql` — separates purchase prices and landed cost behind `prices.purchase.view`; sales prices and employee document access remain unchanged.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

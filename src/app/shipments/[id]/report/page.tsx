@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
+import { loadPermissions } from "@/lib/permissions";
 import { loadShipmentReport, localizedName, one, type ReportReceiptItem } from "@/lib/shipment-report";
 
 const shipmentStatus: Record<string, string> = { planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена" };
@@ -19,7 +20,8 @@ const duration = (start: string | null | undefined, end: string | null | undefin
 export default async function ShipmentReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { profile, roles, supabase } = await requireUser();
-  const report = await loadShipmentReport(supabase, id, roles);
+  const permissions = await loadPermissions(supabase, ["prices.purchase.view"] as const);
+  const report = await loadShipmentReport(supabase, id, new Set(Object.keys(permissions).filter((key) => permissions[key as keyof typeof permissions])));
   if (!report) notFound();
   const supplier = one(report.shipment.supplier);
   const customer = one(report.shipment.customer);

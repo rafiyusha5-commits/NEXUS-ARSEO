@@ -51,7 +51,9 @@ select set_config('request.jwt.claim.sub','c7000000-0000-4000-8000-000000000001'
 select public.approve_shipment_cost((select id from public.cost_calculations where shipment_id='c7300000-0000-4000-8000-000000000001'));
 do $$begin
  assert (select status='approved' from public.cost_calculations where shipment_id='c7300000-0000-4000-8000-000000000001'),'cost approved';
- assert (select unit_landed_cost=6000 and cost_currency_id=(select id from public.currencies where code='KZT') from public.inventory_batches where id='c7500000-0000-4000-8000-000000000001'),'approved cost flows to batch';
+ assert (select unit_landed_cost=6000 and cost_currency_id=(select id from public.currencies where code='KZT')
+         from public.my_inventory_batch_costs('c7200000-0000-4000-8000-000000000001') where batch_id='c7500000-0000-4000-8000-000000000001'),
+        'approved cost flows to batch through the protected cost reader';
 end$$;
 
 reset role;
