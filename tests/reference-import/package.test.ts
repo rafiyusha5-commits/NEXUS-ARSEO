@@ -47,7 +47,8 @@ describe("tables", () => {
     assert.equal(product.requires_sticker, true);
     assert.deepEqual(product.nutrition_facts, { basis: "100g", energy_kcal: 530, protein_g: 6.5, fat_g: 30, carbohydrates_g: 58, salt_g: 0.1 });
     assert.deepEqual(product.identifiers.map((item) => item.type), ["gtin", "box_barcode", "supplier_sku", "supplier_sku"]);
-    assert.equal(product.identifiers[2].counterparty, "demo-dist", "supplier column goes to the supplier article");
+    assert.equal(product.identifiers[2].counterparty, "demo-maker", "supplier article belongs to the factory-manufacturer");
+    assert.equal(product.identifiers[3].counterparty, "demo-maker", "identifier sheet also uses the factory-manufacturer");
     assert.deepEqual(product.packaging.map((level) => [level.uom, level.units_per_parent]), [["piece", 1], ["box", 12], ["pallet", 60]]);
     assert.equal(product.packaging[1].gross_weight_kg, 2.8);
   });

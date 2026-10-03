@@ -85,7 +85,7 @@ insert into tests.ri_packages (name, payload) values
        {"type": "gtin", "value": "2000000000015", "is_primary": true},
        {"type": "unit_barcode", "value": "2000000000015"},
        {"type": "box_barcode", "value": "12000000000012", "packaging_uom": "box"},
-       {"type": "supplier_sku", "value": "ART-001", "counterparty": "dist", "is_primary": true}
+       {"type": "supplier_sku", "value": "ART-001", "counterparty": "maker", "is_primary": true}
      ],
      "packaging": [
        {"uom": "piece", "units_per_parent": 1, "gross_weight_kg": 0.22, "net_weight_kg": 0.2},
@@ -254,7 +254,7 @@ begin
   assert v_product.base_purchase_price is null and v_product.default_currency_id is null, 'no prices or currency written';
   assert (select count(*) from public.product_identifiers where product_id = v_product.id) = 4, 'four identifiers';
   assert (select counterparty_id from public.product_identifiers where product_id = v_product.id and identifier_type = 'supplier_sku')
-    = (select id from public.counterparties where legal_name = 'RI Distribution GmbH'), 'supplier article bound to the supplier';
+    = (select id from public.counterparties where legal_name = 'RI Confectionery Oy'), 'supplier article bound to the factory-manufacturer';
   assert (select units_per_parent from public.product_packaging where product_id = v_product.id and uom = 'box') = 12, 'box level';
   assert (select manufacturer_id from public.products where internal_sku = 'RI-002') = v_product.manufacturer_id,
     'a tax ID resolves an in-package counterparty';

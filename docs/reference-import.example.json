@@ -70,14 +70,8 @@
         {
           "type": "supplier_sku",
           "value": "ART-001",
-          "counterparty": "demo-dist",
-          "is_primary": true
-        },
-        {
-          "type": "supplier_sku",
-          "value": "MFR-001",
           "counterparty": "demo-maker",
-          "is_primary": false
+          "is_primary": true
         }
       ],
       "packaging": [

@@ -14,11 +14,11 @@ export const CSV_TEMPLATES: Record<TemplateKind, string[][]> = {
     ["demo-dist", "Demo Distribution GmbH", "", "supplier", "DE", "", "", "", "en"],
   ],
   products: [
-    ["internal_sku", "name_ru", "name_en", "name_kk", "manufacturer", "supplier", "supplier_sku", "brand", "country_of_origin",
+    ["internal_sku", "name_ru", "name_en", "name_kk", "manufacturer", "supplier_sku", "brand", "country_of_origin",
       "hs_code", "shelf_life_days", "composition_ru", "composition_en", "nutrition_basis", "energy_kcal", "protein_g", "fat_g",
       "carbohydrates_g", "salt_g", "temperature_regime", "temperature_min_c", "temperature_max_c", "requires_sticker",
       "requires_marking", "gtin", "unit_barcode", "box_barcode"],
-    ["DEMO-001", "Демо конфеты 200 г", "Demo sweets 200 g", "", "demo-maker", "demo-dist", "ART-001", "Demo", "FI",
+    ["DEMO-001", "Демо конфеты 200 г", "Demo sweets 200 g", "", "demo-maker", "ART-001", "Demo", "FI",
       "1806903100", "365", "сахар, какао-масло, молоко сухое", "sugar, cocoa butter, milk powder", "100g", "530", "6,5", "30",
       "58", "0,1", "ambient", "5", "25", "да", "нет", "2000000000091", "", "12000000000098"],
   ],
@@ -66,8 +66,7 @@ export const JSON_TEMPLATE: ReferencePackage = {
       identifiers: [
         { type: "gtin", value: "2000000000091", is_primary: true },
         { type: "box_barcode", value: "12000000000098", packaging_uom: "box" },
-        { type: "supplier_sku", value: "ART-001", counterparty: "demo-dist", is_primary: true },
-        { type: "supplier_sku", value: "MFR-001", counterparty: "demo-maker", is_primary: false },
+        { type: "supplier_sku", value: "ART-001", counterparty: "demo-maker", is_primary: true },
       ],
       packaging: [
         { uom: "piece", units_per_parent: 1, gross_weight_kg: 0.22, net_weight_kg: 0.2 },
