@@ -161,8 +161,8 @@
 | description | text | нет | |
 
 - **Уникальные ограничения**: code; (module, action)
-- **Права в базе (12)**: `users.view`, `users.manage`, `roles.manage`, `shipments.view`, `shipments.create`, `shipments.update`, `shipments.approve`, `documents.view`, `documents.manage`, `finance.view`, `finance.manage`, `audit.view`.
-- **Целевой набор** модулей и действий (добавляется миграциями фаз 0–8) — в [`roles-permissions.md`](./roles-permissions.md), раздел «Коды прав». Существующие коды не переименовываются.
+- **Базовые права первой миграции (12)**: `users.view`, `users.manage`, `roles.manage`, `shipments.view`, `shipments.create`, `shipments.update`, `shipments.approve`, `documents.view`, `documents.manage`, `finance.view`, `finance.manage`, `audit.view`.
+- **Фактический набор после миграций до `202609274000` — 99 кодов**. Полный перечень модулей и действий описан в [`roles-permissions.md`](./roles-permissions.md), раздел «Коды прав». `documents.manage` и `tasks.update` сохранены для совместимости; новые правила используют точные права модулей.
 - **Архивирование**: не применяется; справочник меняется только миграциями
 - **audit_log**: изменения через миграции фиксируются в истории миграций, а не в `audit_log`
 
