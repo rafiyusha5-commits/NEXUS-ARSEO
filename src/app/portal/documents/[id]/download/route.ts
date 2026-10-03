@@ -15,7 +15,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     fallback.searchParams.set("error", "Скачивание не разрешено");
     return NextResponse.redirect(fallback, { status: 303, headers });
   }
-  const { data: file } = await supabase.from("document_versions").select("storage_path,original_filename").eq("id", version).eq("document_id", id).maybeSingle();
+  const { data: rows } = await supabase.rpc("my_external_document_file", { p_document_id: id, p_version_id: version });
+  const file = ((rows ?? []) as { storage_path: string; original_filename: string }[])[0];
   if (!file) { fallback.searchParams.set("error", "Файл недоступен"); return NextResponse.redirect(fallback, { status: 303, headers }); }
   const { data, error } = await supabase.storage.from(DOCUMENT_BUCKET).createSignedUrl(file.storage_path, 60, { download: file.original_filename });
   if (error || !data?.signedUrl) { fallback.searchParams.set("error", "Не удалось подготовить файл"); return NextResponse.redirect(fallback, { status: 303, headers }); }

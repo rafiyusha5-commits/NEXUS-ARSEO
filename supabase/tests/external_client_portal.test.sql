@@ -32,15 +32,18 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','fd000000-0000-4000-8000-000000000002',false);
 do $$begin
  assert (select private.is_external_client()),'client A is a valid external account';
- assert (select count(*)=1 from public.documents),'client A sees only one shared own document';
- assert (select min(title)='A shared' from public.documents),'client A cannot see internal or another customer document';
+ assert (select count(*)=0 from public.documents),'external users cannot query the internal document registry directly';
+ assert (select count(*)=0 from public.my_external_documents()),'unreviewed manual uploads are never published';
  assert (select count(*)=1 from public.profiles),'external user sees only own profile';
  assert (select count(*)=0 from public.app_roles),'external user cannot enumerate roles';
  assert (select count(*)=0 from public.permissions),'external user cannot enumerate permissions';
  assert (select count(*)=0 from public.role_permissions),'external user cannot enumerate role permission matrix';
  assert (select (public.my_external_document_permissions()->>'download')::boolean),'download permission is explicit';
 end$$;
-select public.record_external_document_access('fd200000-0000-4000-8000-000000000001','view');
+do $$declare denied boolean:=false;begin
+ begin perform public.record_external_document_access('fd200000-0000-4000-8000-000000000001','view');exception when raise_exception then denied:=true;end;
+ assert denied,'an unsafe manual upload cannot be recorded as an external view';
+end$$;
 select public.update_my_external_profile('kk','+77019999999');
 do $$begin
  update public.documents set title='tampered' where id='fd200000-0000-4000-8000-000000000001';
@@ -52,7 +55,7 @@ select set_config('request.jwt.claim.sub','fd000000-0000-4000-8000-000000000001'
 select public.set_external_client_access('fd000000-0000-4000-8000-000000000002',false,false,true);
 select set_config('request.jwt.claim.sub','fd000000-0000-4000-8000-000000000002',false);
 do $$declare denied boolean:=false;begin
- assert (select count(*)=0 from public.documents),'revoked view hides previously visible documents';
+ assert (select count(*)=0 from public.my_external_documents()),'revoked view hides published documents';
  assert not (select (public.my_external_document_permissions()->>'view')::boolean),'revoked permission is effective immediately';
  begin perform public.record_external_document_access('fd200000-0000-4000-8000-000000000001','view');exception when raise_exception then denied:=true;end;
  assert denied,'revoked view must reject audit call';

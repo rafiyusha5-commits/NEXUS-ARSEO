@@ -43,7 +43,8 @@ export default async function DocumentPage({
       .select(
         "id, document_type_id, document_number, title, description, document_date, valid_until, status, language, amount, " +
           "current_version, original_filename, mime_type, file_size_bytes, created_at, updated_at, archived_at, archive_reason, counterparty_id, visibility, source, " +
-          "type:document_types(name_ru, name_en, name_kk, category, has_validity_period), currency:currencies(id, code), " +
+          "type:document_types(code, name_ru, name_en, name_kk, category, has_validity_period), currency:currencies(id, code), " +
+          "generations:document_generations(contains_prices), " +
           "uploader:profiles!documents_uploaded_by_fkey(full_name), archiver:profiles!documents_archived_by_fkey(full_name)",
       )
       .eq("id", id)
@@ -77,7 +78,8 @@ export default async function DocumentPage({
     current_version: number; original_filename: string | null; mime_type: string | null; file_size_bytes: number | null;
     created_at: string; updated_at: string; archived_at: string | null; archive_reason: string | null;
     counterparty_id: string | null; visibility: string; source: string;
-    type: { name_ru: string; name_en: string | null; name_kk: string | null; has_validity_period: boolean } | null;
+    type: { code: string; name_ru: string; name_en: string | null; name_kk: string | null; has_validity_period: boolean } | null;
+    generations: { contains_prices: boolean }[];
     currency: { id: string; code: string } | null; uploader: Named; archiver: Named;
   };
   const type = one(doc.type);
@@ -98,6 +100,9 @@ export default async function DocumentPage({
   }[];
   const pendingReview = reviewHistory.find((item) => item.status === "pending");
   const reviewMigrationMissing = Boolean(approvalsError);
+  const safeExternalTypes = new Set(["cmr", "ttn", "packing_list", "snt", "waybill", "certificate", "guarantee_letter"]);
+  const generations = doc.generations ?? [];
+  const canOfferExternalShare = doc.source === "external_upload" || (safeExternalTypes.has(type?.code ?? "") && generations.length > 0 && generations.every((generation) => !generation.contains_prices));
 
   return (
     <main className="app-shell">
@@ -139,14 +144,14 @@ export default async function DocumentPage({
             <div className="panel-heading"><div><p className="eyebrow">Кабинет клиента</p><h2>Доступ внешнего клиента</h2></div>
               <span className={`doc-badge ${doc.visibility === "shared_with_counterparty" ? "doc-status-approved" : "doc-archive-badge"}`}>{doc.visibility === "shared_with_counterparty" ? "Открыт клиенту" : "Только ARSEO"}</span>
             </div>
-            <form action={setDocumentExternalAccessAction} className="doc-subform">
+            {canOfferExternalShare ? <form action={setDocumentExternalAccessAction} className="doc-subform">
               <input type="hidden" name="document_id" value={doc.id} />
               <input type="hidden" name="shared" value="true" />
               <label>Клиент<select name="counterparty_id" required defaultValue={doc.counterparty_id ?? ""}><option value="" disabled>Выберите клиента</option>{(customers ?? []).map((customer) => <option key={customer.id} value={customer.id}>{customer.legal_name}</option>)}</select></label>
               <button className="primary" type="submit">Открыть клиенту</button>
-            </form>
+            </form> : <div className="setup-notice">Это внутренний загруженный документ или документ с ценами. Внешним пользователям его открыть нельзя.</div>}
             {doc.visibility === "shared_with_counterparty" && <form action={setDocumentExternalAccessAction} className="inline-form"><input type="hidden" name="document_id" value={doc.id} /><input type="hidden" name="shared" value="false" /><button className="ghost danger-text" type="submit">Закрыть внешний доступ</button></form>}
-            <p className="form-help">Клиент увидит документ только при активной учётной записи и включённом праве просмотра. Изменение записывается в журнал действий.</p>
+            <p className="form-help">Опубликовать можно только связанную с выбранным клиентом текущую версию безопасного документа без цен. Изменение записывается в журнал действий.</p>
           </section>
         )}
 

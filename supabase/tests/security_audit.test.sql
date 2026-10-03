@@ -63,7 +63,7 @@ select 'authenticated', unnest(array[
   'public.create_commercial_program', 'public.create_commercial_program_version', 'public.upsert_commercial_program_line', 'public.remove_commercial_program_line',
   'public.submit_commercial_program', 'public.review_commercial_program', 'public.approve_commercial_program', 'public.apply_commercial_program_to_forecast',
   'public.create_sale_from_commercial_program', 'public.archive_commercial_program',
-  'public.my_external_document_permissions', 'public.update_my_external_profile', 'public.register_external_document', 'public.record_external_document_access',
+  'public.my_external_document_permissions', 'public.my_external_documents', 'public.my_external_document', 'public.my_external_document_file', 'public.update_my_external_profile', 'public.register_external_document', 'public.record_external_document_access',
   'public.set_document_external_access', 'public.configure_external_client', 'public.set_external_client_access',
   'public.create_shipment_milestone', 'public.complete_shipment_milestone', 'public.cancel_shipment_milestone', 'public.my_shipment_calendar',
   'public.register_generated_document',
@@ -74,7 +74,8 @@ select 'authenticated', unnest(array[
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
   'private.is_registered_document_file', 'private.is_registered_template_file', 'private.can_view_generated_document', 'private.can_read_registered_document_file', 'private.listing_card_is_draft',
   'private.template_is_active', 'private.is_external_client', 'private.external_has_permission',
-  'private.external_can_access_document', 'private.external_can_read_document_file'])
+  'private.external_can_access_document', 'private.external_can_read_document_file', 'private.external_can_upload_document_file',
+  'private.document_matches_counterparty', 'private.document_is_external_safe'])
 union all
 select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key']);
 

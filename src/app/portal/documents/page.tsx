@@ -6,6 +6,7 @@ import { formatDate, formatDateTime } from "@/lib/documents/labels.ts";
 import { uploadPortalDocument } from "./actions";
 
 type Flags = { view: boolean; download: boolean; upload: boolean };
+type PortalDocument = { id: string; title: string; document_number: string | null; document_date: string | null; created_at: string; original_filename: string; status: string; type_name: string };
 
 export default async function PortalDocumentsPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
   const params = await searchParams;
@@ -16,28 +17,28 @@ export default async function PortalDocumentsPage({ searchParams }: { searchPara
   ]);
   const flags = (permissionData ?? { view: false, download: false, upload: false }) as Flags;
   const { data: documents } = flags.view
-    ? await supabase.from("documents").select("id,title,document_number,document_date,created_at,original_filename,status,type:document_types(name_ru)").is("archived_at", null).order("created_at", { ascending: false })
+    ? await supabase.rpc("my_external_documents")
     : { data: [] };
+  const visibleDocuments = (documents ?? []) as PortalDocument[];
 
   return <main className="app-shell">
     <PortalSidebar profile={profile} active="documents" />
     <section className="workspace admin-workspace portal-workspace">
-      <header className="topbar"><div><p className="eyebrow">Кабинет клиента</p><h1>Документы</h1></div><span className="page-count">{documents?.length ?? 0} документов</span></header>
+      <header className="topbar"><div><p className="eyebrow">Кабинет клиента</p><h1>Документы</h1></div><span className="page-count">{visibleDocuments.length} документов</span></header>
       {params.error && <div className="login-error admin-message">{params.error}</div>}
       {params.success && <div className="login-success admin-message">{params.success}</div>}
       {!flags.view && <section className="panel admin-section"><div className="empty-state">Просмотр документов не разрешён. Обратитесь к менеджеру ARSEO.</div></section>}
       {flags.view && <section className="panel admin-section">
         <div className="panel-heading"><div><p className="eyebrow">Открытые материалы</p><h2>Документы вашей компании</h2></div></div>
         <div className="doc-list portal-doc-list">
-          {(documents ?? []).map((doc) => {
-            const type = Array.isArray(doc.type) ? doc.type[0] : doc.type;
+          {visibleDocuments.map((doc) => {
             return <Link className="doc-row" href={`/portal/documents/${doc.id}`} key={doc.id}>
-              <div className="doc-main"><span className="doc-type">{type?.name_ru ?? "Документ"}</span><strong>{doc.title}</strong><small>{doc.original_filename ?? "Файл"}</small></div>
+              <div className="doc-main"><span className="doc-type">{doc.type_name ?? "Документ"}</span><strong>{doc.title}</strong><small>{doc.original_filename ?? "Файл"}</small></div>
               <div><strong>{doc.document_number || "Без номера"}</strong><small>{formatDate(doc.document_date)}</small></div>
               <div><strong>{doc.status === "approved" ? "Утверждён" : "Доступен"}</strong><small>{formatDateTime(doc.created_at)}</small></div>
             </Link>;
           })}
-          {!documents?.length && <div className="empty-state">ARSEO пока не открыл документы для вашей компании.</div>}
+          {!visibleDocuments.length && <div className="empty-state">ARSEO пока не открыл документы для вашей компании.</div>}
         </div>
       </section>}
       {flags.upload && <section className="panel admin-section" id="upload">

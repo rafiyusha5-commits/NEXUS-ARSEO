@@ -43,5 +43,6 @@ Migration order:
 32. `202609273900_product_supplier_catalog.sql` — explicit product-to-factory assortment, historical distributor links, and database enforcement for purchase plans and import shipments.
 33. `202609274000_import_customs_stages.sql` — makes broker and customs processing mandatory for the EU-to-Kazakhstan import process and safely repairs existing import stage runs.
 34. `202609274100_purchase_price_access.sql` — separates purchase prices and landed cost behind `prices.purchase.view`; sales prices and employee document access remain unchanged.
+35. `202609274200_external_document_security.sql` — restores the client portal with administrator-only publication, customer relationship checks, internal/price document blocking and one pinned published file version.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

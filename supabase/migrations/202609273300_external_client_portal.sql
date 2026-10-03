@@ -95,6 +95,7 @@ drop policy if exists "employees view role permissions" on public.role_permissio
 create policy "employees view role permissions" on public.role_permissions for select to authenticated using ((select private.is_employee()));
 
 drop policy if exists "employees view document types" on public.document_types;
+drop policy if exists "employees or portal users view document types" on public.document_types;
 create policy "employees or portal users view document types" on public.document_types for select to authenticated
 using ((select private.is_employee()) or (is_active and ((select private.external_has_permission('external_documents.view')) or (select private.external_has_permission('external_documents.upload')))));
 
