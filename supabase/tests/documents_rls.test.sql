@@ -62,9 +62,6 @@ from (values
 ) as u(id, role_code)
 join public.app_roles r on r.code = u.role_code;
 
-update public.profiles set user_type = 'external'
-where id = 'a0000000-0000-4000-8000-000000000006';
-
 -- The "creator" may register documents but may neither view nor update them.
 -- The external user gets documents.view personally: it must still see nothing.
 insert into public.user_permission_overrides (user_id, permission_id, effect, reason, granted_by)
@@ -78,6 +75,9 @@ join public.permissions p on p.code = u.code;
 insert into public.counterparties (id, roles, legal_name, country) values
   ('b0000000-0000-4000-8000-000000000001', array['manufacturer', 'supplier'], 'Test Supplier Oy', 'FI'),
   ('b0000000-0000-4000-8000-000000000002', array['customer'], 'ТОО Тестовый клиент', 'KZ');
+
+update public.profiles set user_type = 'external', counterparty_id = 'b0000000-0000-4000-8000-000000000002'
+where id = 'a0000000-0000-4000-8000-000000000006';
 
 insert into public.shipments (
   id, shipment_number, type, supplier_id, route_id, process_template_id, currency_id,

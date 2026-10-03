@@ -95,6 +95,79 @@ do $$begin
  assert (select count(*) from storage.objects where name like 'documents/fc200000-0000-4000-8000-000000000002/%')=1,'employee can read the registered invoice file';
 end$$;
 
+-- Generated shipment documents: fixtures as the table owner, triggers off.
+reset role;
+insert into auth.users(id,email,raw_user_meta_data) values
+ ('fc000000-0000-4000-8000-000000000005','portal-admin-denied@test.local','{"full_name":"Denied admin"}');
+insert into public.user_roles(user_id,role_id) select 'fc000000-0000-4000-8000-000000000005',id from public.app_roles where code='administrator';
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
+select 'fc000000-0000-4000-8000-000000000005',id,'deny','portal test','fc000000-0000-4000-8000-000000000001' from public.permissions where code='documents.view';
+set session_replication_role=replica;
+insert into public.shipments(id,shipment_number,type,customer_id,route_id,process_template_id,currency_id,destination_warehouse_id,responsible_user_id,created_by)
+select 'fc300000-0000-4000-8000-000000000001','PORTAL-EXP-1','export','fc100000-0000-4000-8000-000000000001',
+ (select id from public.routes limit 1),(select id from public.process_templates limit 1),(select id from public.currencies where code='EUR'),
+ (select id from public.warehouses where code='AKT'),'fc000000-0000-4000-8000-000000000001','fc000000-0000-4000-8000-000000000001';
+insert into public.document_templates(id,document_type_id,name,language,status,approved_by,approved_at,flow_direction,current_version,created_by)
+values('fc400000-0000-4000-8000-000000000001',(select id from public.document_types where code='cmr'),'Portal template','ru','approved',
+ 'fc000000-0000-4000-8000-000000000001',now(),'output',1,'fc000000-0000-4000-8000-000000000001');
+insert into public.document_template_versions(id,template_id,version_number,storage_path,original_filename,mime_type,file_size_bytes,uploaded_by)
+values('fc410000-0000-4000-8000-000000000001','fc400000-0000-4000-8000-000000000001',1,
+ 'templates/fc400000-0000-4000-8000-000000000001/00000000000000000000000000000001-t.docx','t.docx',
+ 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',10,'fc000000-0000-4000-8000-000000000001');
+create temp table portal_fx(id uuid,type_code text,source text,generated boolean,prices boolean,versions int);
+insert into portal_fx values
+ ('fc500000-0000-4000-8000-000000000001','cmr','manual_upload',true,false,2),
+ ('fc500000-0000-4000-8000-000000000002','packing_list','manual_upload',true,true,1),
+ ('fc500000-0000-4000-8000-000000000003','cmr','manual_upload',false,false,1),
+ ('fc500000-0000-4000-8000-000000000004','cmr','google_drive_import',false,false,1);
+insert into public.documents(id,document_type_id,title,status,source,uploaded_by,current_version)
+select f.id,t.id,'Generated '||f.type_code,'approved',f.source,'fc000000-0000-4000-8000-000000000001',f.versions
+from portal_fx f join public.document_types t on t.code=f.type_code;
+insert into public.document_versions(document_id,version_number,storage_path,original_filename,mime_type,file_size_bytes,is_current,uploaded_by)
+select f.id,v,'documents/'||f.id||'/'||lpad(v::text,32,'0')||'-v'||v||'.pdf','v'||v||'.pdf','application/pdf',10,v=f.versions,'fc000000-0000-4000-8000-000000000001'
+from portal_fx f cross join generate_series(1,2) v where v<=f.versions;
+insert into storage.objects(bucket_id,name,owner_id,metadata)
+select 'nexus-documents',storage_path,'fc000000-0000-4000-8000-000000000001','{"size":10,"mimetype":"application/pdf"}'
+from public.document_versions where document_id in (select id from portal_fx);
+insert into public.document_links(document_id,entity_type,entity_id,created_by)
+select id,'shipment','fc300000-0000-4000-8000-000000000001','fc000000-0000-4000-8000-000000000001' from portal_fx;
+insert into public.document_generations(template_id,template_version_id,shipment_id,document_id,output_format,contains_prices,fields_snapshot,generated_by)
+select 'fc400000-0000-4000-8000-000000000001','fc410000-0000-4000-8000-000000000001','fc300000-0000-4000-8000-000000000001',id,'pdf',prices,'{}',
+ 'fc000000-0000-4000-8000-000000000001' from portal_fx where generated;
+set session_replication_role=origin;
+do $$begin
+ assert (select array_agg(r.code) from public.role_permissions rp join public.app_roles r on r.id=rp.role_id join public.permissions p on p.id=rp.permission_id
+   where p.code='documents.share_external' and rp.granted)=array['administrator'],'only the administrator role may publish';
+end$$;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000001',false);
+select tests.portal_expect_error($q$select public.set_document_external_access('fc500000-0000-4000-8000-000000000002','fc100000-0000-4000-8000-000000000001',true)$q$,'Внутренний или ценовой');
+select tests.portal_expect_error($q$select public.set_document_external_access('fc500000-0000-4000-8000-000000000003','fc100000-0000-4000-8000-000000000001',true)$q$,'Внутренний или ценовой');
+select tests.portal_expect_error($q$select public.set_document_external_access('fc500000-0000-4000-8000-000000000004','fc100000-0000-4000-8000-000000000001',true)$q$,'Внутренний или ценовой');
+select tests.portal_expect_error($q$select public.set_document_external_access('fc500000-0000-4000-8000-000000000001','fc100000-0000-4000-8000-000000000002',true)$q$,'не связан');
+select public.set_document_external_access('fc500000-0000-4000-8000-000000000001','fc100000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000005',false);
+select tests.portal_expect_error($q$select public.set_document_external_access('fc500000-0000-4000-8000-000000000001',null,false)$q$,'Только администратор');
+
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000003',false);
+do $$begin
+ assert (select count(*) from public.document_links)=0,'external user cannot query document links directly';
+ assert exists(select 1 from public.my_external_documents() where id='fc500000-0000-4000-8000-000000000001'),'price-free generated CMR is published to the linked client';
+ assert (select count(*) from storage.objects where name like 'documents/fc500000-0000-4000-8000-000000000001/%-v1.pdf')=0,'superseded generated version is unavailable in Storage';
+ assert (select count(*) from storage.objects where name like 'documents/fc500000-0000-4000-8000-000000000001/%-v2.pdf')=1,'pinned generated version is readable in Storage';
+end$$;
+
+-- Generated documents with prices stay hidden from employees without templates.generate_prices.
+select set_config('request.jwt.claim.sub','fc000000-0000-4000-8000-000000000004',false);
+do $$begin
+ assert (select count(*) from public.documents where id='fc500000-0000-4000-8000-000000000002')=0,'price document row hidden';
+ assert (select count(*) from public.document_versions where document_id='fc500000-0000-4000-8000-000000000002')=0,'price document versions hidden';
+ assert (select count(*) from public.document_links where document_id='fc500000-0000-4000-8000-000000000002')=0,'price document links hidden';
+ assert (select count(*) from storage.objects where name like 'documents/fc500000-0000-4000-8000-000000000002/%')=0,'price document file hidden';
+ assert (select count(*) from public.documents where id='fc500000-0000-4000-8000-000000000001')=1,'price-free generated document stays visible';
+end$$;
+
 reset role;
 rollback;
 select 'external_document_security: passed' as result;

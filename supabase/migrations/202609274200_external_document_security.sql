@@ -32,7 +32,7 @@ returns boolean language sql stable security definer set search_path='' as $$
    or (l.entity_type='shipment' and exists(select 1 from public.shipments s where s.id=l.entity_id and s.customer_id=p_counterparty_id))
    or (l.entity_type='shipment_transport' and exists(select 1 from public.shipment_transports t join public.shipments s on s.id=t.shipment_id where t.id=l.entity_id and s.customer_id=p_counterparty_id))
    or (l.entity_type='contract' and exists(select 1 from public.contracts c where c.id=l.entity_id and c.counterparty_id=p_counterparty_id))
-   or (l.entity_type='customer_return' and exists(select 1 from public.customer_returns r where r.id=l.entity_id and r.customer_id=p_counterparty_id))
+   -- customer_return links are rejected until public.customer_returns exists (validate_document_link_target).
   )
  ) or exists(
   select 1 from public.documents d where d.id=p_document_id and d.source='external_upload' and d.counterparty_id=p_counterparty_id
@@ -95,22 +95,24 @@ grant execute on function private.document_matches_counterparty(uuid,uuid),priva
 
 -- Base registry tables remain employee-only. The portal receives a deliberately small
 -- projection through the RPCs below, so RLS cannot accidentally expose amount/currency.
+-- Generated documents with prices keep requiring templates.generate_prices (202609273500).
 drop policy if exists "document viewers see documents" on public.documents;
 create policy "document viewers see documents" on public.documents for select to authenticated using(
- (select private.has_permission('documents.view'))
+ (select private.has_permission('documents.view')) and (select private.can_view_generated_document(id))
 );
 drop policy if exists "document viewers see versions" on public.document_versions;
 create policy "document viewers see versions" on public.document_versions for select to authenticated using(
- (select private.has_permission('documents.view'))
+ (select private.has_permission('documents.view')) and (select private.can_view_generated_document(document_id))
 );
 drop policy if exists "document viewers see links" on public.document_links;
 create policy "document viewers see links" on public.document_links for select to authenticated using(
- (select private.has_permission('documents.view'))
+ (select private.has_permission('documents.view')) and (select private.can_view_generated_document(document_id))
 );
 
 create or replace function private.can_read_registered_document_file(p_bucket text,p_path text) returns boolean
 language sql security definer set search_path='' stable as $$
- select exists(select 1 from public.document_versions v where v.storage_bucket=p_bucket and v.storage_path=p_path)
+ select exists(select 1 from public.document_versions v where v.storage_bucket=p_bucket and v.storage_path=p_path
+               and (select private.can_view_generated_document(v.document_id)))
 $$;
 revoke all on function private.can_read_registered_document_file(text,text) from public,anon,authenticated,service_role;
 grant execute on function private.can_read_registered_document_file(text,text) to authenticated;

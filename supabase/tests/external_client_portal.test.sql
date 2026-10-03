@@ -45,9 +45,10 @@ do $$declare denied boolean:=false;begin
  assert denied,'an unsafe manual upload cannot be recorded as an external view';
 end$$;
 select public.update_my_external_profile('kk','+77019999999');
-do $$begin
+do $$declare v_rows integer;begin
  update public.documents set title='tampered' where id='fd200000-0000-4000-8000-000000000001';
- assert (select title='A shared' from public.documents where id='fd200000-0000-4000-8000-000000000001'),'external user cannot update a shared document';
+ get diagnostics v_rows=row_count;
+ assert v_rows=0,'external user cannot update a shared document';
  assert (select locale='kk' and phone='+77019999999' from public.profiles where id='fd000000-0000-4000-8000-000000000002'),'external user updates only own allowed profile fields';
 end$$;
 
@@ -62,5 +63,8 @@ do $$declare denied boolean:=false;begin
 end$$;
 
 reset role;
+do $$begin
+ assert (select title='A shared' from public.documents where id='fd200000-0000-4000-8000-000000000001'),'the external update attempt left the document unchanged';
+end$$;
 rollback;
 select 'external_client_portal: passed' as result;
