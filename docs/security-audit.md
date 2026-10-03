@@ -1,6 +1,6 @@
 # Аудит безопасности базы данных Supabase
 
-Аудит всех миграций `main` до `202609272200_shipment_tasks_notifications.sql` включительно (27.09.2026). Исправления внесены миграцией `supabase/migrations/202609272300_database_security_hardening.sql`. На рабочем Supabase она не выполнялась.
+Аудит всех миграций `main` до `202609272200_shipment_tasks_notifications.sql` включительно (27.09.2026). Исправления внесены миграцией `supabase/migrations/202609272300_database_security_hardening.sql`. Фраза о неприменённой production-миграции относилась только к состоянию на 27.09.2026; последующий read-only аудит production от 02.10.2026 подтвердил объекты hardening, а обнаруженный drift относился к частично применённой миграции `202609273900_product_supplier_catalog.sql`.
 
 ## Как проверялось
 

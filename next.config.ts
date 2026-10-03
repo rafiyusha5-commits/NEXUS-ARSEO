@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
+import { applicationSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [...applicationSecurityHeaders],
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       // Document uploads go through Server Actions. Files are limited to 4 MB
