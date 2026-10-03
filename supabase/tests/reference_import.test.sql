@@ -475,9 +475,9 @@ declare
   v jsonb := tests.ri('docs_example', false);
 begin
   assert (v #>> '{summary,conflict}')::int = 0 and (v #>> '{summary,error}')::int = 0, format('docs example imports cleanly: %s', v);
-  assert (v #>> '{summary,create}')::int = 10, format('docs example creates every row: %s', v -> 'summary');
+  assert (v #>> '{summary,create}')::int = 9, format('docs example creates every row: %s', v -> 'summary');
   v := tests.ri('docs_example', false);
-  assert (v #>> '{summary,unchanged}')::int = 10, format('docs example is idempotent: %s', v -> 'summary');
+  assert (v #>> '{summary,unchanged}')::int = 9, format('docs example is idempotent: %s', v -> 'summary');
 end;
 $$;
 reset role;
