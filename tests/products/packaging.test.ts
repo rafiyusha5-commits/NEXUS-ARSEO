@@ -15,9 +15,16 @@ describe("product packaging hierarchy", () => {
   });
 
   it("names the contents of every business packaging level", () => {
+    const levels = [
+      { uom: "piece", units_per_parent: 1 },
+      { uom: "box", units_per_parent: 22 },
+      { uom: "pallet", units_per_parent: 1760 },
+      { uom: "truck", units_per_parent: 58080 },
+    ];
+
     assert.equal(packagingContentsLabel("piece", 1), "базовая единица");
-    assert.equal(packagingContentsLabel("box", 12), "12 штук");
-    assert.equal(packagingContentsLabel("pallet", 60), "60 коробов");
-    assert.equal(packagingContentsLabel("truck", 33), "33 паллет");
+    assert.equal(packagingContentsLabel("box", 22, levels), "22 штук");
+    assert.equal(packagingContentsLabel("pallet", 1760, levels), "1 760 штук · 80 коробов");
+    assert.equal(packagingContentsLabel("truck", 58080, levels), "58 080 штук · 33 паллеты · 2 640 коробов");
   });
 });
