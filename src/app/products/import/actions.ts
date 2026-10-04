@@ -1,15 +1,31 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
+import {
+  CALCULATOR_SHEET_NAME,
+  CALCULATOR_SOURCE_TITLE,
+  CALCULATOR_SPREADSHEET_ID,
+  readCalculatorSheet,
+} from "@/lib/google/calculator-sheet";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
-import { CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
+import { buildCalculatorPackage, CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
 
 export type ReferenceImportResult =
   | { ok: true; report: ImportReport }
+  | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
+
+export type GoogleCalculatorImportResult =
+  | {
+      ok: true;
+      report: ImportReport;
+      snapshot: string;
+      source: { title: string; sheet: string; spreadsheetId: string; columns: number; rows: number; products: number };
+    }
   | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
 
 // Stays below serverActions.bodySizeLimit in next.config.ts.
@@ -103,4 +119,53 @@ export async function runCalculatorImport(payload: string, mode: "preview" | "ap
   if (!report) return { ok: false, message: "База данных вернула неожиданный ответ." };
   if (mode === "apply") { revalidatePath("/products"); revalidatePath("/counterparties"); }
   return { ok: true, report };
+}
+
+// Reads the one approved Google Sheet through the Sheets values API. The service
+// account requests only spreadsheets.readonly; this action has no Google write path.
+// Apply re-reads the sheet and requires the exact snapshot shown in preview, so a
+// concurrent source change can never be imported without a new dry-run.
+export async function runGoogleCalculatorImport(
+  mode: "preview" | "apply",
+  expectedSnapshot?: string,
+): Promise<GoogleCalculatorImportResult> {
+  if (mode !== "preview" && mode !== "apply") return { ok: false, message: "Неизвестный режим импорта." };
+  const { supabase } = await requireUser();
+  const can = await loadPermissions(supabase, [...PERMISSIONS, "prices.purchase.view"]);
+  if (!can["products.create"] || !can["products.update"]) return { ok: false, message: "Недостаточно прав для импорта справочника." };
+  if (!can["prices.purchase.view"]) return { ok: false, message: "Калькулятор содержит закупочные цены и расчётные данные. Нужно право «Закупочные цены и себестоимость»." };
+
+  try {
+    const rows = await readCalculatorSheet();
+    const parsed = buildCalculatorPackage(rows, CALCULATOR_SOURCE_TITLE, CALCULATOR_SHEET_NAME);
+    if (parsed.issues.length) {
+      return {
+        ok: false,
+        message: `В Google Таблице есть ошибки (${parsed.issues.length}). Данные в Nexus не записаны.`,
+        issues: parsed.issues.slice(0, 200),
+      };
+    }
+    const payload = JSON.stringify(parsed.pkg);
+    if (payload.length > MAX_PAYLOAD_CHARS) return { ok: false, message: "Пакет Google Таблицы слишком большой для безопасной синхронизации." };
+    const snapshot = createHash("sha256").update(payload).digest("hex");
+    if (mode === "apply" && (!expectedSnapshot || !/^[a-f0-9]{64}$/.test(expectedSnapshot) || expectedSnapshot !== snapshot)) {
+      return { ok: false, message: "Google Таблица изменилась после проверки. Выполните проверку без записи ещё раз." };
+    }
+    const result = await runCalculatorImport(payload, mode);
+    if (!result.ok) return result;
+    return {
+      ...result,
+      snapshot,
+      source: {
+        title: CALCULATOR_SOURCE_TITLE,
+        sheet: CALCULATOR_SHEET_NAME,
+        spreadsheetId: CALCULATOR_SPREADSHEET_ID,
+        columns: parsed.pkg.source.columns.length,
+        rows: rows.length,
+        products: parsed.pkg.reference.products.length,
+      },
+    };
+  } catch (error) {
+    return { ok: false, message: publicErrorMessage(error, "Не удалось прочитать мастер-калькулятор из Google Sheets.") };
+  }
 }

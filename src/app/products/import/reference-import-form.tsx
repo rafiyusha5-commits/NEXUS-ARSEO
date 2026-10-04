@@ -17,26 +17,24 @@ import {
   statusLabel,
 } from "@/lib/reference-import/report.ts";
 import { type Table, buildPackageFromTables, parseCsv } from "@/lib/reference-import/tables.ts";
-import { type ReferenceImportResult, runReferenceImport } from "./actions";
-import { runCalculatorImport } from "./actions";
-import { buildCalculatorPackage, isCalculatorSheet, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
+import { type GoogleCalculatorImportResult, type ReferenceImportResult, runGoogleCalculatorImport, runReferenceImport } from "./actions";
+import { isCalculatorSheet } from "@/lib/calculator-import/parser.ts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PAYLOAD_CHARS = 4_000_000;
 const SHOWN_ROWS = 300;
 
-type Loaded = { files: string[]; pkg: ReferencePackage | null; payload: string; issues: Issue[]; kind: "reference" | "calculator" };
+type Loaded = { files: string[]; pkg: ReferencePackage | null; payload: string; issues: Issue[] };
 
 async function readFiles(files: File[]): Promise<Loaded> {
   const names = files.map((file) => file.name);
-  const fail = (message: string): Loaded => ({ files: names, pkg: null, payload: "", issues: [{ source: "Файлы", row: null, message }], kind: "reference" });
+  const fail = (message: string): Loaded => ({ files: names, pkg: null, payload: "", issues: [{ source: "Файлы", row: null, message }] });
   if (files.some((file) => file.size > MAX_FILE_BYTES)) return fail("Файл больше 10 МБ. Разделите данные на несколько файлов.");
 
   let built: { pkg: ReferencePackage; issues: Issue[] } = {
     pkg: { format: "nexus-reference-import", version: 1, counterparties: [], products: [] },
     issues: [],
   };
-  let calculator: CalculatorImportPackage | null = null;
   const json = files.filter((file) => /\.json$/i.test(file.name));
   if (json.length) {
     if (files.length > 1) return fail("JSON-пакет загружается отдельно, без других файлов.");
@@ -54,11 +52,7 @@ async function readFiles(files: File[]): Promise<Loaded> {
         for (const sheet of await readXlsxFile(file)) {
           const rows = sheet.data as unknown as Cell[][];
           if (isCalculatorSheet(sheet.sheet)) {
-            if (files.length > 1 || calculator) return fail("Мастер-калькулятор загружается одним XLSX-файлом.");
-            const parsed = buildCalculatorPackage(rows, file.name, sheet.sheet);
-            calculator = parsed.pkg;
-            built = { pkg: parsed.pkg.reference, issues: parsed.issues };
-            continue;
+            return fail("Мастер-калькулятор больше не загружается из XLSX. Используйте защищённый источник Google Sheets выше.");
           }
           if (rows.some((row) => row.some((value) => value !== null && String(value).trim() !== ""))) {
             tables.push({ source: `${file.name} · ${sheet.sheet}`, rows });
@@ -70,11 +64,11 @@ async function readFiles(files: File[]): Promise<Loaded> {
         return fail(`${file.name}: поддерживаются .json, .csv, .tsv и .xlsx.`);
       }
     }
-    if (!calculator) built = buildPackageFromTables(tables);
+    built = buildPackageFromTables(tables);
   }
-  const payload = JSON.stringify(calculator ?? built.pkg);
+  const payload = JSON.stringify(built.pkg);
   if (payload.length > MAX_PAYLOAD_CHARS) built.issues.push({ source: "Пакет", row: null, message: "Пакет больше 4 МБ. Разделите файл на части." });
-  return { files: names, pkg: built.pkg, payload, issues: built.issues, kind: calculator ? "calculator" : "reference" };
+  return { files: names, pkg: built.pkg, payload, issues: built.issues };
 }
 
 function ReportView({ report }: { report: ImportReport }) {
@@ -127,6 +121,7 @@ export function ReferenceImportForm() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [reading, setReading] = useState(false);
   const [result, setResult] = useState<{ mode: "preview" | "apply"; payload: string; value: ReferenceImportResult } | null>(null);
+  const [googleResult, setGoogleResult] = useState<{ mode: "preview" | "apply"; value: GoogleCalculatorImportResult } | null>(null);
   const [pending, startTransition] = useTransition();
 
   async function load(list: FileList | null) {
@@ -139,7 +134,7 @@ export function ReferenceImportForm() {
     } catch (error) {
       setLoaded({ files: files.map((file) => file.name), pkg: null, payload: "", issues: [
         { source: "Файлы", row: null, message: error instanceof Error ? error.message : "Не удалось прочитать файл." },
-      ], kind: "reference" });
+        ] });
     } finally {
       setReading(false);
     }
@@ -150,9 +145,20 @@ export function ReferenceImportForm() {
     const payload = loaded.payload;
     startTransition(async () => {
       try {
-        setResult({ mode, payload, value: loaded.kind === "calculator" ? await runCalculatorImport(payload, mode) : await runReferenceImport(payload, mode) });
+        setResult({ mode, payload, value: await runReferenceImport(payload, mode) });
       } catch {
         setResult({ mode, payload, value: { ok: false, message: "Сервер не ответил. Попробуйте ещё раз." } });
+      }
+    });
+  }
+
+  function runGoogle(mode: "preview" | "apply") {
+    const snapshot = googleResult?.mode === "preview" && googleResult.value.ok ? googleResult.value.snapshot : undefined;
+    startTransition(async () => {
+      try {
+        setGoogleResult({ mode, value: await runGoogleCalculatorImport(mode, snapshot) });
+      } catch {
+        setGoogleResult({ mode, value: { ok: false, message: "Сервер не ответил. Попробуйте ещё раз." } });
       }
     });
   }
@@ -163,16 +169,63 @@ export function ReferenceImportForm() {
   const canApply = Boolean(ready && preview && !hasProblems(preview) && hasChanges(preview));
   const applied = result?.mode === "apply" && result.value.ok ? result.value.report : null;
   const failure = result && !result.value.ok ? result.value : null;
+  const googlePreview = googleResult?.mode === "preview" && googleResult.value.ok ? googleResult.value : null;
+  const googleApplied = googleResult?.mode === "apply" && googleResult.value.ok ? googleResult.value : null;
+  const googleFailure = googleResult && !googleResult.value.ok ? googleResult.value : null;
+  const googleCanApply = Boolean(googlePreview && !hasProblems(googlePreview.report) && hasChanges(googlePreview.report));
 
   return (
     <>
       <section className="panel admin-section import-drop">
         <div>
-          <p className="eyebrow">JSON / CSV / Excel</p>
-          <h2>Выберите файлы справочника</h2>
+          <p className="eyebrow">Основной источник · Google Sheets</p>
+          <h2>Мастер-калькулятор ARSEO</h2>
+          <p>Книга «01 мастер калькулятор KZ», лист «расчеты». Nexus использует строки 3–5 как устойчивую схему полей и никогда не изменяет Google Таблицу.</p>
+          <p className="form-help">Подключение работает только через служебный аккаунт с правом Viewer и OAuth-разрешением spreadsheets.readonly.</p>
+        </div>
+        <div className="import-actions">
+          <button className="primary" type="button" disabled={pending} onClick={() => runGoogle("preview")}>
+            {pending && !result ? "Чтение…" : "Прочитать и проверить"}
+          </button>
+        </div>
+      </section>
+
+      {googleFailure && (
+        <section className="panel admin-section">
+          <div className="login-error admin-message">{googleFailure.message}</div>
+          {googleFailure.issues?.map((issue, index) => <p className="form-help" key={index}>{issue.source}, строка {issue.row ?? "—"}: {issue.message}</p>)}
+          {googleFailure.report && <ReportView key="google-failure" report={googleFailure.report} />}
+        </section>
+      )}
+
+      {googlePreview && !googleApplied && (
+        <section className="panel admin-section">
+          <div className="panel-heading">
+            <div><p className="eyebrow">Google Sheets · предпросмотр · ничего не записано</p><h2>{googlePreview.source.products} товаров · {googlePreview.source.columns} полей</h2><p className="form-help">Лист «{googlePreview.source.sheet}» · прочитано строк: {googlePreview.source.rows}</p></div>
+            <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть ошибки" : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Изменений нет"}</span>
+          </div>
+          <ReportView key={`google-preview-${googlePreview.snapshot}`} report={googlePreview.report} />
+          <div className="import-confirm">
+            <button className="primary" type="button" disabled={!googleCanApply || pending} onClick={() => runGoogle("apply")}>Синхронизировать с Nexus</button>
+            <span>Перед записью Nexus повторно прочитает источник. Если таблица изменилась после проверки, синхронизация остановится.</span>
+          </div>
+        </section>
+      )}
+
+      {googleApplied && (
+        <section className="panel admin-section">
+          <div className="login-success admin-message">Google Таблица синхронизирована: создано {googleApplied.report.summary.create}, обновлено {googleApplied.report.summary.update}, без изменений {googleApplied.report.summary.unchanged}. <Link href="/products">Открыть товары</Link></div>
+          <ReportView key={`google-applied-${googleApplied.snapshot}`} report={googleApplied.report} />
+        </section>
+      )}
+
+      <section className="panel admin-section import-drop">
+        <div>
+          <p className="eyebrow">Дополнительные справочники · JSON / CSV / Excel</p>
+          <h2>Загрузить отдельные справочные данные</h2>
           <p>
-            Один мастер-калькулятор с листом «Расчёты», JSON-пакет или таблицы: контрагенты, товары, идентификаторы, упаковка.
-            Для обычного справочника цены отклоняются. В специальном импорте калькулятора они сохраняются в закрытой части с отдельным правом доступа.
+            Здесь принимаются контрагенты, товары, идентификаторы и упаковка. Мастер-калькулятор читается только из закреплённой Google Таблицы выше.
+            Цены в обычных справочных файлах отклоняются.
           </p>
           <p className="ri-templates">
             Шаблоны: <Link href="/products/import/template?kind=counterparties">контрагенты</Link> · <Link href="/products/import/template?kind=products">товары</Link> ·{" "}
@@ -193,7 +246,6 @@ export function ReferenceImportForm() {
           <div className="panel-heading">
             <div><p className="eyebrow">Файлы · {loaded.files.join(", ")}</p>
               <h2>{stats ? `${stats.counterparties} контрагентов · ${stats.products} товаров · ${stats.identifiers} идентификаторов · ${stats.packaging} уровней упаковки` : "Файл не прочитан"}</h2>
-              {loaded.kind === "calculator" && <p className="form-help">Распознан мастер-калькулятор: строки 1–2 — служебные коды, строка 3 — блок, строки 4–5 — названия данных.</p>}
             </div>
             <span className={loaded.issues.length ? "import-invalid" : "import-valid"}>
               {loaded.issues.length ? `Ошибок в файле: ${loaded.issues.length}` : "Файл прочитан"}
