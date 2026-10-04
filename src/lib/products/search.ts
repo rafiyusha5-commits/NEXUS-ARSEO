@@ -30,13 +30,48 @@ function weightTerms(raw: number | string | null) {
   return [String(kg), `${kg} кг`, String(grams), `${grams} г`];
 }
 
+function grams(value: string, unit: string | undefined) {
+  const amount = Number(value.replace(",", "."));
+  if (!Number.isFinite(amount)) return null;
+  return /^(кг|kg|килограмм)/i.test(unit ?? "") ? amount * 1000 : amount;
+}
+
+function weightsFromText(value: string) {
+  const result: number[] = [];
+  const pattern = /(\d+(?:[.,]\d+)?)\s*(кг|kg|килограмм(?:а|ов)?|г|гр|g|грамм(?:а|ов)?)(?=$|[^a-zа-я])/gi;
+  for (const match of value.matchAll(pattern)) {
+    const parsed = grams(match[1], match[2]);
+    if (parsed !== null) result.push(parsed);
+  }
+  return result;
+}
+
+function requestedWeight(query: string) {
+  const match = query.trim().match(/^(\d+(?:[.,]\d+)?)\s*(кг|kg|килограмм(?:а|ов)?|г|гр|g|грамм(?:а|ов)?)?\.?$/i);
+  return match ? grams(match[1], match[2]) : null;
+}
+
+function matchesWeight(product: ProductSearchData, query: string) {
+  const requested = requestedWeight(query);
+  if (requested === null) return false;
+  const productWeights = [
+    ...Object.values(product.name ?? {}).flatMap(weightsFromText),
+    ...product.packaging.filter(level => level.uom === "piece").flatMap(level =>
+      [level.net_weight_kg, level.gross_weight_kg].flatMap(value => {
+        if (value === null || value === "") return [];
+        const kg = Number(value);
+        return Number.isFinite(kg) ? [kg * 1000] : [];
+      })),
+  ];
+  return productWeights.some(value => Math.abs(value - requested) < 0.001);
+}
+
 function valuesForField(product: ProductSearchData, field: ProductSearchField) {
   const barcodeValues = product.identifiers.filter(identifier => ["gtin", "unit_barcode", "box_barcode"].includes(identifier.identifier_type)).map(identifier => identifier.value);
   const articleValues = [product.internal_sku, ...product.identifiers.filter(identifier => identifier.identifier_type === "supplier_sku").map(identifier => identifier.value)];
   const weightValues = [
     ...Object.values(product.name ?? {}),
-    ...product.packaging.flatMap(level => [
-      String(level.units_per_parent),
+    ...product.packaging.filter(level => level.uom === "piece").flatMap(level => [
       ...weightTerms(level.net_weight_kg),
       ...weightTerms(level.gross_weight_kg),
     ]),
@@ -65,6 +100,7 @@ function valuesForField(product: ProductSearchData, field: ProductSearchField) {
 }
 
 export function matchesProductSearch(product: ProductSearchData, query: string, field: ProductSearchField = "all") {
+  if (field === "weight") return !query.trim() || matchesWeight(product, query);
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return true;
   const values = valuesForField(product, field).filter((value): value is string => Boolean(value));

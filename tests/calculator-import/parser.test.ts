@@ -4,7 +4,7 @@ import { buildCalculatorPackage, isCalculatorSheet } from "../../src/lib/calcula
 import type { Cell } from "../../src/lib/reference-import/normalize.ts";
 
 function sheet() {
-  const width = 24;
+  const width = 31;
   const rows: Cell[][] = Array.from({ length: 6 }, () => Array(width).fill(null));
   const header = (column: number, number: Cell, block: Cell, en: Cell, ru: Cell) => {
     rows[0][column] = number;
@@ -36,7 +36,11 @@ function sheet() {
   header(21, null, null, null, "Производитель");
   header(22, null, null, null, "Категория товаров");
   header(23, null, null, null, "Наименование (каз)");
-  rows[5] = [1, "SKU-1", "Товар", "M-1", "Product", "пачка", "1234-AB", 0.2, 0.22, 365, "Dumle", 12, "5678-CD", 2.8, 300, "Finland", 1.25, "180690", 0.16, 3, 4, "Froosh AB", "Конфеты", "Тауар"];
+  header(24, null, "Europallet data // Информация по европаллете", "Pcs/pallet", "Штук на паллете");
+  header(25, null, null, null, "Можно стоппировать");
+  header(26, null, "Truckload data // Информация по загрузке в фуру", "Pcs/truck", "Количество штук в фуре");
+  header(27, null, null, null, "Вес брутто с учетом веса паллет, кг");
+  rows[5] = [1, "SKU-1", "Товар", "M-1", "Product", "пачка", "1234-AB", 0.2, 0.22, 365, "Dumle", 12, "5678-CD", 2.8, 300, "Finland", 1.25, "180690", 0.16, 3, 4, "Froosh AB", "Конфеты", "Тауар", 80, "Да", 30, 12000];
   return rows;
 }
 
@@ -57,7 +61,11 @@ describe("master calculator import", () => {
     assert.equal(product.country_of_origin, "FI");
     assert.deepEqual(product.name, { ru: "Товар", en: "Product", kk: "Тауар" });
     assert.equal(product.identifiers.find((item) => item.type === "supplier_sku")?.counterparty, "Fazer Confectionary Ltd");
-    assert.deepEqual(product.packaging.map((item) => [item.uom, item.units_per_parent]), [["piece", 1], ["box", 12]]);
+    assert.deepEqual(product.packaging.map((item) => [item.uom, item.units_per_parent]), [["piece", 1], ["box", 12], ["pallet", 80], ["truck", 30]]);
+    assert.equal(pkg.source.columns.find((column) => column.position === 25)?.field_ru, "Количество коробов на паллете");
+    assert.equal(pkg.source.columns.find((column) => column.position === 25)?.field_en, "Boxes per pallet");
+    assert.equal(pkg.source.columns.find((column) => column.position === 27)?.field_ru, "Количество паллет в машине");
+    assert.equal(pkg.source.columns.find((column) => column.position === 27)?.field_en, "Pallets per truck");
     assert.equal(pkg.source.columns.find((column) => column.key === "product.internal_sku")?.source_number, "1");
     assert.equal(pkg.source.rows[0].category, "Конфеты");
     assert.equal(pkg.source.rows[0].confidential_data["source.информация_о_закупе.цена_за_единицу"], 1.25);

@@ -13,7 +13,11 @@ const dumle: ProductSearchData = {
     { identifier_type: "gtin", value: "6411404035187" },
     { identifier_type: "supplier_sku", value: "403747" },
   ],
-  packaging: [{ uom: "piece", units_per_parent: 1, net_weight_kg: 0.12, gross_weight_kg: 0.125 }],
+  packaging: [
+    { uom: "piece", units_per_parent: 1, net_weight_kg: 0.12, gross_weight_kg: 0.125 },
+    { uom: "box", units_per_parent: 120, net_weight_kg: 2.4, gross_weight_kg: 2.6 },
+    { uom: "pallet", units_per_parent: 150, net_weight_kg: 360, gross_weight_kg: 385 },
+  ],
 };
 
 describe("universal product search", () => {
@@ -45,5 +49,20 @@ describe("universal product search", () => {
     assert.equal(matchesProductSearch(dumle, "120 гр", "weight"), true);
     assert.equal(matchesProductSearch(dumle, "Fazer", "manufacturer"), true);
     assert.equal(matchesProductSearch(dumle, "Dumle", "brand"), true);
+  });
+
+  it("does not confuse grammage with box or pallet quantities", () => {
+    assert.equal(matchesProductSearch(dumle, "120", "weight"), true);
+    assert.equal(matchesProductSearch(dumle, "0,12 кг", "weight"), true);
+    assert.equal(matchesProductSearch(dumle, "150", "weight"), false);
+    assert.equal(matchesProductSearch(dumle, "12", "weight"), false);
+    assert.equal(matchesProductSearch(dumle, "2,4 кг", "weight"), false);
+  });
+
+  it("reads grammage from a name even when unit packaging weight is absent", () => {
+    const nameOnly = { ...dumle, name: { ru: "Печенье 150г" }, packaging: [] };
+    assert.equal(matchesProductSearch(nameOnly, "150", "weight"), true);
+    assert.equal(matchesProductSearch(nameOnly, "0,15 кг", "weight"), true);
+    assert.equal(matchesProductSearch(nameOnly, "15", "weight"), false);
   });
 });

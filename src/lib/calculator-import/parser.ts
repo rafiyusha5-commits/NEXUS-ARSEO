@@ -112,6 +112,11 @@ const CANONICAL = new Map<string, string>([
   [norm("Энерг. ценность,  кДж"), "product.nutrition.energy_kj"],
 ]);
 
+const DISPLAY_FIELD_LABELS = new Map<string, { ru: string; en: string }>([
+  [norm("Штук на паллете"), { ru: "Количество коробов на паллете", en: "Boxes per pallet" }],
+  [norm("Количество штук в фуре"), { ru: "Количество паллет в машине", en: "Pallets per truck" }],
+]);
+
 const COUNTRY: Record<string, string> = {
   belgium: "BE", finland: "FI", italy: "IT", spain: "ES", sweden: "SE",
   "германия": "DE", "казахстан": "KZ", "нидерланды": "NL", "турция": "TR", "финляндия": "FI",
@@ -167,8 +172,10 @@ function headerColumns(rows: Cell[][], issues: Issue[]): CalculatorColumn[] {
   const used = new Set<string>();
   const result: CalculatorColumn[] = [];
   for (let index = 0; index < width; index += 1) {
-    const fieldRu = text(rows[4]?.[index]);
-    if (!fieldRu) continue;
+    const sourceFieldRu = text(rows[4]?.[index]);
+    if (!sourceFieldRu) continue;
+    const display = DISPLAY_FIELD_LABELS.get(norm(sourceFieldRu));
+    const fieldRu = display?.ru ?? sourceFieldRu;
     const block = blockByIndex.get(index) ?? null;
     result.push({
       key: columnKey(block, fieldRu, used),
@@ -176,7 +183,7 @@ function headerColumns(rows: Cell[][], issues: Issue[]): CalculatorColumn[] {
       source_number: text(rows[0]?.[index]),
       source_code: text(rows[1]?.[index]),
       block,
-      field_en: text(rows[3]?.[index]),
+      field_en: display?.en ?? text(rows[3]?.[index]),
       field_ru: fieldRu,
       visibility: visibility(block, fieldRu),
     });
@@ -226,9 +233,9 @@ function packaging(rows: Cell[], columns: CalculatorColumn[]): ImportPackaging[]
     height_cm: divide(get("Высота кор, мм"), 10) ?? positive(get("Высота короба, см")) ?? undefined,
     width_cm: divide(get("Ширина кор, мм"), 10) ?? positive(get("Ширина короба, см")) ?? undefined,
     length_cm: divide(get("Длина кор, мм"), 10) ?? positive(get("Длина короба, см")) ?? undefined });
-  push({ uom: "pallet", units_per_parent: positive(get("Штук на паллете")) ?? undefined,
+  push({ uom: "pallet", units_per_parent: positive(get("Количество коробов на паллете")) ?? undefined,
     gross_weight_kg: weight(get("Вес брутто с учетом веса паллеты, кг")) ?? weight(get("Вес брутто паллета, кг")) ?? undefined });
-  push({ uom: "truck", units_per_parent: positive(get("Количество штук в фуре")) ?? undefined,
+  push({ uom: "truck", units_per_parent: positive(get("Количество паллет в машине")) ?? undefined,
     gross_weight_kg: weight(get("Вес брутто с учетом веса паллет, кг")) ?? undefined });
   return levels;
 }
