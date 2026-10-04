@@ -87,4 +87,14 @@ describe("universal product search", () => {
     assert.equal(matchesProductSearch(nameOnly, "0,15 кг", "weight"), true);
     assert.equal(matchesProductSearch(nameOnly, "15", "weight"), false);
   });
+
+  it("prefers declared name grammage when imported packaging weight disagrees", () => {
+    const resizedProduct = {
+      ...dumle,
+      name: { ru: "Шоколадные конфеты Fazer 190г", en: "Fazer chocolates 180g" },
+      packaging: [{ uom: "piece", units_per_parent: 1, net_weight_kg: 0.18, gross_weight_kg: 0.195 }],
+    };
+    assert.equal(matchesProductSearch(resizedProduct, "180", "weight"), false);
+    assert.equal(matchesProductSearch(resizedProduct, "190", "weight"), true);
+  });
 });

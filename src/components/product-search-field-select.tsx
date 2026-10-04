@@ -1,5 +1,3 @@
-"use client";
-
 import type { ProductSearchField } from "@/lib/products/search";
 
 const options: Array<{ value: ProductSearchField; label: string }> = [
@@ -20,7 +18,6 @@ export function ProductSearchFieldSelect({ defaultValue }: { defaultValue: Produ
     <select
       name="search_by"
       defaultValue={defaultValue}
-      onChange={(event) => event.currentTarget.form?.requestSubmit()}
     >
       {options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
     </select>

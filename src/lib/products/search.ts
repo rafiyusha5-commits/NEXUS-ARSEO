@@ -75,8 +75,12 @@ function requestedVolume(query: string) {
 function matchesWeight(product: ProductSearchData, query: string) {
   const requested = requestedWeight(query);
   if (requested === null) return false;
-  const productWeights = [
-    ...Object.values(product.name ?? {}).flatMap(weightsFromText),
+  const displayedName = product.name?.ru || product.name?.en || product.name?.kk || "";
+  const weightsInNames = weightsFromText(displayedName);
+  // The product name is the catalogue's declared consumer grammage. Imported
+  // packaging data and hidden translations can lag behind a renamed/resized
+  // SKU, so they must not override the grammage shown in the catalogue.
+  const productWeights = weightsInNames.length ? weightsInNames : [
     ...(!["Напитки", "Вода"].includes(product.category) ? product.packaging.filter(level => level.uom === "piece").flatMap(level =>
       [level.net_weight_kg].flatMap(value => {
         if (value === null || value === "") return [];
