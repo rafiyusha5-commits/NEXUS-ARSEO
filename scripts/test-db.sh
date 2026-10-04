@@ -103,6 +103,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
+# Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

@@ -45,5 +45,6 @@ Migration order:
 34. `202609274100_purchase_price_access.sql` — separates purchase prices and landed cost behind `prices.purchase.view`; sales prices and employee document access remain unchanged.
 35. `202609274200_external_document_security.sql` — restores the client portal with administrator-only publication, customer relationship checks, internal/price document blocking and one pinned published file version.
 36. `202609274300_calculator_master_data.sql` — imports the complete five-row ARSEO master-calculator schema and per-product source fields; catalogue and employee sales data stay separate from purchase-confidential calculations.
+37. `202609274400_froosh_fazer_supplier_cleanup.sql` — moves legacy Froosh product and supplier-article links to Fazer, while retaining Froosh AB as an archived historical counterparty.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
