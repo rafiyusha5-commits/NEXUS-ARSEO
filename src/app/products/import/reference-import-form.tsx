@@ -18,19 +18,25 @@ import {
 } from "@/lib/reference-import/report.ts";
 import { type Table, buildPackageFromTables, parseCsv } from "@/lib/reference-import/tables.ts";
 import { type ReferenceImportResult, runReferenceImport } from "./actions";
+import { runCalculatorImport } from "./actions";
+import { buildCalculatorPackage, isCalculatorSheet, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PAYLOAD_CHARS = 4_000_000;
 const SHOWN_ROWS = 300;
 
-type Loaded = { files: string[]; pkg: ReferencePackage | null; payload: string; issues: Issue[] };
+type Loaded = { files: string[]; pkg: ReferencePackage | null; payload: string; issues: Issue[]; kind: "reference" | "calculator" };
 
 async function readFiles(files: File[]): Promise<Loaded> {
   const names = files.map((file) => file.name);
-  const fail = (message: string): Loaded => ({ files: names, pkg: null, payload: "", issues: [{ source: "Файлы", row: null, message }] });
+  const fail = (message: string): Loaded => ({ files: names, pkg: null, payload: "", issues: [{ source: "Файлы", row: null, message }], kind: "reference" });
   if (files.some((file) => file.size > MAX_FILE_BYTES)) return fail("Файл больше 10 МБ. Разделите данные на несколько файлов.");
 
-  let built: { pkg: ReferencePackage; issues: Issue[] };
+  let built: { pkg: ReferencePackage; issues: Issue[] } = {
+    pkg: { format: "nexus-reference-import", version: 1, counterparties: [], products: [] },
+    issues: [],
+  };
+  let calculator: CalculatorImportPackage | null = null;
   const json = files.filter((file) => /\.json$/i.test(file.name));
   if (json.length) {
     if (files.length > 1) return fail("JSON-пакет загружается отдельно, без других файлов.");
@@ -47,6 +53,13 @@ async function readFiles(files: File[]): Promise<Loaded> {
       if (/\.xlsx$/i.test(file.name)) {
         for (const sheet of await readXlsxFile(file)) {
           const rows = sheet.data as unknown as Cell[][];
+          if (isCalculatorSheet(sheet.sheet)) {
+            if (files.length > 1 || calculator) return fail("Мастер-калькулятор загружается одним XLSX-файлом.");
+            const parsed = buildCalculatorPackage(rows, file.name, sheet.sheet);
+            calculator = parsed.pkg;
+            built = { pkg: parsed.pkg.reference, issues: parsed.issues };
+            continue;
+          }
           if (rows.some((row) => row.some((value) => value !== null && String(value).trim() !== ""))) {
             tables.push({ source: `${file.name} · ${sheet.sheet}`, rows });
           }
@@ -57,11 +70,11 @@ async function readFiles(files: File[]): Promise<Loaded> {
         return fail(`${file.name}: поддерживаются .json, .csv, .tsv и .xlsx.`);
       }
     }
-    built = buildPackageFromTables(tables);
+    if (!calculator) built = buildPackageFromTables(tables);
   }
-  const payload = JSON.stringify(built.pkg);
+  const payload = JSON.stringify(calculator ?? built.pkg);
   if (payload.length > MAX_PAYLOAD_CHARS) built.issues.push({ source: "Пакет", row: null, message: "Пакет больше 4 МБ. Разделите файл на части." });
-  return { files: names, pkg: built.pkg, payload, issues: built.issues };
+  return { files: names, pkg: built.pkg, payload, issues: built.issues, kind: calculator ? "calculator" : "reference" };
 }
 
 function ReportView({ report }: { report: ImportReport }) {
@@ -126,7 +139,7 @@ export function ReferenceImportForm() {
     } catch (error) {
       setLoaded({ files: files.map((file) => file.name), pkg: null, payload: "", issues: [
         { source: "Файлы", row: null, message: error instanceof Error ? error.message : "Не удалось прочитать файл." },
-      ] });
+      ], kind: "reference" });
     } finally {
       setReading(false);
     }
@@ -137,7 +150,7 @@ export function ReferenceImportForm() {
     const payload = loaded.payload;
     startTransition(async () => {
       try {
-        setResult({ mode, payload, value: await runReferenceImport(payload, mode) });
+        setResult({ mode, payload, value: loaded.kind === "calculator" ? await runCalculatorImport(payload, mode) : await runReferenceImport(payload, mode) });
       } catch {
         setResult({ mode, payload, value: { ok: false, message: "Сервер не ответил. Попробуйте ещё раз." } });
       }
@@ -158,8 +171,8 @@ export function ReferenceImportForm() {
           <p className="eyebrow">JSON / CSV / Excel</p>
           <h2>Выберите файлы справочника</h2>
           <p>
-            Один JSON-пакет или таблицы: контрагенты, товары, идентификаторы, упаковка (можно несколько CSV или листы одного XLSX).
-            Цены, себестоимость и условия договоров не загружаются — такие колонки отклоняются. Формат: docs/reference-import.md.
+            Один мастер-калькулятор с листом «Расчёты», JSON-пакет или таблицы: контрагенты, товары, идентификаторы, упаковка.
+            Для обычного справочника цены отклоняются. В специальном импорте калькулятора они сохраняются в закрытой части с отдельным правом доступа.
           </p>
           <p className="ri-templates">
             Шаблоны: <Link href="/products/import/template?kind=counterparties">контрагенты</Link> · <Link href="/products/import/template?kind=products">товары</Link> ·{" "}
@@ -180,6 +193,7 @@ export function ReferenceImportForm() {
           <div className="panel-heading">
             <div><p className="eyebrow">Файлы · {loaded.files.join(", ")}</p>
               <h2>{stats ? `${stats.counterparties} контрагентов · ${stats.products} товаров · ${stats.identifiers} идентификаторов · ${stats.packaging} уровней упаковки` : "Файл не прочитан"}</h2>
+              {loaded.kind === "calculator" && <p className="form-help">Распознан мастер-калькулятор: строки 1–2 — служебные коды, строка 3 — блок, строки 4–5 — названия данных.</p>}
             </div>
             <span className={loaded.issues.length ? "import-invalid" : "import-valid"}>
               {loaded.issues.length ? `Ошибок в файле: ${loaded.issues.length}` : "Файл прочитан"}

@@ -6,6 +6,7 @@ import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
+import { CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
 
 export type ReferenceImportResult =
   | { ok: true; report: ImportReport }
@@ -65,5 +66,41 @@ export async function runReferenceImport(payload: string, mode: "preview" | "app
     revalidatePath("/products");
     revalidatePath("/counterparties");
   }
+  return { ok: true, report };
+}
+
+export async function runCalculatorImport(payload: string, mode: "preview" | "apply"): Promise<ReferenceImportResult> {
+  if (mode !== "preview" && mode !== "apply") return { ok: false, message: "Неизвестный режим импорта." };
+  if (typeof payload !== "string" || !payload || payload.length > MAX_PAYLOAD_CHARS) {
+    return { ok: false, message: "Пакет пуст или слишком большой. Разделите файл на части." };
+  }
+  const { supabase } = await requireUser();
+  const can = await loadPermissions(supabase, [...PERMISSIONS, "prices.purchase.view"]);
+  if (!can["products.create"] || !can["products.update"]) return { ok: false, message: "Недостаточно прав для импорта справочника." };
+  if (!can["prices.purchase.view"]) return { ok: false, message: "Калькулятор содержит закупочные цены и расчётные данные. Нужно право «Закупочные цены и себестоимость»." };
+
+  let raw: CalculatorImportPackage;
+  try { raw = JSON.parse(payload) as CalculatorImportPackage; } catch { return { ok: false, message: "Не удалось прочитать пакет калькулятора." }; }
+  if (raw?.format !== CALCULATOR_FORMAT || raw?.version !== CALCULATOR_VERSION || !raw.reference || !raw.source) {
+    return { ok: false, message: "Неверный формат пакета калькулятора." };
+  }
+  const normalized = normalizePackage(raw.reference, "Калькулятор");
+  if (normalized.issues.length) return { ok: false, message: `В справочных данных есть ошибки (${normalized.issues.length}).`, issues: normalized.issues.slice(0, 200) };
+  raw.reference = normalized.pkg;
+
+  const { data, error } = await supabase.rpc("import_calculator_master_data", { p_payload: raw, p_dry_run: mode === "preview" });
+  if (error) {
+    let report: ImportReport | null = null;
+    if (error.code === "NX422" && error.details) {
+      try { report = parseReport(JSON.parse(error.details)); } catch { report = null; }
+    }
+    const message = /import_calculator_master_data/.test(error.message) && /schema cache|does not exist/.test(error.message)
+      ? "Импорт калькулятора ещё не подключён к базе. Администратору: примените миграцию 202609274300_calculator_master_data.sql."
+      : publicErrorMessage(error, "Не удалось обработать мастер-калькулятор.");
+    return { ok: false, message, ...(report ? { report } : {}) };
+  }
+  const report = parseReport(data);
+  if (!report) return { ok: false, message: "База данных вернула неожиданный ответ." };
+  if (mode === "apply") { revalidatePath("/products"); revalidatePath("/counterparties"); }
   return { ok: true, report };
 }

@@ -101,6 +101,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274100_purchase_price_access.sql" >/dev/null
 # The final portal hardening restores combined employee/client policies and pinned files.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
+# Master-calculator storage and its guarded import/RPCs are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
