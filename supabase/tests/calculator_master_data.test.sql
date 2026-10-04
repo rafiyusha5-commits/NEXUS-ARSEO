@@ -44,7 +44,7 @@ do $$declare r jsonb;begin
  r:=public.import_calculator_master_data((select payload from tests.calculator_packages where name='base'),true);
  assert r->'master_data'->>'applied'='false','dry-run report';
  assert not exists(select 1 from public.products where internal_sku='CALC-1'),'dry-run rolls back core product';
- assert not exists(select 1 from public.product_master_sources where source_key='arseo-master-calculator'),'dry-run writes no schema';
+ assert not exists(select 1 from public.my_product_master_sources(array['arseo-master-calculator'])),'dry-run writes no schema';
  r:=public.import_calculator_master_data((select payload from tests.calculator_packages where name='base'),false);
  assert r->'master_data'->>'applied'='true','apply report';
  assert (select category='Конфеты' from public.products where internal_sku='CALC-1'),'category copied to operational catalogue';
