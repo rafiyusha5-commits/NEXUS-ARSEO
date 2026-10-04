@@ -101,5 +101,32 @@ describe("master calculator import", () => {
     assert.deepEqual(pkg.source.rows.map((item) => item.internal_sku), ["SKU-1"]);
     assert.deepEqual(pkg.reference.counterparties.map((item) => item.legal_name), ["Fazer Confectionary Ltd"]);
   });
+
+  it("skips every product row that shares a barcode with another product", () => {
+    const rows = sheet();
+    const duplicate = [...rows[5]];
+    duplicate[1] = "SKU-2";
+    duplicate[2] = "Другой товар";
+    duplicate[3] = "M-2";
+    rows.push(duplicate);
+
+    const { pkg, issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+
+    assert.deepEqual(pkg.reference.products, []);
+    assert.deepEqual(pkg.source.rows, []);
+    assert.deepEqual(issues.map((issue) => issue.row), [6, 7, 6, 7]);
+    assert.ok(issues.every((issue) => /штрихкод/.test(issue.message)));
+  });
+
+  it("treats Google Sheets formula errors as a missing manufacturer", () => {
+    const rows = sheet();
+    rows[5][21] = "#N/A (Did not find value in XLOOKUP evaluation.)";
+
+    const { pkg, issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+
+    assert.deepEqual(pkg.reference.products, []);
+    assert.deepEqual(pkg.reference.counterparties, []);
+    assert.match(issues[0]?.message ?? "", /производитель/);
+  });
 });
 

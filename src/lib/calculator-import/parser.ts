@@ -202,6 +202,9 @@ function manufacturer(value: unknown) {
   const raw = cleanText(value);
   return MANUFACTURER_ALIAS[raw.toLowerCase()] ?? raw;
 }
+function isSpreadsheetError(value: string) {
+  return /^#(?:N\/A|REF!|VALUE!|NAME\?|DIV\/0!|NUM!|NULL!)/i.test(value);
+}
 function country(value: unknown): string | null {
   const raw = cleanText(value);
   if (/^[A-Za-z]{2}$/.test(raw)) return raw.toUpperCase();
@@ -292,8 +295,8 @@ export function buildCalculatorPackage(rows: Cell[][], sourceTitle: string, shee
     const rawManufacturer = cleanText(valueAt(row, columns, "product.manufacturer"));
     if (!sku && !nameRu && !rawManufacturer) return;
     const maker = manufacturer(rawManufacturer);
-    if (!sku || !nameRu || !maker || maker === "#N/A") {
-      const missing = [!sku && "артикул ARSEO", !nameRu && "наименование", (!maker || maker === "#N/A") && "производитель"].filter(Boolean).join(", ");
+    if (!sku || !nameRu || !maker || isSpreadsheetError(maker)) {
+      const missing = [!sku && "артикул ARSEO", !nameRu && "наименование", (!maker || isSpreadsheetError(maker)) && "производитель"].filter(Boolean).join(", ");
       issues.push({ source: `${sourceTitle} · ${sheetName}`, row: rowNumber, message: `Строка товара не готова к импорту: ${missing}` });
       return;
     }
@@ -344,6 +347,32 @@ export function buildCalculatorPackage(rows: Cell[][], sourceTitle: string, shee
   referenceRaw.counterparties = [...parties.values()];
   const normalized = normalizePackage(referenceRaw, `${sourceTitle} · ${sheetName}`);
   issues.push(...normalized.issues);
+  // A barcode cannot identify two products. Isolate every affected source row so
+  // the rest of the calculator remains synchronisable without guessing ownership.
+  const alreadyInvalidRows = new Set(
+    issues.flatMap((issue) => issue.row !== null && issue.row > 5 ? [issue.row] : []),
+  );
+  const barcodeRows = new Map<string, Set<number>>();
+  for (const product of normalized.pkg.products) {
+    if (alreadyInvalidRows.has(product.row)) continue;
+    for (const identifier of product.identifiers) {
+      if (!['gtin', 'unit_barcode', 'box_barcode'].includes(identifier.type)) continue;
+      const key = identifier.value.replace(/^0+(?=\d)/, '').toLowerCase();
+      const rowsForBarcode = barcodeRows.get(key) ?? new Set<number>();
+      rowsForBarcode.add(product.row);
+      barcodeRows.set(key, rowsForBarcode);
+    }
+  }
+  for (const [barcode, affectedRows] of barcodeRows) {
+    if (affectedRows.size < 2) continue;
+    for (const row of affectedRows) {
+      issues.push({
+        source: `${sourceTitle} · ${sheetName}`,
+        row,
+        message: `Строка пропущена: штрихкод ${barcode} указан у нескольких товаров`,
+      });
+    }
+  }
   // A bad calculator row is isolated from the import instead of cancelling every
   // valid product. Keep header/package errors in `issues` so the caller can still
   // treat schema drift as fatal, but make the returned package safe to import.
