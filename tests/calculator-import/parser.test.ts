@@ -75,8 +75,31 @@ describe("master calculator import", () => {
   it("reports incomplete product rows before any database write", () => {
     const rows = sheet();
     rows.push([1, "SKU-2", "Без завода"]);
-    const { issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+    const { pkg, issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
     assert.match(issues.map((item) => item.message).join("\n"), /производитель/);
+    assert.deepEqual(pkg.reference.products.map((item) => item.internal_sku), ["SKU-1"]);
+    assert.deepEqual(pkg.source.rows.map((item) => item.internal_sku), ["SKU-1"]);
+  });
+
+  it("isolates every invalid product row while keeping valid products importable", () => {
+    const rows = sheet();
+    const invalidSku = [...rows[5]];
+    invalidSku[1] = "X".repeat(65);
+    invalidSku[2] = "Слишком длинный артикул";
+    rows.splice(5, 0, invalidSku);
+    const missingOrigin = [...rows[5]];
+    missingOrigin[1] = "SKU-3";
+    missingOrigin[2] = "Неизвестная страна";
+    missingOrigin[15] = "";
+    missingOrigin[21] = "Unknown Factory";
+    rows.push(missingOrigin);
+
+    const { pkg, issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+
+    assert.deepEqual(issues.map((issue) => issue.row), [8, 6]);
+    assert.deepEqual(pkg.reference.products.map((item) => item.internal_sku), ["SKU-1"]);
+    assert.deepEqual(pkg.source.rows.map((item) => item.internal_sku), ["SKU-1"]);
+    assert.deepEqual(pkg.reference.counterparties.map((item) => item.legal_name), ["Fazer Confectionary Ltd"]);
   });
 });
 

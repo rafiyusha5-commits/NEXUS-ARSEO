@@ -344,12 +344,30 @@ export function buildCalculatorPackage(rows: Cell[][], sourceTitle: string, shee
   referenceRaw.counterparties = [...parties.values()];
   const normalized = normalizePackage(referenceRaw, `${sourceTitle} · ${sheetName}`);
   issues.push(...normalized.issues);
+  // A bad calculator row is isolated from the import instead of cancelling every
+  // valid product. Keep header/package errors in `issues` so the caller can still
+  // treat schema drift as fatal, but make the returned package safe to import.
+  const skippedRows = new Set(
+    issues.flatMap((issue) => issue.row !== null && issue.row > 5 ? [issue.row] : []),
+  );
+  normalized.pkg.products = normalized.pkg.products.filter((product) => !skippedRows.has(product.row));
+  const referencedParties = new Set<string>();
+  for (const product of normalized.pkg.products) {
+    if (product.manufacturer) referencedParties.add(product.manufacturer);
+    for (const identifier of product.identifiers) {
+      if (identifier.type === "supplier_sku" && identifier.counterparty) referencedParties.add(identifier.counterparty);
+    }
+  }
+  normalized.pkg.counterparties = normalized.pkg.counterparties.filter((party) => {
+    return [party.ref, party.legal_name, party.short_name].some((name) => name && referencedParties.has(name));
+  });
+  const importableSourceRows = sourceRows.filter((row) => !skippedRows.has(row.row));
   return {
     pkg: {
       format: CALCULATOR_FORMAT,
       version: CALCULATOR_VERSION,
       reference: normalized.pkg,
-      source: { key: CALCULATOR_SOURCE_KEY, title: sourceTitle, sheet_name: sheetName, header_rows: 5, header_fingerprint: fingerprint(columns), columns, rows: sourceRows },
+      source: { key: CALCULATOR_SOURCE_KEY, title: sourceTitle, sheet_name: sheetName, header_rows: 5, header_fingerprint: fingerprint(columns), columns, rows: importableSourceRows },
     },
     issues,
   };

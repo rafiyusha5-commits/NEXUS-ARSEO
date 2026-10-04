@@ -117,6 +117,29 @@ function ReportView({ report }: { report: ImportReport }) {
   );
 }
 
+function skippedRowCount(issues: Issue[]) {
+  return new Set(issues.flatMap((issue) => issue.row === null ? [] : [issue.row])).size;
+}
+
+function SkippedCalculatorRows({ issues }: { issues: Issue[] }) {
+  if (!issues.length) return null;
+  return (
+    <div className="import-table-wrap">
+      <div className="login-error admin-message">
+        Пропущено строк: {skippedRowCount(issues)}. Остальные корректные позиции можно синхронизировать.
+      </div>
+      <table className="import-table">
+        <thead><tr><th>Строка</th><th>Причина пропуска</th></tr></thead>
+        <tbody>
+          {issues.map((issue, index) => (
+            <tr className="has-error" key={`${issue.row}-${index}`}><td>{issue.row ?? "—"}</td><td>{issue.message}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ReferenceImportForm() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [reading, setReading] = useState(false);
@@ -202,8 +225,9 @@ export function ReferenceImportForm() {
         <section className="panel admin-section">
           <div className="panel-heading">
             <div><p className="eyebrow">Google Sheets · предпросмотр · ничего не записано</p><h2>{googlePreview.source.products} товаров · {googlePreview.source.columns} полей</h2><p className="form-help">Лист «{googlePreview.source.sheet}» · прочитано строк: {googlePreview.source.rows}</p></div>
-            <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть ошибки" : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Изменений нет"}</span>
+            <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть конфликты" : googlePreview.skippedIssues.length ? `Готово · пропущено строк: ${skippedRowCount(googlePreview.skippedIssues)}` : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Изменений нет"}</span>
           </div>
+          <SkippedCalculatorRows issues={googlePreview.skippedIssues} />
           <ReportView key={`google-preview-${googlePreview.snapshot}`} report={googlePreview.report} />
           <div className="import-confirm">
             <button className="primary" type="button" disabled={!googleCanApply || pending} onClick={() => runGoogle("apply")}>Синхронизировать с Nexus</button>
@@ -214,7 +238,8 @@ export function ReferenceImportForm() {
 
       {googleApplied && (
         <section className="panel admin-section">
-          <div className="login-success admin-message">Google Таблица синхронизирована: создано {googleApplied.report.summary.create}, обновлено {googleApplied.report.summary.update}, без изменений {googleApplied.report.summary.unchanged}. <Link href="/products">Открыть товары</Link></div>
+          <div className="login-success admin-message">Google Таблица синхронизирована: создано {googleApplied.report.summary.create}, обновлено {googleApplied.report.summary.update}, без изменений {googleApplied.report.summary.unchanged}, пропущено строк {skippedRowCount(googleApplied.skippedIssues)}. <Link href="/products">Открыть товары</Link></div>
+          <SkippedCalculatorRows issues={googleApplied.skippedIssues} />
           <ReportView key={`google-applied-${googleApplied.snapshot}`} report={googleApplied.report} />
         </section>
       )}

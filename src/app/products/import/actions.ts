@@ -24,6 +24,7 @@ export type GoogleCalculatorImportResult =
       ok: true;
       report: ImportReport;
       snapshot: string;
+      skippedIssues: Issue[];
       source: { title: string; sheet: string; spreadsheetId: string; columns: number; rows: number; products: number };
     }
   | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
@@ -138,11 +139,13 @@ export async function runGoogleCalculatorImport(
   try {
     const rows = await readCalculatorSheet();
     const parsed = buildCalculatorPackage(rows, CALCULATOR_SOURCE_TITLE, CALCULATOR_SHEET_NAME);
-    if (parsed.issues.length) {
+    const fatalIssues = parsed.issues.filter((issue) => issue.row === null || issue.row <= 5);
+    const skippedIssues = parsed.issues.filter((issue) => issue.row !== null && issue.row > 5);
+    if (fatalIssues.length) {
       return {
         ok: false,
-        message: `В Google Таблице есть ошибки (${parsed.issues.length}). Данные в Nexus не записаны.`,
-        issues: parsed.issues.slice(0, 200),
+        message: `Нарушена структура Google Таблицы (${fatalIssues.length}). Данные в Nexus не записаны.`,
+        issues: fatalIssues.slice(0, 200),
       };
     }
     const payload = JSON.stringify(parsed.pkg);
@@ -156,6 +159,7 @@ export async function runGoogleCalculatorImport(
     return {
       ...result,
       snapshot,
+      skippedIssues: skippedIssues.slice(0, 200),
       source: {
         title: CALCULATOR_SOURCE_TITLE,
         sheet: CALCULATOR_SHEET_NAME,
