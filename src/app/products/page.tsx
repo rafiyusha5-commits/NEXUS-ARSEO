@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { ProductSearchFieldSelect } from "@/components/product-search-field-select";
 import { requireUser } from "@/lib/auth/access";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 import { matchesProductSearch, PRODUCT_SEARCH_FIELDS, type ProductSearchField } from "@/lib/products/search";
@@ -62,7 +63,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Каталог</p><h2>Фильтры</h2></div></div>
         <form className="catalog-filters">
           <label className="catalog-search">Поиск товара<input name="q" defaultValue={params.q ?? ""} placeholder="Введите поисковое значение" /></label>
-          <label className="catalog-search-mode">Искать по<select name="search_by" defaultValue={searchBy}><option value="all">Везде</option><option value="barcode">Штрихкоду</option><option value="article">Артикулу</option><option value="name">Названию</option><option value="weight">Граммажу / весу</option><option value="brand">Бренду</option><option value="manufacturer">Производителю</option><option value="category">Категории</option><option value="hs_code">ТН ВЭД</option></select></label>
+          <ProductSearchFieldSelect defaultValue={searchBy} />
           <label>Производитель<select name="manufacturer" defaultValue={params.manufacturer ?? ""}><option value="">Все производители</option>{manufacturerOptions.map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Поставщик (завод)<select name="supplier" defaultValue={params.supplier ?? ""}><option value="">Все заводы</option>{(suppliers ?? []).map(value=><option value={value.id} key={value.id}>{value.legal_name}</option>)}</select></label>
           <label>Бренд<select name="brand" defaultValue={params.brand ?? ""}><option value="">Все бренды</option>{brandOptions.map(value=><option key={value}>{value}</option>)}</select></label>

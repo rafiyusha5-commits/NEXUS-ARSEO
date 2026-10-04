@@ -9,7 +9,7 @@ export type ProductSearchData = {
   packaging: { uom: string; units_per_parent: number | string; gross_weight_kg: number | string | null; net_weight_kg: number | string | null }[];
 };
 
-export const PRODUCT_SEARCH_FIELDS = ["all", "barcode", "article", "name", "weight", "brand", "manufacturer", "category", "hs_code"] as const;
+export const PRODUCT_SEARCH_FIELDS = ["all", "barcode", "article", "name", "weight", "volume", "brand", "manufacturer", "category", "hs_code"] as const;
 export type ProductSearchField = (typeof PRODUCT_SEARCH_FIELDS)[number];
 
 function normalize(value: string) {
@@ -46,9 +46,30 @@ function weightsFromText(value: string) {
   return result;
 }
 
+function milliliters(value: string, unit: string | undefined) {
+  const amount = Number(value.replace(",", "."));
+  if (!Number.isFinite(amount)) return null;
+  return /^(л|l|литр)/i.test(unit ?? "") ? amount * 1000 : amount;
+}
+
+function volumesFromText(value: string) {
+  const result: number[] = [];
+  const pattern = /(\d+(?:[.,]\d+)?)\s*(мл|ml|миллилитр(?:а|ов)?|л|l|литр(?:а|ов)?)(?=$|[^a-zа-я])/gi;
+  for (const match of value.matchAll(pattern)) {
+    const parsed = milliliters(match[1], match[2]);
+    if (parsed !== null) result.push(parsed);
+  }
+  return result;
+}
+
 function requestedWeight(query: string) {
   const match = query.trim().match(/^(\d+(?:[.,]\d+)?)\s*(кг|kg|килограмм(?:а|ов)?|г|гр|g|грамм(?:а|ов)?)?\.?$/i);
   return match ? grams(match[1], match[2]) : null;
+}
+
+function requestedVolume(query: string) {
+  const match = query.trim().match(/^(\d+(?:[.,]\d+)?)\s*(мл|ml|миллилитр(?:а|ов)?|л|l|литр(?:а|ов)?)?\.?$/i);
+  return match ? milliliters(match[1], match[2]) : null;
 }
 
 function matchesWeight(product: ProductSearchData, query: string) {
@@ -56,14 +77,21 @@ function matchesWeight(product: ProductSearchData, query: string) {
   if (requested === null) return false;
   const productWeights = [
     ...Object.values(product.name ?? {}).flatMap(weightsFromText),
-    ...product.packaging.filter(level => level.uom === "piece").flatMap(level =>
-      [level.net_weight_kg, level.gross_weight_kg].flatMap(value => {
+    ...(!["Напитки", "Вода"].includes(product.category) ? product.packaging.filter(level => level.uom === "piece").flatMap(level =>
+      [level.net_weight_kg].flatMap(value => {
         if (value === null || value === "") return [];
         const kg = Number(value);
         return Number.isFinite(kg) ? [kg * 1000] : [];
-      })),
+      })) : []),
   ];
   return productWeights.some(value => Math.abs(value - requested) < 0.001);
+}
+
+function matchesVolume(product: ProductSearchData, query: string) {
+  const requested = requestedVolume(query);
+  if (requested === null) return false;
+  const productVolumes = Object.values(product.name ?? {}).flatMap(volumesFromText);
+  return productVolumes.some(value => Math.abs(value - requested) < 0.001);
 }
 
 function valuesForField(product: ProductSearchData, field: ProductSearchField) {
@@ -81,6 +109,7 @@ function valuesForField(product: ProductSearchData, field: ProductSearchField) {
     article: articleValues,
     name: Object.values(product.name ?? {}),
     weight: weightValues,
+    volume: Object.values(product.name ?? {}),
     brand: [product.brand],
     manufacturer: [product.manufacturer],
     category: [product.category],
@@ -101,6 +130,7 @@ function valuesForField(product: ProductSearchData, field: ProductSearchField) {
 
 export function matchesProductSearch(product: ProductSearchData, query: string, field: ProductSearchField = "all") {
   if (field === "weight") return !query.trim() || matchesWeight(product, query);
+  if (field === "volume") return !query.trim() || matchesVolume(product, query);
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return true;
   const values = valuesForField(product, field).filter((value): value is string => Boolean(value));

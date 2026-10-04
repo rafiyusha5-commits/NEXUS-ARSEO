@@ -59,6 +59,28 @@ describe("universal product search", () => {
     assert.equal(matchesProductSearch(dumle, "2,4 кг", "weight"), false);
   });
 
+  it("uses net grammage and never gross unit weight", () => {
+    const biscuit = {
+      ...dumle,
+      name: { ru: "Печенье Moomin 175г" },
+      packaging: [{ uom: "piece", units_per_parent: 1, net_weight_kg: 0.175, gross_weight_kg: 0.25 }],
+    };
+    assert.equal(matchesProductSearch(biscuit, "175", "weight"), true);
+    assert.equal(matchesProductSearch(biscuit, "250", "weight"), false);
+  });
+
+  it("separates liquid volume from product grammage", () => {
+    const drink = {
+      ...dumle,
+      name: { ru: "Смузи Froosh 250мл" },
+      category: "Напитки",
+      packaging: [{ uom: "piece", units_per_parent: 1, net_weight_kg: 0.25, gross_weight_kg: 0.27 }],
+    };
+    assert.equal(matchesProductSearch(drink, "250", "weight"), false);
+    assert.equal(matchesProductSearch(drink, "250", "volume"), true);
+    assert.equal(matchesProductSearch(drink, "0,25 л", "volume"), true);
+  });
+
   it("reads grammage from a name even when unit packaging weight is absent", () => {
     const nameOnly = { ...dumle, name: { ru: "Печенье 150г" }, packaging: [] };
     assert.equal(matchesProductSearch(nameOnly, "150", "weight"), true);
