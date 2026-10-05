@@ -19,6 +19,7 @@ import {
 import { type Table, buildPackageFromTables, parseCsv } from "@/lib/reference-import/tables.ts";
 import { type GoogleCalculatorImportResult, type ReferenceImportResult, runGoogleCalculatorImport, runReferenceImport } from "./actions";
 import { isCalculatorSheet } from "@/lib/calculator-import/parser.ts";
+import type { CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PAYLOAD_CHARS = 4_000_000;
@@ -140,6 +141,21 @@ function SkippedCalculatorRows({ issues }: { issues: Issue[] }) {
   );
 }
 
+function CalculatorQualityRows({ issues }: { issues: CalculatorQualityIssue[] }) {
+  if (!issues.length) return <div className="login-success admin-message">Проверка упаковки: нелогичных соотношений и весов не найдено.</div>;
+  return (
+    <div className="import-table-wrap">
+      <div className="admin-message">Проверка упаковки: замечаний {issues.length}. Они не блокируют синхронизацию и требуют проверки исходных данных.</div>
+      <table className="import-table">
+        <thead><tr><th>Строка</th><th>Артикул</th><th>Проверка</th><th>Замечание</th></tr></thead>
+        <tbody>{issues.map((issue, index) => (
+          <tr key={`${issue.sku}-${issue.kind}-${index}`}><td>{issue.row ?? "—"}</td><td>{issue.sku}</td><td>{issue.kind === "missing" ? "Не заполнено" : issue.kind === "quantity" ? "Количество" : "Вес"}</td><td>{issue.message}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ReferenceImportForm() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [reading, setReading] = useState(false);
@@ -195,7 +211,9 @@ export function ReferenceImportForm() {
   const googlePreview = googleResult?.mode === "preview" && googleResult.value.ok ? googleResult.value : null;
   const googleApplied = googleResult?.mode === "apply" && googleResult.value.ok ? googleResult.value : null;
   const googleFailure = googleResult && !googleResult.value.ok ? googleResult.value : null;
-  const googleCanApply = Boolean(googlePreview && !hasProblems(googlePreview.report) && hasChanges(googlePreview.report));
+  // Applying an unchanged reference report is still useful: it refreshes the
+  // calculator field descriptions and complete source data stored by Nexus.
+  const googleCanApply = Boolean(googlePreview && !hasProblems(googlePreview.report));
 
   return (
     <>
@@ -225,9 +243,10 @@ export function ReferenceImportForm() {
         <section className="panel admin-section">
           <div className="panel-heading">
             <div><p className="eyebrow">Google Sheets · предпросмотр · ничего не записано</p><h2>{googlePreview.source.products} товаров · {googlePreview.source.columns} полей</h2><p className="form-help">Лист «{googlePreview.source.sheet}» · прочитано строк: {googlePreview.source.rows}</p></div>
-            <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть конфликты" : googlePreview.skippedIssues.length ? `Готово · пропущено строк: ${skippedRowCount(googlePreview.skippedIssues)}` : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Изменений нет"}</span>
+            <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть конфликты" : googlePreview.skippedIssues.length ? `Готово · пропущено строк: ${skippedRowCount(googlePreview.skippedIssues)}` : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Данные актуальны · можно обновить поля"}</span>
           </div>
           <SkippedCalculatorRows issues={googlePreview.skippedIssues} />
+          <CalculatorQualityRows issues={googlePreview.qualityIssues} />
           <ReportView key={`google-preview-${googlePreview.snapshot}`} report={googlePreview.report} />
           <div className="import-confirm">
             <button className="primary" type="button" disabled={!googleCanApply || pending} onClick={() => runGoogle("apply")}>Синхронизировать с Nexus</button>
@@ -240,6 +259,7 @@ export function ReferenceImportForm() {
         <section className="panel admin-section">
           <div className="login-success admin-message">Google Таблица синхронизирована: создано {googleApplied.report.summary.create}, обновлено {googleApplied.report.summary.update}, без изменений {googleApplied.report.summary.unchanged}, пропущено строк {skippedRowCount(googleApplied.skippedIssues)}. <Link href="/products">Открыть товары</Link></div>
           <SkippedCalculatorRows issues={googleApplied.skippedIssues} />
+          <CalculatorQualityRows issues={googleApplied.qualityIssues} />
           <ReportView key={`google-applied-${googleApplied.snapshot}`} report={googleApplied.report} />
         </section>
       )}

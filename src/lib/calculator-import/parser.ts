@@ -113,8 +113,19 @@ const CANONICAL = new Map<string, string>([
 ]);
 
 const DISPLAY_FIELD_LABELS = new Map<string, { ru: string; en: string }>([
-  [norm("Штук на паллете"), { ru: "Количество коробов на паллете", en: "Boxes per pallet" }],
-  [norm("Количество штук в фуре"), { ru: "Количество паллет в машине", en: "Pallets per truck" }],
+  [norm("Штук на паллете"), { ru: "Количество штук на паллете", en: "Pieces per pallet" }],
+  [norm("Количество штук в фуре"), { ru: "Количество штук в машине", en: "Pieces per truck" }],
+]);
+
+// The first production synchronisation used incorrect display labels for these
+// two columns. Keep their internal keys and schema identity stable so correcting
+// the labels does not look like a Google Sheet structure change and does not
+// orphan already imported master-data values.
+const STABLE_SCHEMA_LABELS = new Map<string, string>([
+  [norm("Штук на паллете"), "Количество коробов на паллете"],
+  [norm("Количество штук в фуре"), "Количество паллет в машине"],
+  [norm("Количество штук на паллете"), "Количество коробов на паллете"],
+  [norm("Количество штук в машине"), "Количество паллет в машине"],
 ]);
 
 const COUNTRY: Record<string, string> = {
@@ -176,9 +187,10 @@ function headerColumns(rows: Cell[][], issues: Issue[]): CalculatorColumn[] {
     if (!sourceFieldRu) continue;
     const display = DISPLAY_FIELD_LABELS.get(norm(sourceFieldRu));
     const fieldRu = display?.ru ?? sourceFieldRu;
+    const schemaFieldRu = STABLE_SCHEMA_LABELS.get(norm(sourceFieldRu)) ?? fieldRu;
     const block = blockByIndex.get(index) ?? null;
     result.push({
-      key: columnKey(block, fieldRu, used),
+      key: columnKey(block, schemaFieldRu, used),
       position: index + 1,
       source_number: text(rows[0]?.[index]),
       source_code: text(rows[1]?.[index]),
@@ -224,22 +236,42 @@ function packaging(rows: Cell[], columns: CalculatorColumn[]): ImportPackaging[]
     const column = columns.find((item) => norm(item.field_ru) === norm(label));
     return column ? rows[column.position - 1] : null;
   };
+  const pieceNetWeight = weight(get("Вес нетто ед, кг")) ?? divide(get("Вес нетто ед, г"), 1000) ?? undefined;
+  const pieceGrossWeight = weight(get("Вес брутто ед, кг")) ?? divide(get("Вес брутто ед, г"), 1000) ?? undefined;
+  const boxUnits = positive(get("Штук товара в коробке")) ?? undefined;
+  const palletUnits = positive(get("Количество штук на паллете")) ?? undefined;
+  const truckUnits = positive(get("Количество штук в машине")) ?? undefined;
+  const plausibleGross = (candidate: number | null, units: number | undefined) => {
+    if (candidate === null) return undefined;
+    if (!pieceNetWeight || !units) return candidate;
+    // Zero explicitly replaces a previously imported tare-only value. Omitting
+    // the field would mean "leave the existing database value unchanged".
+    return candidate + 0.001 >= pieceNetWeight * units ? candidate : 0;
+  };
   const levels: ImportPackaging[] = [];
   const push = (level: ImportPackaging | null) => { if (level?.units_per_parent) levels.push(compact(level)); };
-  push({ uom: "piece", units_per_parent: 1, net_weight_kg: weight(get("Вес нетто ед, кг")) ?? divide(get("Вес нетто ед, г"), 1000) ?? undefined,
-    gross_weight_kg: weight(get("Вес брутто ед, кг")) ?? divide(get("Вес брутто ед, г"), 1000) ?? undefined,
+  push({ uom: "piece", units_per_parent: 1, net_weight_kg: pieceNetWeight,
+    gross_weight_kg: pieceGrossWeight,
     height_cm: divide(get("Высота ед, мм"), 10) ?? positive(get("Высота ед, см")) ?? undefined,
     width_cm: divide(get("Ширина ед, мм"), 10) ?? positive(get("Ширина ед, см")) ?? undefined,
     length_cm: divide(get("Длина ед, мм"), 10) ?? positive(get("Длина ед, см")) ?? undefined });
-  push({ uom: "box", units_per_parent: positive(get("Штук товара в коробке")) ?? undefined,
+  push({ uom: "box", units_per_parent: boxUnits,
     gross_weight_kg: weight(get("Вес брутто, кг")) ?? divide(get("Вес брутто кор, г"), 1000) ?? undefined,
     height_cm: divide(get("Высота кор, мм"), 10) ?? positive(get("Высота короба, см")) ?? undefined,
     width_cm: divide(get("Ширина кор, мм"), 10) ?? positive(get("Ширина короба, см")) ?? undefined,
     length_cm: divide(get("Длина кор, мм"), 10) ?? positive(get("Длина короба, см")) ?? undefined });
-  push({ uom: "pallet", units_per_parent: positive(get("Количество коробов на паллете")) ?? undefined,
-    gross_weight_kg: weight(get("Вес брутто с учетом веса паллеты, кг")) ?? weight(get("Вес брутто паллета, кг")) ?? undefined });
-  push({ uom: "truck", units_per_parent: positive(get("Количество паллет в машине")) ?? undefined,
-    gross_weight_kg: weight(get("Вес брутто с учетом веса паллет, кг")) ?? undefined });
+  push({ uom: "pallet", units_per_parent: palletUnits,
+    // In incomplete calculator rows these formulas contain only the empty
+    // pallet tare (usually 25 kg). Never present that as total cargo weight.
+    gross_weight_kg: plausibleGross(
+      weight(get("Вес брутто паллета, кг")) ?? weight(get("Вес брутто с учетом веса паллеты, кг")),
+      palletUnits,
+    ) });
+  push({ uom: "truck", units_per_parent: truckUnits,
+    // The source may contain only 25 kg multiplied by the pallet count
+    // (for example 825 kg for 33 empty pallets). Keep it in calculator data,
+    // but reset operational packaging to zero until it includes the cargo.
+    gross_weight_kg: plausibleGross(weight(get("Вес брутто с учетом веса паллет, кг")), truckUnits) });
   return levels;
 }
 
@@ -247,7 +279,12 @@ function fingerprint(columns: CalculatorColumn[]) {
   // Deterministic and position-independent; used for drift detection, not security.
   // Row 4 sometimes contains coefficients/formulas rather than a label, so it is
   // preserved in the schema but intentionally excluded from identity.
-  return columns.map(({ key, block, field_ru, visibility: access }) => [key, block, field_ru, access].map((v) => v ?? "").join("|")).sort().join("\n");
+  return columns.map(({ key, block, field_ru, visibility: access }) => [
+    key,
+    block,
+    STABLE_SCHEMA_LABELS.get(norm(field_ru)) ?? field_ru,
+    access,
+  ].map((v) => v ?? "").join("|")).sort().join("\n");
 }
 
 export function isCalculatorSheet(name: string) {

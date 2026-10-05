@@ -14,6 +14,7 @@ import { loadPermissions } from "@/lib/permissions.ts";
 import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
 import { buildCalculatorPackage, CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
+import { auditCalculatorPackaging, type CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 export type ReferenceImportResult =
   | { ok: true; report: ImportReport }
@@ -25,6 +26,7 @@ export type GoogleCalculatorImportResult =
       report: ImportReport;
       snapshot: string;
       skippedIssues: Issue[];
+      qualityIssues: CalculatorQualityIssue[];
       source: { title: string; sheet: string; spreadsheetId: string; columns: number; rows: number; products: number };
     }
   | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
@@ -141,6 +143,7 @@ export async function runGoogleCalculatorImport(
     const parsed = buildCalculatorPackage(rows, CALCULATOR_SOURCE_TITLE, CALCULATOR_SHEET_NAME);
     const fatalIssues = parsed.issues.filter((issue) => issue.row === null || issue.row <= 5);
     const skippedIssues = parsed.issues.filter((issue) => issue.row !== null && issue.row > 5);
+    const qualityIssues = auditCalculatorPackaging(parsed.pkg);
     if (fatalIssues.length) {
       return {
         ok: false,
@@ -160,6 +163,7 @@ export async function runGoogleCalculatorImport(
       ...result,
       snapshot,
       skippedIssues: skippedIssues.slice(0, 200),
+      qualityIssues: qualityIssues.slice(0, 300),
       source: {
         title: CALCULATOR_SOURCE_TITLE,
         sheet: CALCULATOR_SHEET_NAME,
