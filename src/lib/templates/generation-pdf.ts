@@ -97,11 +97,11 @@ async function packingList(data: Record<string, unknown>) {
   const items = rows(data).slice(0, 8), rowH = Math.min(13, 102 / Math.max(items.length + 1, 1));
   items.forEach((item, index) => {
     const y = tableY + tableH - 47 - index * rowH;
-    const values = [index + 1, item.country_of_origin, item.box_barcode || item.gtin || item.unit_barcode, item.product_name, item.ordered_quantity, item.total_net_weight_kg, item.net_weight_with_packaging_kg, item.box_count, item.pallet_count, item.total_gross_weight_kg, item.gross_with_pallets_kg];
+    const values = [index + 1, item.country_of_origin, item.box_barcode || item.gtin || item.unit_barcode, item.product_name, item.piece_count || item.ordered_quantity, item.total_net_weight_kg, item.net_weight_with_packaging_kg, item.box_count, item.pallet_count, item.total_gross_weight_kg, item.gross_with_pallets_kg];
     x = margin; values.forEach((value, column) => { write(page, fonts.regular, value, x + 2, y, 5.3, ink, widths[column] - 4); x += widths[column]; });
     line(page, margin, y - 4, margin + width, y - 4, 0.3);
   });
-  const totals = ["", "", "", "ИТОГО", text(data.total_quantity), total(data, "total_net_weight_kg"), "", "", text(data.pallet_count), total(data, "total_gross_weight_kg"), text(data.gross_with_pallets_kg)];
+  const totals = ["", "", "", "ИТОГО", text(data.total_piece_count || data.total_quantity), total(data, "total_net_weight_kg"), "", text(data.box_count), text(data.pallet_count), total(data, "total_gross_weight_kg"), text(data.gross_with_pallets_kg)];
   x = margin; totals.forEach((value, column) => { write(page, fonts.bold, value, x + 2, tableY + 6, 5.5, ink, widths[column] - 4); x += widths[column]; });
 
   const partyY = 102, partyH = 170, partyWidth = 340;
@@ -139,10 +139,10 @@ async function ttn(data: Record<string, unknown>) {
   x = margin; headers.forEach((header, index) => { write(page, fonts.bold, header, x + 2, tableY + tableH - 17, 5, ink, widths[index] - 4); x += widths[index]; });
   rows(data).slice(0, 5).forEach((item, index) => {
     const y = tableY + tableH - 41 - index * 13;
-    const values = [index + 1, data.order_number || data.project_code, item.product_name, item.box_count || "", item.ordered_quantity, item.unit_price, item.line_total, transport.temperature_setpoint, item.total_gross_weight_kg, item.pallet_count];
+    const values = [index + 1, data.order_number || data.project_code, item.product_name, item.box_count || "", item.piece_count || item.ordered_quantity, item.unit_price, item.line_total, transport.temperature_setpoint, item.total_gross_weight_kg, item.pallet_count];
     x = margin; values.forEach((value, col) => { write(page, fonts.regular, value, x + 2, y, 5.3, ink, widths[col] - 4); x += widths[col]; }); line(page, margin, y - 4, margin + width, y - 4, 0.3);
   });
-  write(page, fonts.bold, `ИТОГО: ${text(data.total_quantity)} ед. · ${total(data, "total_gross_weight_kg")} кг · ${text(data.pallet_count) || "—"} паллет`, margin + 310, tableY + 6, 6.2);
+  write(page, fonts.bold, `ИТОГО: ${text(data.total_piece_count || data.total_quantity)} ед. · ${total(data, "total_gross_weight_kg")} кг · ${text(data.pallet_count) || "—"} паллет`, margin + 310, tableY + 6, 6.2);
   const signatureY = 82; box(page, margin, signatureY, width, 154);
   line(page, margin + width / 2, signatureY, margin + width / 2, signatureY + 154);
   write(page, fonts.bold, "Груз сдал", margin + 10, signatureY + 136, 7); write(page, fonts.bold, "Груз принял", margin + width / 2 + 10, signatureY + 136, 7);

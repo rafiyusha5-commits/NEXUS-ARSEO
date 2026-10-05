@@ -1,4 +1,5 @@
 import type { TemplateVariable } from "./rules.ts";
+import { buildShipmentLoadSummary } from "../shipments/load-summary.ts";
 
 export type GenerationField={key:string;label:string;group:string;loop?:boolean;financial?:boolean};
 export const GENERATION_FIELDS:GenerationField[]=[
@@ -12,7 +13,7 @@ export const GENERATION_FIELDS:GenerationField[]=[
  {key:"route_name",label:"Маршрут",group:"Логистика"},{key:"destination_warehouse",label:"Склад назначения",group:"Логистика"},
  {key:"destination_address",label:"Адрес склада",group:"Логистика"},{key:"responsible_name",label:"Ответственный",group:"Логистика"},
  {key:"currency_code",label:"Валюта поставки",group:"Финансы"},{key:"contract_number",label:"Номер договора",group:"Финансы"},
- {key:"total_lines",label:"Количество товарных строк",group:"Итоги"},{key:"total_quantity",label:"Общее количество",group:"Итоги"},
+ {key:"total_lines",label:"Количество товарных строк",group:"Итоги"},{key:"total_quantity",label:"Общее количество",group:"Итоги"},{key:"total_piece_count",label:"Всего штук",group:"Итоги"},{key:"box_count",label:"Всего коробов",group:"Итоги"},{key:"pallet_count",label:"Всего паллет",group:"Итоги"},
  {key:"total_amount",label:"Общая сумма",group:"Финансы",financial:true},{key:"total_gross_weight_kg",label:"Общий вес брутто, кг",group:"Итоги"},
  {key:"total_net_weight_kg",label:"Общий вес нетто, кг",group:"Итоги"},{key:"items",label:"Цикл товарных позиций",group:"Таблицы",loop:true},
  {key:"transports",label:"Цикл автомобилей",group:"Таблицы",loop:true},
@@ -26,6 +27,7 @@ export const ITEM_GENERATION_FIELDS:GenerationField[]=[
  {key:"shipped_quantity",label:"Отгружено",group:"Товары"},{key:"received_quantity",label:"Принято",group:"Товары"},
  {key:"unit_price",label:"Цена за единицу",group:"Финансы",financial:true},{key:"line_total",label:"Сумма строки",group:"Финансы",financial:true},{key:"currency_code",label:"Валюта строки",group:"Финансы",financial:true},
  {key:"gross_weight_kg",label:"Брутто единицы, кг",group:"Товары"},{key:"net_weight_kg",label:"Нетто единицы, кг",group:"Товары"},{key:"total_gross_weight_kg",label:"Брутто строки, кг",group:"Товары"},{key:"total_net_weight_kg",label:"Нетто строки, кг",group:"Товары"},
+ {key:"piece_count",label:"Штук в строке",group:"Товары"},{key:"box_count",label:"Коробов в строке",group:"Товары"},{key:"pallet_count",label:"Паллет в строке",group:"Товары"},
 ];
 export const TRANSPORT_GENERATION_FIELDS:GenerationField[]=[
  {key:"sequence_no",label:"Номер автомобиля",group:"Транспорт"},{key:"carrier_name",label:"Перевозчик",group:"Транспорт"},
@@ -55,19 +57,19 @@ export function buildShipmentGenerationData(input:RawGenerationInput){
  const s=input.shipment;const idByProduct=new Map<string,Record<string,string>>();
  for(const id of input.identifiers){const productId=text(id.product_id);const row=idByProduct.get(productId)??{};const type=text(id.identifier_type);if(!row[type])row[type]=text(id.value);idByProduct.set(productId,row);}
  const packageByProduct=new Map<string,Record<string,unknown>>();for(const pack of input.packaging)packageByProduct.set(`${text(pack.product_id)}:${text(pack.uom)}`,pack);
- let totalQuantity=0,totalAmount=0,totalGross=0,totalNet=0;
- const items=input.items.map((item,index)=>{const product=input.products.get(text(item.product_id))??{};const ids=idByProduct.get(text(item.product_id))??{};const pack=packageByProduct.get(`${text(item.product_id)}:${text(item.uom)}`)??{};const qty=number(item.ordered_quantity);const price=input.includePrices?number(item.unit_price):0;const gross=number(pack.gross_weight_kg);const net=number(pack.net_weight_kg);totalQuantity+=qty;totalAmount+=qty*price;totalGross+=qty*gross;totalNet+=qty*net;return{
+ const load=buildShipmentLoadSummary(input.items,input.packaging);let totalQuantity=0,totalAmount=0;
+ const items=input.items.map((item,index)=>{const product=input.products.get(text(item.product_id))??{};const ids=idByProduct.get(text(item.product_id))??{};const pack=packageByProduct.get(`${text(item.product_id)}:${text(item.uom)}`)??{};const loadLine=load.lines[index];const qty=number(item.ordered_quantity);const price=input.includePrices?number(item.unit_price):0;const gross=number(pack.gross_weight_kg);const net=number(pack.net_weight_kg);totalQuantity+=qty;totalAmount+=qty*price;return{
   line_number:index+1,product_name:localized(product.name),internal_sku:text(product.internal_sku),brand:text(product.brand),hs_code:text(product.hs_code),country_of_origin:text(product.country_of_origin),
   supplier_sku:ids.supplier_sku??"",gtin:ids.gtin??"",unit_barcode:ids.unit_barcode??"",box_barcode:ids.box_barcode??"",uom:text(item.uom),ordered_quantity:formatted(qty),confirmed_quantity:optionalNumber(item.confirmed_quantity),shipped_quantity:optionalNumber(item.shipped_quantity),received_quantity:optionalNumber(item.received_quantity),
   unit_price:input.includePrices&&item.unit_price!==null?formatted(price,4):"",line_total:input.includePrices&&item.unit_price!==null?formatted(qty*price,2):"",currency_code:input.includePrices?text(item.currency_code||input.currency?.code):"",
-  gross_weight_kg:gross?formatted(gross):"",net_weight_kg:net?formatted(net):"",total_gross_weight_kg:gross?formatted(qty*gross):"",total_net_weight_kg:net?formatted(qty*net):"",
+  gross_weight_kg:gross?formatted(gross):"",net_weight_kg:net?formatted(net):"",piece_count:loadLine?.pieces!==null?formatted(loadLine.pieces):"",box_count:loadLine?.boxes!==null?formatted(loadLine.boxes):"",pallet_count:loadLine?.pallets!==null?formatted(loadLine.pallets):"",total_gross_weight_kg:loadLine?.grossWeightKg!==null?formatted(loadLine.grossWeightKg):"",total_net_weight_kg:loadLine?.netWeightKg!==null?formatted(loadLine.netWeightKg):"",net_weight_with_packaging_kg:loadLine?.netWeightKg!==null?formatted(loadLine.netWeightKg):"",gross_with_pallets_kg:loadLine?.grossWeightKg!==null?formatted(loadLine.grossWeightKg):"",
  };});
  const transports=input.transports.map((transport)=>{const carrier=object(transport.carrier);const carrierParty=object(carrier.counterparty);const vehicle=object(transport.vehicle);return{sequence_no:number(transport.sequence_no),carrier_name:partyName(carrierParty),vehicle_plate:text(vehicle.plate_number),trailer_plate:text(vehicle.trailer_plate_number),driver_name:text(transport.driver_name),driver_phone:text(transport.driver_phone),temperature_setpoint:text(transport.temperature_setpoint),planned_loading_date:date(transport.planned_loading_date),actual_loading_date:date(transport.actual_loading_date),planned_arrival_date:date(transport.planned_arrival_date),actual_arrival_date:date(transport.actual_arrival_date)};});
  return{
   generated_date:date(input.now??new Date()),shipment_number:text(s.shipment_number),project_code:text(s.project_code),shipment_type:text(s.type),shipment_status:text(s.status),incoterms:text(s.incoterms),planned_ready_date:date(s.planned_ready_date),planned_arrival_date:date(s.planned_arrival_date),
   supplier_name:partyName(input.supplier),supplier_tax_id:text(input.supplier?.tax_id),supplier_country:text(input.supplier?.country),customer_name:partyName(input.customer),customer_tax_id:text(input.customer?.tax_id),customer_country:text(input.customer?.country),
   route_name:localized(input.route?.name),destination_warehouse:localized(input.warehouse?.name),destination_address:text(input.warehouse?.address),responsible_name:text(input.responsible?.full_name),currency_code:text(input.currency?.code),contract_number:text(input.contract?.number),
-  total_lines:items.length,total_quantity:formatted(totalQuantity),total_amount:input.includePrices?formatted(totalAmount,2):"",total_gross_weight_kg:totalGross?formatted(totalGross):"",total_net_weight_kg:totalNet?formatted(totalNet):"",items,transports,
+  total_lines:items.length,total_quantity:formatted(totalQuantity),total_piece_count:load.pieces!==null?formatted(load.pieces):"",box_count:load.boxes!==null?formatted(load.boxes):"",pallet_count:load.pallets!==null?formatted(load.pallets):"",total_amount:input.includePrices?formatted(totalAmount,2):"",total_gross_weight_kg:load.grossWeightKg!==null?formatted(load.grossWeightKg):"",total_net_weight_kg:load.netWeightKg!==null?formatted(load.netWeightKg):"",gross_with_pallets_kg:load.grossWeightKg!==null?formatted(load.grossWeightKg):"",items,transports,
  };
 }
 

@@ -24,7 +24,7 @@ export async function loadGenerationPreview(supabase:SupabaseClient,templateId:s
  const productResults=productIds.length?await Promise.all([
   supabase.from("products").select("id,internal_sku,name,brand,hs_code,country_of_origin").in("id",productIds),
   supabase.from("product_identifiers").select("product_id,identifier_type,value,counterparty_id,is_primary").in("product_id",productIds).order("is_primary",{ascending:false}),
-  supabase.from("product_packaging").select("product_id,uom,gross_weight_kg,net_weight_kg").in("product_id",productIds),
+  supabase.from("product_packaging").select("product_id,uom,units_per_parent,gross_weight_kg,net_weight_kg").in("product_id",productIds),
  ]):[{data:[]},{data:[]},{data:[]}];
  const productError=productResults.map(result=>("error" in result?result.error:null)).find(Boolean);if(productError)throw new Error(productError.message);
  const [{data:products},{data:identifiers},{data:packaging}]=productResults;

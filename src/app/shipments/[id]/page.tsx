@@ -6,6 +6,7 @@ import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-so
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
+import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/load-summary";
 import {
   addShipmentItem,
   addShipmentTransport,
@@ -23,6 +24,8 @@ const transportStatus:Record<string,string>={planned:"Запланирован",
 const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"Налог",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const v=value as Record<string,unknown>;return String(v.ru??v.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
+const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—":value.toLocaleString("ru-RU",{maximumFractionDigits});
+const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"маш."};
 
 export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;tab?:string}>}){
   const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
@@ -31,7 +34,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku"),
-    supabase.from("shipment_items").select("id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
+    supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
     supabase.from("expenses").select("id,expense_type,amount,incurred_at,is_planned,status,currency:currencies(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name)").eq("shipment_id",id).order("incurred_at",{ascending:false}),
@@ -41,6 +44,12 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const {data:itemPrices}=permissions["prices.purchase.view"]?await supabase.rpc("my_shipment_item_purchase_prices",{p_shipment_id:id}):{data:[]};
   const priceByItem=new Map<string,number|string|null>((itemPrices??[]).map((row:{item_id:string;unit_price:number|string|null})=>[row.item_id,row.unit_price]));
   const visibleItems=(items??[]).map(item=>({...item,unit_price:priceByItem.get(item.id)??null}));
+  const loadProductIds=[...new Set(visibleItems.map(item=>item.product_id))];
+  const {data:loadPackaging}=loadProductIds.length?await supabase.from("product_packaging").select("product_id,uom,units_per_parent,gross_weight_kg,net_weight_kg").in("product_id",loadProductIds):{data:[]};
+  const loadSummary=buildShipmentLoadSummary(visibleItems as Array<Record<string,unknown>>,(loadPackaging??[]) as Array<Record<string,unknown>>);
+  const itemById=new Map(visibleItems.map(item=>[item.id,item]));
+  const unallocatedLoadLines=loadSummary.lines.filter(line=>!line.transportId);
+  const loadGroups=[...(transports??[]).map(transport=>({id:transport.id,label:`Автомобиль №${transport.sequence_no}`,lines:loadSummary.lines.filter(line=>line.transportId===transport.id)})),...(unallocatedLoadLines.length?[{id:"unallocated",label:"Не распределено",lines:unallocatedLoadLines}]:[])].filter(group=>group.lines.length>0);
   const availableProducts=(products??[]).filter((product)=>shipment.type!=="import"||product.product_suppliers?.some((link)=>link.supplier_id===shipment.supplier_id&&link.status==="active"));
   const supplier=one(shipment.supplier); const customer=one(shipment.customer); const route=one(shipment.route);
   const warehouse=one(shipment.warehouse); const currency=one(shipment.currency); const responsible=one(shipment.responsible);
@@ -56,6 +65,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     <OperationTabs activeTab={notices.tab} defaultTab="main" tabs={[
       {id:"main",label:"Основное"},
       {id:"items",label:"Товары",badge:visibleItems.length},
+      {id:"load",label:"Загрузка",badge:loadSummary.warnings.length||undefined},
       {id:"delivery",label:"Доставка",badge:transports?.length??0},
       {id:"documents",label:"Документы"},
       {id:"expenses",label:"Расходы",badge:expenses?.length??0},
@@ -87,6 +97,20 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
             <form action={deleteShipmentItem}><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><button className="text-danger" type="submit">Удалить</button></form>
           </div>}
         </article>;})}{!visibleItems.length&&<div className="empty-state">Позиции ещё не добавлены.</div>}</div>
+      </section>
+      <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Расчёт по данным товаров</p><h2>Загрузка поставки</h2></div><span className="page-count">{visibleItems.length} позиций</span></div>
+        <div className="load-summary-grid">
+          <article className="summary-card"><p>Вес нетто</p><strong>{loadNumber(loadSummary.netWeightKg)} кг</strong><small>сумма по всем позициям</small></article>
+          <article className="summary-card"><p>Вес брутто</p><strong>{loadNumber(loadSummary.grossWeightKg)} кг</strong><small>сумма по всем позициям</small></article>
+          <article className="summary-card"><p>Штуки</p><strong>{loadNumber(loadSummary.pieces)}</strong><small>базовых единиц товара</small></article>
+          <article className="summary-card"><p>Короба</p><strong>{loadNumber(loadSummary.boxes)}</strong><small>расчёт по упаковке</small></article>
+          <article className="summary-card"><p>Паллеты</p><strong>{loadNumber(loadSummary.pallets)}</strong><small>расчёт по упаковке</small></article>
+        </div>
+        <div className="import-table-wrap"><table className="import-table"><thead><tr><th>Автомобиль</th><th>Товар</th><th>Внесено</th><th>Штук</th><th>Коробов</th><th>Паллет</th><th>Нетто, кг</th><th>Брутто, кг</th></tr></thead><tbody>{loadSummary.lines.map(line=>{const item=itemById.get(line.itemId);const product=one(item?.product);const transport=one(item?.transport);return <tr className={line.warnings.length?"has-error":""} key={line.itemId}><td>{transport?`№${transport.sequence_no}`:"Не распределено"}</td><td><strong>{product?.internal_sku}</strong><br/><small>{name(product?.name)}</small>{line.warnings.length>0&&<span className="load-warning-text">{line.warnings.join(" · ")}</span>}</td><td>{loadNumber(line.quantity)} {uomLabel[line.uom]??line.uom}</td><td>{loadNumber(line.pieces)}</td><td>{loadNumber(line.boxes)}</td><td>{loadNumber(line.pallets)}</td><td>{loadNumber(line.netWeightKg)}</td><td>{loadNumber(line.grossWeightKg)}</td></tr>;})}</tbody></table></div>
+        {loadGroups.length>0&&<div className="load-vehicle-list">{loadGroups.map(group=>{const total=sumShipmentLoadLines(group.lines);return <article key={group.id}><strong>{group.label}</strong><span>{loadNumber(total.pieces)} шт.</span><span>{loadNumber(total.boxes)} кор.</span><span>{loadNumber(total.pallets)} пал.</span><span>нетто {loadNumber(total.netWeightKg)} кг</span><span>брутто {loadNumber(total.grossWeightKg)} кг</span></article>;})}</div>}
+        {!visibleItems.length&&<div className="empty-state">Добавьте товары, чтобы увидеть расчёт загрузки.</div>}
+        {loadSummary.warnings.length>0&&<div className="setup-notice"><strong>Есть неполные данные:</strong> проверьте выделенные позиции и заполните упаковку в карточках товаров.</div>}
+        <p className="form-help">Эти же количества и веса используются при формировании CMR, ТТН, упаковочного листа и экспортного Excel. Контроль превышения грузоподъёмности включится после добавления допустимого веса в карточку автомобиля.</p>
       </section>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Логистика</p><h2>Перевозки</h2></div><span className="page-count">{transports?.length??0}</span></div>
         {canEdit&&<form action={addShipmentTransport} className="shipment-subform transport-subform"><input type="hidden" name="shipment_id" value={shipment.id}/><label>План загрузки<input name="planned_loading_date" type="date"/></label><label>План прибытия<input name="planned_arrival_date" type="date"/></label><label>Температура<input name="temperature_setpoint" placeholder="+15…+25 °C"/></label><label>Примечание<input name="notes" placeholder="Автомобиль или рейс"/></label><button className="primary" type="submit">Добавить автомобиль</button></form>}

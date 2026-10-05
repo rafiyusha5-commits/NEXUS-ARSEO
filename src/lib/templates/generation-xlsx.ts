@@ -151,7 +151,7 @@ export async function renderShipmentWorkbookTemplate(template: Uint8Array, data:
     packing.getCell(row, 2).value = text(item.country_of_origin);
     packing.getCell(row, 3).value = text(item.box_barcode || item.gtin || item.unit_barcode);
     packing.getCell(row, 4).value = text(item.product_name);
-    packing.getCell(row, 5).value = number(item.ordered_quantity);
+    packing.getCell(row, 5).value = number(item.piece_count) || number(item.ordered_quantity);
     packing.getCell(row, 6).value = number(item.total_net_weight_kg) || number(item.net_weight_kg) * number(item.ordered_quantity) || "";
     packing.getCell(row, 7).value = number(item.net_weight_with_packaging_kg) || "";
     packing.getCell(row, 8).value = number(item.box_count) || "";
