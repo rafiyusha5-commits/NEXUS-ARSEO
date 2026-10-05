@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { conflictsAcrossDocuments, extractShipmentFields, mergeConfirmedSourceData } from "../../src/lib/document-extraction/rules.ts";
+import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, mergeConfirmedSourceData, sanitizeConfirmedSourceData } from "../../src/lib/document-extraction/rules.ts";
 
 describe("shipment source document extraction", () => {
   it("extracts transport and order fields from a contract request", () => {
@@ -42,5 +42,16 @@ describe("shipment source document extraction", () => {
     assert.equal((merged.transports as Array<Record<string, unknown>>)[0].vehicle_plate, "754BA04");
     assert.equal((merged.transports as Array<Record<string, unknown>>)[0].driver_name, "Иванов И.И.");
     assert.deepEqual(merged.items, [{ product_name: "Dumle" }]);
+  });
+
+  it("detects a source kind from document text instead of relying only on the file name", () => {
+    assert.equal(detectShipmentSourceKind("INVOICE No FZ-77\nInvoice date 05.10.2026", "other"), "invoice");
+    assert.equal(detectShipmentSourceKind("Договор-заявка № 41 на перевозку груза", "other"), "transport_order");
+  });
+
+  it("keeps only supported employee-reviewed scalar values", () => {
+    assert.deepEqual(sanitizeConfirmedSourceData({
+      driver_name: "  Иванов   Иван  ", gross_weight_kg: "12 500,5", shipping_date: "2026-10-05", unknown: "secret", conflicts: [],
+    }), { driver_name: "Иванов Иван", gross_weight_kg: 12500.5, shipping_date: "2026-10-05" });
   });
 });

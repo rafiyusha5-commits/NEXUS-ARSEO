@@ -18,6 +18,6 @@ export function titleFromFileName(fileName: string) {
 
 export function inferDocumentTypeId(fileName: string, types: BulkDocumentType[]) {
   const match = TYPE_HINTS.find(hint => hint.pattern.test(fileName));
-  if (!match) return "";
-  return types.find(type => match.codes.includes(type.code))?.id ?? "";
+  if (match) return types.find(type => match.codes.includes(type.code))?.id ?? "";
+  return types.find(type => type.code === "other")?.id ?? "";
 }

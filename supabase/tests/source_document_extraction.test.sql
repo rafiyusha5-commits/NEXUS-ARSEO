@@ -7,6 +7,9 @@ do $$begin
  assert (select relrowsecurity from pg_class where oid='public.shipment_source_extractions'::regclass),'source extraction table has RLS';
  assert to_regprocedure('public.upsert_shipment_source_extraction(uuid,uuid,uuid,text,text,jsonb,jsonb,jsonb,text,text)') is not null,'controlled extraction upsert exists';
  assert to_regprocedure('public.confirm_shipment_source_extraction(uuid)') is not null,'controlled review RPC exists';
+ assert to_regprocedure('public.review_shipment_source_extraction(uuid,jsonb,boolean)') is not null,'editable review RPC exists';
+ assert not has_function_privilege('anon','public.review_shipment_source_extraction(uuid,jsonb,boolean)','EXECUTE'),'anonymous cannot review extracted data';
+ assert has_function_privilege('authenticated','public.review_shipment_source_extraction(uuid,jsonb,boolean)','EXECUTE'),'authenticated reviewers can call guarded review RPC';
  assert not has_table_privilege('anon','public.shipment_source_extractions','SELECT'),'anonymous cannot read extraction data';
  assert has_table_privilege('authenticated','public.shipment_source_extractions','SELECT'),'employees may read through RLS';
  assert not has_table_privilege('authenticated','public.shipment_source_extractions','INSERT'),'employees cannot insert directly';

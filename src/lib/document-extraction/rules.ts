@@ -8,6 +8,8 @@ export type ExtractionResult = {
   conflicts: ExtractionConflict[];
 };
 
+export type SourceFieldDefinition = { key: string; label: string; type: "text" | "date" | "number" };
+
 type Pattern = { field: string; label: string; expressions: RegExp[]; confidence?: number };
 
 const patterns: Pattern[] = [
@@ -44,13 +46,50 @@ const datePatterns: Array<[string, string, RegExp[]]> = [
   ["contract_date", "Дата договора", [/(?:дата\s+(?:договора|контракта))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
 ];
 
+export const SOURCE_FIELD_DEFINITIONS: SourceFieldDefinition[] = [
+  ...patterns.map(pattern => ({ key: pattern.field, label: pattern.label, type: (["pallet_count", "gross_weight_kg", "net_weight_kg"].includes(pattern.field) ? "number" : "text") as SourceFieldDefinition["type"] })),
+  ...datePatterns.map(([key, label]) => ({ key, label, type: "date" as const })),
+];
+
+const sourceFieldKeys = new Set(SOURCE_FIELD_DEFINITIONS.map(field => field.key));
+
+export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
+  const cleanData: Record<string, string | number> = {};
+  for (const field of SOURCE_FIELD_DEFINITIONS) {
+    const raw = value[field.key];
+    if (raw === null || raw === undefined || raw === "") continue;
+    if (!sourceFieldKeys.has(field.key) || typeof raw === "object") continue;
+    if (field.type === "number") {
+      const parsed = Number(String(raw).replace(/\s/g, "").replace(",", "."));
+      if (Number.isFinite(parsed) && parsed >= 0) cleanData[field.key] = parsed;
+      continue;
+    }
+    const cleaned = clean(String(raw)).slice(0, field.key.endsWith("address") ? 500 : 200);
+    if (cleaned) cleanData[field.key] = field.type === "date" ? isoDate(cleaned) : cleaned;
+  }
+  return cleanData;
+}
+
+export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
+  const text = rawText.toLocaleLowerCase("ru-RU");
+  if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
+  if (/договор[- ]заявк|transport\s+order|заявк\S*\s+на\s+перевоз/u.test(text)) return "transport_order";
+  if (/водительск\S*\s+удостоверен|driver'?s?\s+licen[cs]e|паспорт\s+водителя/u.test(text)) return "driver_document";
+  if (/свидетельств\S*\s+о\s+регистрации|vehicle\s+registration|техпаспорт/u.test(text)) return "vehicle_document";
+  if (/упаковочн\S*\s+лист|packing\s+list/u.test(text)) return "specification";
+  if (/\bcmr\b|товарно[- ]транспортн|\bттн\b/iu.test(text)) return "waybill";
+  return hintedKind;
+}
+
 function clean(value: string) {
   return value.replace(/\s+/g, " ").replace(/^[\s:;,.–—-]+|[\s:;,]+$/g, "").trim();
 }
 
 function isoDate(value: string) {
-  const parts = value.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
-  if (!parts) return clean(value);
+  const normalized = clean(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  const parts = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (!parts) return normalized;
   const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
   return `${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
 }
@@ -65,7 +104,7 @@ export function extractShipmentFields(rawText: string): ExtractionResult {
       if (!match?.[1]) continue;
       const value = clean(match[1]);
       if (!value) continue;
-      data[pattern.field] = ["pallet_count"].includes(pattern.field) ? Number(value.replace(/\s/g, "")) : value;
+      data[pattern.field] = ["pallet_count", "gross_weight_kg", "net_weight_kg"].includes(pattern.field) ? Number(value.replace(/\s/g, "").replace(",", ".")) : value;
       evidence[pattern.field] = { label: pattern.label, value, confidence: pattern.confidence ?? 0.85 };
       break;
     }

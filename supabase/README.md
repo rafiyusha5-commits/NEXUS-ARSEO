@@ -47,5 +47,6 @@ Migration order:
 36. `202609274300_calculator_master_data.sql` — imports the complete five-row ARSEO master-calculator schema and per-product source fields; catalogue and employee sales data stay separate from purchase-confidential calculations.
 37. `202609274400_froosh_fazer_supplier_cleanup.sql` — moves legacy Froosh product and supplier-article links to Fazer, while retaining Froosh AB as an archived historical counterparty.
 38. `202609274500_calculator_identifier_reconciliation.sql` — safely matches calculator rows to one existing product by global barcodes and replaces legacy prefixed codes with the canonical ARSEO article without changing product UUIDs.
+39. `202609274600_source_document_review.sql` — adds employee correction of extracted source fields and guarded application of confirmed values to the shipment and its first active vehicle.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

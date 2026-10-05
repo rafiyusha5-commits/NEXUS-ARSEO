@@ -7,6 +7,7 @@ const types = [
   { id: "order-id", code: "transport_order", name: "Договор-заявка" },
   { id: "driver-id", code: "driver_document", name: "Документ водителя" },
   { id: "vehicle-id", code: "vehicle_document", name: "Документ автомобиля" },
+  { id: "other-id", code: "other", name: "Прочий документ" },
 ];
 
 describe("bulk document upload helpers", () => {
@@ -17,8 +18,8 @@ describe("bulk document upload helpers", () => {
     assert.equal(inferDocumentTypeId("Техпаспорт прицепа.pdf", types), "vehicle-id");
   });
 
-  it("leaves an unknown file for the employee to classify", () => {
-    assert.equal(inferDocumentTypeId("прочее.pdf", types), "");
+  it("accepts an unknown file as another source for content recognition", () => {
+    assert.equal(inferDocumentTypeId("прочее.pdf", types), "other-id");
   });
 
   it("uses a clean file name as the default title", () => {

@@ -75,9 +75,9 @@ export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }
       setBatchMessage("Документы загружены. Система распознаёт комплект и сверяет данные…");
       try {
         const response = await fetch(`/api/shipments/${autoExtractShipmentId}/sources/extract`, { method: "POST" });
-        const result = await response.json() as { ok?: boolean; error?: string; summary?: { confirmed: number; review: number; failed: number } };
+        const result = await response.json() as { ok?: boolean; error?: string; summary?: { ready: number; review: number; failed: number } };
         if (!response.ok || !result.ok || !result.summary) throw new Error(result.error || "Не удалось распознать комплект");
-        setBatchMessage(`Распознано: ${result.summary.confirmed}; требует проверки: ${result.summary.review}; не прочитано: ${result.summary.failed}.`);
+        setBatchMessage(`Готово к подтверждению: ${result.summary.ready}; есть расхождения: ${result.summary.review}; не прочитано: ${result.summary.failed}.`);
       } catch (error) {
         setBatchMessage(`Файлы сохранены, но автоматическое распознавание не завершено: ${error instanceof Error ? error.message : "ошибка"}. Можно повторить его кнопкой ниже.`);
       }

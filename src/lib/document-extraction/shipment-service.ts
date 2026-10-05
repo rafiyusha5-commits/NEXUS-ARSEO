@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DOCUMENT_BUCKET } from "@/lib/documents/files";
-import { conflictsAcrossDocuments, extractShipmentFields, EXTRACTION_VERSION } from "./rules";
+import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, EXTRACTION_VERSION } from "./rules";
 import { extractDocumentText } from "./text";
 
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
@@ -12,7 +12,7 @@ function sourceKind(code: string) {
   return "other";
 }
 
-export type ShipmentExtractionSummary = { confirmed: number; review: number; failed: number; total: number };
+export type ShipmentExtractionSummary = { ready: number; review: number; failed: number; total: number };
 
 export async function extractShipmentSources(supabase: SupabaseClient, shipmentId: string): Promise<ShipmentExtractionSummary> {
   const { data: transports } = await supabase.from("shipment_transports").select("id").eq("shipment_id", shipmentId);
@@ -49,7 +49,7 @@ export async function extractShipmentSources(supabase: SupabaseClient, shipmentI
       if (downloadError || !file) throw new Error(downloadError?.message || "Файл не найден");
       const rawText = await extractDocumentText(new Uint8Array(await file.arrayBuffer()), version.mime_type);
       const result = extractShipmentFields(rawText);
-      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result, error: Object.keys(result.data).length ? null : "Реквизиты не распознаны автоматически" });
+      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: detectShipmentSourceKind(rawText, sourceKind(code)), result, error: Object.keys(result.data).length ? null : "Реквизиты не распознаны автоматически" });
     } catch (error) {
       prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: error instanceof Error ? error.message : "Не удалось прочитать файл" });
     }
@@ -57,11 +57,11 @@ export async function extractShipmentSources(supabase: SupabaseClient, shipmentI
 
   const successful = prepared.filter(item => !item.error).map(item => ({ documentId: item.documentId, result: item.result }));
   const commonConflicts = conflictsAcrossDocuments(successful);
-  let confirmed = 0, review = 0, failed = 0;
+  let ready = 0, review = 0, failed = 0;
   for (const item of prepared) {
     if (!item.versionId) { failed++; continue; }
     const conflicts = commonConflicts.filter(conflict => conflict.documents?.includes(item.documentId));
-    const status = item.error ? "failed" : conflicts.length ? "needs_review" : "confirmed";
+    const status = item.error ? "failed" : conflicts.length ? "needs_review" : "extracted";
     const { error } = await supabase.rpc("upsert_shipment_source_extraction", {
       p_shipment_id: shipmentId, p_document_id: item.documentId, p_document_version_id: item.versionId,
       p_source_kind: item.sourceKind, p_status: status, p_extracted_data: item.result.data,
@@ -69,9 +69,9 @@ export async function extractShipmentSources(supabase: SupabaseClient, shipmentI
       p_extractor_version: EXTRACTION_VERSION,
     });
     if (error) failed++;
-    else if (status === "confirmed") confirmed++;
+    else if (status === "extracted") ready++;
     else if (status === "needs_review") review++;
     else failed++;
   }
-  return { confirmed, review, failed, total: prepared.length };
+  return { ready, review, failed, total: prepared.length };
 }
