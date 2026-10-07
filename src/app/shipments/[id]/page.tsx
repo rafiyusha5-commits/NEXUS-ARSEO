@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
+import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/load-summary";
+import { loadGenerationPreview } from "@/lib/templates/generation-service";
 import {
   addShipmentItem,
   addShipmentTransport,
@@ -57,6 +59,8 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const receivedTransports=new Set((receipts??[]).map((receipt)=>receipt.shipment_transport_id));
   const {data:templates}=permissions["templates.generate"]&&permissions["documents.create"]?await supabase.from("document_templates").select("id,name,flow_direction,counterparty_id,type:document_types(name_ru),current:document_template_versions(mime_type,is_current)").eq("status","approved").eq("is_active",true).eq("current.is_current",true).order("name"):{data:[]};
   const generationTemplates=(templates??[]).filter(template=>{const current=one(template.current)?.mime_type;const partyMatches=!template.counterparty_id||(template.flow_direction==="input"?template.counterparty_id===shipment.supplier_id:template.counterparty_id===shipment.customer_id);return partyMatches&&["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(current));});
+  let generationPreview:Awaited<ReturnType<typeof loadGenerationPreview>>|null=null;
+  if(generationTemplates.length){try{generationPreview=await loadGenerationPreview(supabase,generationTemplates[0].id,id,false);}catch{generationPreview=null;}}
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поставка · {shipment.type}</p><h1>{shipment.shipment_number}</h1></div><div className="topbar-actions"><span className={`status shipment-${shipment.status}`}>{shipmentStatus[shipment.status]??shipment.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}/report`}>Отчёт</Link><Link className="ghost button-link" href={`/tasks?view=all&shipment=${shipment.id}`}>Задачи поставки</Link><Link className="ghost button-link" href="/shipments">К реестру</Link></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
@@ -118,6 +122,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       </section>
     <>
     <ShipmentSourceDocumentsPanel shipmentId={shipment.id}/>
+    {generationPreview&&<ShipmentDocumentReadiness shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
     {permissions["templates.generate"]&&permissions["documents.create"]&&<section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Выходной комплект</p><h2>Сформировать документы перевозки</h2></div><span className="page-count">{generationTemplates.length}</span></div><p className="form-help">Система использует подтверждённые данные из загруженных инвойсов, договор-заявок и транспортных документов.</p><div className="compact-list">{generationTemplates.map(template=>{const type=one(template.type);return <div className="doc-link-row" key={template.id}><div><strong>{template.name}</strong><small>{type?.name_ru??"Документ"} · {template.flow_direction==="input"?"от поставщика":"для покупателя"}</small></div><Link className="primary button-link compact" href={`/templates/${template.id}/generate?shipment=${shipment.id}`}>Сформировать</Link></div>})}{!generationTemplates.length&&<div className="empty-state">Нет подходящих утверждённых DOCX/XLSX-шаблонов для этой поставки.</div>}</div></section>}
     <ShipmentDocumentsPanel shipmentId={shipment.id}/>
     </>
