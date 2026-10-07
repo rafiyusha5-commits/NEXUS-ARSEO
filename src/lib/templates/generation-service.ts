@@ -4,6 +4,10 @@ import { schemaToVariables } from "./rules.ts";
 import { buildShipmentGenerationData,missingGenerationFields } from "./generation.ts";
 import { mergeConfirmedSourceData } from "@/lib/document-extraction/rules.ts";
 import { buildShipmentDocumentReadiness } from "./readiness.ts";
+import { buildExportModel, preflightExport, type ExportOutput } from "../export-workbook/index.ts";
+
+const XLSX_MIME_TYPE="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const EXPORT_OUTPUTS:ExportOutput[]=["workbook","cmr","ttn","packing_list"];
 
 const one=<T,>(value:T|T[]|null|undefined):T|undefined=>Array.isArray(value)?value[0]:value??undefined;
 
@@ -40,5 +44,7 @@ export async function loadGenerationPreview(supabase:SupabaseClient,templateId:s
  const data=sourceError?baseData:mergeConfirmedSourceData(baseData,confirmedSources);
  const confirmedSourceFields=sourceError?[]:[...new Set(confirmedSources.flatMap(source=>Object.keys(source)))];
  const variables=schemaToVariables(template.variables_schema);
- return{template:{...template,current},shipment,data,variables,missing:missingGenerationFields(variables,data),containsPrices:includePrices,confirmedSourceFields,readiness:buildShipmentDocumentReadiness(data,confirmedSourceFields)};
+ const exportModel=String(current.mime_type)===XLSX_MIME_TYPE?buildExportModel(data):null;
+ const exportReadiness=exportModel?EXPORT_OUTPUTS.map(output=>({output,...preflightExport(exportModel,[output],{includePrices})})):[];
+ return{template:{...template,current},shipment,data,variables,missing:missingGenerationFields(variables,data),containsPrices:includePrices,confirmedSourceFields,readiness:buildShipmentDocumentReadiness(data,confirmedSourceFields),exportReadiness};
 }

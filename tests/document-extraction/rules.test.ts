@@ -55,3 +55,26 @@ describe("shipment source document extraction", () => {
     }), { driver_name: "Иванов Иван", gross_weight_kg: 12500.5, shipping_date: "2026-10-05" });
   });
 });
+
+describe("requisites of the export documents", () => {
+  it("recognises labelled party requisites and keeps them through sanitising", () => {
+    const result = extractShipmentFields(`
+      Город погрузки: г. Тестоград
+      Страна погрузки: Тестландия
+      Адрес продавца: Тестландия, г. Тестоград, ул. Заводская, 2
+      Адрес покупателя: Тестландия, г. Город-А, ул. Офисная, 3
+      Телефон продавца: +0 000 000 0000
+      КПП: 000000000
+      Категория товаров: тестовые изделия
+      Условия оплаты: DAP Город-А
+    `);
+    assert.equal(result.data.loading_city, "г. Тестоград");
+    assert.equal(result.data.supplier_address, "Тестландия, г. Тестоград, ул. Заводская, 2");
+    assert.equal(result.data.customer_address, "Тестландия, г. Город-А, ул. Офисная, 3");
+    assert.equal(result.data.customer_kpp, "000000000");
+    assert.equal(result.data.goods_category, "тестовые изделия");
+    const confirmed = sanitizeConfirmedSourceData({ ...result.data, bank_details: "Тест-Банк, БИК 000000000", sender_signatory: "Тестов Т.Т., директор" });
+    assert.equal(confirmed.bank_details, "Тест-Банк, БИК 000000000");
+    assert.equal(confirmed.sender_signatory, "Тестов Т.Т., директор");
+  });
+});

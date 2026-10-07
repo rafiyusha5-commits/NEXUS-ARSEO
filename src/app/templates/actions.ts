@@ -14,7 +14,7 @@ import { loadPermissions } from "@/lib/permissions.ts";
 import { loadGenerationPreview } from "@/lib/templates/generation-service.ts";
 import { DOCX_MIME, renderDocxTemplate } from "@/lib/templates/generation-docx.ts";
 import { XLSX_MIME, renderShipmentWorkbookTemplate } from "@/lib/templates/generation-xlsx.ts";
-import { renderShipmentPdf, type ExportPdfKind } from "@/lib/templates/generation-pdf.ts";
+import { buildExportDocuments, PreflightError } from "@/lib/export-workbook/index.ts";
 import { generatedFileName } from "@/lib/templates/generation.ts";
 import { DOCUMENT_BUCKET, buildDocumentStoragePath, normalizeFileName } from "@/lib/documents/files.ts";
 
@@ -57,12 +57,14 @@ function templatePath(formData: FormData) {
 
 const deps = { newId: () => crypto.randomUUID(), randomHex, sha256Hex };
 
+// CMR, ТТН and the packing list are the sheets of the filled workbook, issued as XLSX files with the print setup of the reference.
 const PACKAGE_OUTPUTS={
  workbook:{code:"shipment_workbook",format:"xlsx",label:"Рабочая книга отгрузки"},
- cmr:{code:"cmr",format:"pdf",label:"CMR"},
- ttn:{code:"ttn",format:"pdf",label:"ТТН"},
- packing_list:{code:"packing_list",format:"pdf",label:"Упаковочный лист"},
+ cmr:{code:"cmr",format:"xlsx",label:"CMR"},
+ ttn:{code:"ttn",format:"xlsx",label:"ТТН"},
+ packing_list:{code:"packing_list",format:"xlsx",label:"Упаковочный лист"},
 } as const;
+const exportErrorMessage=(error:unknown,fallback:string)=>error instanceof PreflightError?error.message:publicErrorMessage(error,fallback);
 
 export async function generateExportPackageAction(formData:FormData){
  const templateId=text(formData,"template_id"),shipmentId=text(formData,"shipment_id");
@@ -81,13 +83,14 @@ export async function generateExportPackageAction(formData:FormData){
  const storage=supabase.storage.from(DOCUMENT_BUCKET);const{data:source,error:downloadError}=await storage.download(String(version.storage_path));
  if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
  const shipmentNumber=String(preview.data.shipment_number),templateBytes=new Uint8Array(await source.arrayBuffer());
+ let built;try{built=buildExportDocuments(templateBytes,preview.data,selected,{includePrices});}catch(error){redirect(withMessage(back,"error",exportErrorMessage(error,"Не удалось заполнить книгу экспортной отгрузки.")));}
  const uploadedPaths:string[]=[];const files:Array<Record<string,unknown>>=[];
  try{
-  for(const key of selected){
-   const config=PACKAGE_OUTPUTS[key];const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();
-   const filename=key==="workbook"?generatedFileName(String(version.original_filename),shipmentNumber):`${config.label.replace(/\s+/g,"-")}-${shipmentNumber.replace(/[^A-Za-zА-Яа-я0-9._-]+/g,"-")}.pdf`;
-   const bytes=key==="workbook"?await renderShipmentWorkbookTemplate(templateBytes,preview.data):await renderShipmentPdf(key as ExportPdfKind,preview.data);
-   const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());const contentType=key==="workbook"?XLSX_MIME:"application/pdf";
+  for(const document of built){
+   const key=document.output;const config=PACKAGE_OUTPUTS[key];const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();
+   const filename=key==="workbook"?generatedFileName(String(version.original_filename),shipmentNumber):`${config.label.replace(/\s+/g,"-")}-${shipmentNumber.replace(/[^A-Za-zА-Яа-я0-9._-]+/g,"-")}.xlsx`;
+   const bytes=document.bytes;
+   const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());const contentType=XLSX_MIME;
    const{error:uploadError}=await storage.upload(path,bytes,{contentType,upsert:false,cacheControl:"0"});if(uploadError)throw uploadError;
    uploadedPaths.push(path);files.push({generation_id:generationId,document_id:documentId,document_type_code:config.code,title:`${config.label} · ${shipmentNumber}`,storage_path:path,original_filename:filename,document_number:String(generationData[`${key}_number`]||shipmentNumber),output_format:config.format,checksum_sha256:await sha256Hex(bytes)});
   }
@@ -110,7 +113,7 @@ export async function generateDocumentAction(formData:FormData){
  if(!preview.readiness.ready)redirect(withMessage(back,"error",`Документ не готов: заполните ${preview.readiness.items.filter(item=>item.required&&!item.ready).map(item=>item.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;const storage=supabase.storage.from(DOCUMENT_BUCKET);
  const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
- let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?await renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось заполнить шаблон.")));}
+ let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",exportErrorMessage(error,"Не удалось заполнить шаблон.")));}
  const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();const filename=generatedFileName(String(version.original_filename),String(preview.data.shipment_number));const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());
  const outputMime=mime===XLSX_MIME?XLSX_MIME:DOCX_MIME;const{error:uploadError}=await storage.upload(path,bytes,{contentType:outputMime,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",publicErrorMessage(uploadError,"Не удалось сохранить сформированный файл.")));
  const checksum=await sha256Hex(bytes);const title=text(formData,"title")||`${preview.template.name} · ${preview.data.shipment_number}`;const number=text(formData,"document_number")||null;

@@ -89,7 +89,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273500_document_generation.sql" >/dev/null
 # Source extraction, review and XLSX output support are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273600_source_document_extraction.sql" >/dev/null
-# Export package registration adds PDF provenance and a replaceable guarded RPC.
+# Export package registration adds output-format provenance and a replaceable guarded RPC.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273700_export_document_package.sql" >/dev/null
 # Warehouse operation documents and their posting/reversal RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273800_inventory_operation_documents.sql" >/dev/null
@@ -109,6 +109,10 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274500_calculator_identifier_reconciliation.sql" >/dev/null
 # Reviewed extraction values are validated and applied only through a guarded RPC.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274600_source_document_review.sql" >/dev/null
+# Export documents are registered as XLSX only; the guarded package RPC is replaceable (must stay after 3700).
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274700_export_documents_xlsx.sql" >/dev/null
+# Party requisites for the export documents only extend the review allow-list.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274800_source_document_requisites.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

@@ -37,6 +37,23 @@ const patterns: Pattern[] = [
   { field: "gross_weight_kg", label: "Вес брутто", expressions: [/(?:вес|масса)\s+брутто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
   { field: "net_weight_kg", label: "Вес нетто", expressions: [/(?:вес|масса)\s+нетто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
   { field: "incoterms", label: "Условия поставки", expressions: [/(?:условия\s+(?:поставки|оплаты)|incoterms?)\s*[:—-]?\s*([^\n]{3,180})/iu] },
+  // Requisites that the export CMR / ТТН / packing list print and the counterparty directory does not hold.
+  { field: "loading_city", label: "Город погрузки", expressions: [/город\s+погрузки\s*[:—-]?\s*([^\n]{2,80})/iu] },
+  { field: "loading_country", label: "Страна погрузки", expressions: [/страна\s+погрузки\s*[:—-]?\s*([^\n]{2,60})/iu] },
+  { field: "unloading_country", label: "Страна разгрузки", expressions: [/страна\s+(?:разгрузки|выгрузки|доставки)\s*[:—-]?\s*([^\n]{2,60})/iu] },
+  { field: "goods_category", label: "Категория товаров", expressions: [/категори\S*\s+товар\S*\s*[:—-]?\s*([^\n]{3,160})/iu] },
+  { field: "payment_terms", label: "Условия оплаты", expressions: [/условия\s+оплаты\s*[:—-]?\s*([^\n]{3,180})/iu] },
+  { field: "supplier_address", label: "Адрес продавца", expressions: [/адрес\s+(?:продавца|поставщика|отправителя)\s*[:—-]?\s*([^\n]{5,250})/iu] },
+  { field: "seller_correspondence_address", label: "Адрес продавца для корреспонденции", expressions: [/адрес\s+для\s+корреспонденции\s*[:—-]?\s*([^\n]{5,250})/iu] },
+  { field: "seller_phone", label: "Телефон продавца", expressions: [/телефон\S*\s+(?:продавца|поставщика)\s*[:—-]?\s*(\+?[0-9][0-9 ()-]{7,20})/iu] },
+  { field: "customer_address", label: "Адрес покупателя", expressions: [/адрес\s+(?:покупателя|получателя)\s*[:—-]?\s*([^\n]{5,250})/iu] },
+  { field: "customer_kpp", label: "КПП покупателя", expressions: [/кпп\s*[:—-]?\s*([0-9]{9})/iu] },
+];
+
+// Reviewed by hand: free-form multi-line blocks that no stable label identifies in a document.
+const manualFields: SourceFieldDefinition[] = [
+  { key: "bank_details", label: "Банк-корреспондент продавца (реквизиты)", type: "text" },
+  { key: "sender_signatory", label: "Подписант отправителя (ФИО и должность)", type: "text" },
 ];
 
 const datePatterns: Array<[string, string, RegExp[]]> = [
@@ -49,6 +66,7 @@ const datePatterns: Array<[string, string, RegExp[]]> = [
 export const SOURCE_FIELD_DEFINITIONS: SourceFieldDefinition[] = [
   ...patterns.map(pattern => ({ key: pattern.field, label: pattern.label, type: (["pallet_count", "gross_weight_kg", "net_weight_kg"].includes(pattern.field) ? "number" : "text") as SourceFieldDefinition["type"] })),
   ...datePatterns.map(([key, label]) => ({ key, label, type: "date" as const })),
+  ...manualFields,
 ];
 
 const sourceFieldKeys = new Set(SOURCE_FIELD_DEFINITIONS.map(field => field.key));
@@ -64,7 +82,7 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
       if (Number.isFinite(parsed) && parsed >= 0) cleanData[field.key] = parsed;
       continue;
     }
-    const cleaned = clean(String(raw)).slice(0, field.key.endsWith("address") ? 500 : 200);
+    const cleaned = clean(String(raw)).slice(0, field.key.endsWith("address") || field.key === "bank_details" ? 500 : 200);
     if (cleaned) cleanData[field.key] = field.type === "date" ? isoDate(cleaned) : cleaned;
   }
   return cleanData;

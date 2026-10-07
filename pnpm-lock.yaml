@@ -17,6 +17,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.117.2
         version: 2.117.2
+      '@xmldom/xmldom':
+        specifier: 0.9.12
+        version: 0.9.12
       docxtemplater:
         specifier: ^3.71.0
         version: 3.71.0
