@@ -1,3 +1,5 @@
+import { normalizeProductName } from "../document-extraction/esf.ts";
+
 // Normalised view of one shipment for the export workbook. It is built from the flat generation
 // data (shipment card + confirmed source documents) and contains no spreadsheet knowledge.
 
@@ -66,6 +68,8 @@ export type ExportModel = {
   senderTitle: string;
   items: ExportItem[];
   includesPrices: boolean;
+  /** Differences between the shipment and the confirmed invoice, for the pre-flight check. */
+  invoiceNotes: string[];
 };
 
 const COUNTRIES: Record<string, string> = {
@@ -106,6 +110,33 @@ export function formatRuDate(iso: string) {
   return match ? `${match[3]}.${match[2]}.${match[1]}` : iso;
 }
 
+/**
+ * Matches the lines of the confirmed electronic invoice to shipment items (by product name, then by
+ * HS code and quantity). The invoice price is the selling price printed on CMR and ТТН, so it replaces
+ * any other price of a matched item, but only when prices were requested; the HS code only fills a gap.
+ */
+function reconcileWithInvoice(items: ExportItem[], lines: Array<Record<string, unknown>>, withPrices: boolean) {
+  const notes: string[] = [];
+  if (!lines.length) return notes;
+  const invoice = lines.map(line => ({ name: str(line.product_name), hs: str(line.hs_code), quantity: num(line.quantity), price: num(line.unit_price) }));
+  const used = new Set<number>();
+  items.forEach((item, index) => {
+    const key = normalizeProductName(item.productName);
+    let found = invoice.findIndex((line, position) => !used.has(position) && !!key && normalizeProductName(line.name) === key);
+    if (found < 0) found = invoice.findIndex((line, position) => !used.has(position) && !!line.hs && line.hs === item.hsCode && line.quantity !== null && line.quantity === item.pieces);
+    const title = `Позиция ${index + 1}${item.productName ? ` «${item.productName}»` : ""}`;
+    if (found < 0) { notes.push(`${title}: не найдена среди строк инвойса`); return; }
+    used.add(found);
+    const line = invoice[found];
+    if (withPrices && line.price !== null && line.price > 0) item.unitPrice = line.price;
+    if (!item.hsCode && line.hs) item.hsCode = line.hs;
+    if (line.hs && item.hsCode && line.hs !== item.hsCode) notes.push(`${title}: код ТН ВЭД ${item.hsCode} в поставке, ${line.hs} в инвойсе`);
+    if (line.quantity !== null && item.pieces !== null && Math.abs(line.quantity - item.pieces) > 1e-6) notes.push(`${title}: ${item.pieces} шт. в поставке, ${line.quantity} шт. в инвойсе`);
+  });
+  invoice.forEach((line, position) => { if (!used.has(position)) notes.push(`Строка инвойса «${line.name}» (${line.quantity ?? "?"} шт.) отсутствует в поставке`); });
+  return notes;
+}
+
 export function buildExportModel(data: Record<string, unknown>): ExportModel {
   const transports = rows(data.transports);
   const first = transports[0] ?? {};
@@ -131,11 +162,12 @@ export function buildExportModel(data: Record<string, unknown>): ExportModel {
       grossWeightKg: positive(num(item.total_gross_weight_kg)),
     };
   });
+  const invoiceNotes = reconcileWithInvoice(items, rows(data.invoice_lines), data.prices_included === true);
+  const includesPrices = items.some(item => item.unitPrice !== null);
   const hsCodes = str(data.hs_codes) || [...new Set(items.map(item => item.hsCode).filter(Boolean))].join(", ");
   // A load is counted in whole pallets: per-line fractions (a pallet shared by two products) are rounded up in the total only.
   const summed = items.length && items.every(item => item.pallets !== null) ? Math.ceil(items.reduce((sum, item) => sum + (item.pallets ?? 0), 0) - 1e-9) : null;
   const palletCount = num(data.pallet_count) ?? summed;
-  const includesPrices = items.some(item => item.unitPrice !== null);
   return {
     orderNumber: str(data.order_number) || str(data.project_code) || str(data.shipment_number),
     orderDate: isoDate(data.order_date) || isoDate(data.planned_ready_date),
@@ -181,6 +213,7 @@ export function buildExportModel(data: Record<string, unknown>): ExportModel {
     senderTitle: str(data.sender_signatory),
     items,
     includesPrices,
+    invoiceNotes,
   };
 }
 

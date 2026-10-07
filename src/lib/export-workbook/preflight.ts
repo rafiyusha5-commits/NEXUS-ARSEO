@@ -65,6 +65,7 @@ export function preflightExport(model: ExportModel, selected: ExportOutput[] = A
   if (!includePrices && selected.some(output => ["workbook", "cmr", "ttn"].includes(output))) {
     issues.push({ key: "prices", label: "Объявленная стоимость и сумма (цены не включены)", severity: "recommended", where: "CMR!C37, ТТН!N27, для Диляры, столбцы F–G", source: "Инвойс; требуется право на цены", outputs: ["cmr", "ttn"] });
   }
+  model.invoiceNotes.forEach((note, index) => issues.push({ key: `invoice.${index}`, label: `Сверка с инвойсом: ${note}`, severity: "recommended", where: "для Диляры, упаков.лист (таблицы товаров)", source: "Подтверждённый инвойс", outputs: ["workbook"] }));
   const requiredMissing = issues.filter(issue => issue.severity === "required").length;
   return { ready: requiredMissing === 0, requiredMissing, recommendedMissing: issues.length - requiredMissing, issues };
 }

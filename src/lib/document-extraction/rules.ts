@@ -1,4 +1,6 @@
-export const EXTRACTION_VERSION = "rules-v1";
+import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
+
+export const EXTRACTION_VERSION = "rules-v2";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -89,6 +91,7 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 }
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
+  if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
   if (/договор[- ]заявк|transport\s+order|заявк\S*\s+на\s+перевоз/u.test(text)) return "transport_order";
@@ -136,6 +139,16 @@ export function extractShipmentFields(rawText: string): ExtractionResult {
       evidence[field] = { label, value, confidence: 0.9 };
       break;
     }
+  }
+  if (isElectronicInvoice(text)) {
+    // The electronic invoice is a fixed form: its boxes are more reliable than free-text patterns.
+    const esf = parseElectronicInvoice(text);
+    for (const [field, value] of Object.entries(esf.data)) {
+      if (!sourceFieldKeys.has(field)) continue;
+      data[field] = value;
+      evidence[field] = { label: SOURCE_FIELD_DEFINITIONS.find(item => item.key === field)?.label ?? field, value, confidence: 0.95 };
+    }
+    if (esf.items.length) data.invoice_items = esf.items;
   }
   return { data, evidence, conflicts: [] };
 }

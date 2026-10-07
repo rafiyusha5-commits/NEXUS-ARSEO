@@ -23,6 +23,7 @@ begin
  if jsonb_typeof(coalesce(p_confirmed_data,'{}'::jsonb))<>'object' then raise exception 'Подтверждённые данные должны быть объектом';end if;
 
  for v_key,v_value in select key,value from jsonb_each(coalesce(p_confirmed_data,e.extracted_data)) loop
+  if v_key='invoice_items' then continue;end if; -- structured invoice lines are read from the confirmed extraction itself
   if not(v_key=any(v_allowed)) then raise exception 'Недопустимое поле распознавания: %',v_key;end if;
   if jsonb_typeof(v_value) not in('string','number') then raise exception 'Некорректное значение поля %',v_key;end if;
   v_text:=btrim(v_value#>>'{}');

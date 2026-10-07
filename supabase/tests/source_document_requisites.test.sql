@@ -42,6 +42,21 @@ do $$ declare v_message text; v_long text:=repeat('а',480); begin
  assert v_message like '%слишком длинное%','ordinary fields keep the 200-character limit';
 end $$;
 
+-- An electronic invoice brings structured lines next to the scalar fields; confirming the whole
+-- extraction must neither fail on them nor copy them into confirmed_data (they stay in extracted_data).
+reset role;
+update public.shipment_source_extractions
+ set extracted_data=extracted_data||'{"esf_number":"777","invoice_items":[{"line_number":1,"product_name":"X","hs_code":"0000000001","uom":"Штука","quantity":1,"unit_price":2,"line_total":2}]}'::jsonb
+ where id='fe400000-0000-4000-8000-000000000001';
+set role authenticated;
+select set_config('request.jwt.claim.sub','fe000000-0000-4000-8000-000000000001',false);
+do $$ begin
+ perform public.confirm_shipment_source_extraction('fe400000-0000-4000-8000-000000000001');
+ assert (select confirmed_data->>'esf_number' from public.shipment_source_extractions where id='fe400000-0000-4000-8000-000000000001')='777','scalar invoice fields are confirmed';
+ assert (select not (confirmed_data ? 'invoice_items') from public.shipment_source_extractions where id='fe400000-0000-4000-8000-000000000001'),'structured lines are not copied into confirmed data';
+ assert (select jsonb_array_length(extracted_data->'invoice_items') from public.shipment_source_extractions where id='fe400000-0000-4000-8000-000000000001')=1,'invoice lines stay readable on the confirmed extraction';
+end $$;
+
 reset role;
 rollback;
 \echo 'source_document_requisites: all checks passed'
