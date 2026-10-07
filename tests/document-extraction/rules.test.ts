@@ -84,6 +84,30 @@ describe("shipment source document extraction", () => {
     assert.equal(result.data.order_number, undefined);
     assert.equal(result.data.driver_phone, undefined);
   });
+
+  it("extracts Kazakhstan identity-card names without treating labels as document numbers", () => {
+    const result = extractShipmentFields(`
+РЕСПУБЛИКА КАЗАХСТАН УДОСТОВЕРЕНИЕ ЛИЧНОСТИ
+ТЕП/ ФАМИЛИЯ
+ТОЛЫБАЙ
+АТЫ/ ИМЯ
+АНУАР
+ӘКЕСІНІҢ АТЫ / ОТЧЕСТВО,
+СЕР1КБОЛАТУЛЫ
+`);
+    assert.equal(result.data.driver_name, "ТОЛЫБАЙ АНУАР СЕР1КБОЛАТУЛЫ");
+    assert.equal(result.data.driver_document, undefined);
+  });
+
+  it("extracts plate and make from a Kazakhstan vehicle registration certificate", () => {
+    const result = extractShipmentFields(`
+REPUBLIC OF KAZAKHSTAN CERTIFICAT D'IMMATRICULATION
+1. 044WSTO4 2. ГАЗ 27055 3. B/N1
+4. 14.08.2026 5. X96270550C0737744
+`);
+    assert.equal(result.data.vehicle_plate, "044WSTO4");
+    assert.equal(result.data.vehicle_make, "ГАЗ 27055");
+  });
 });
 
 describe("requisites of the export documents", () => {

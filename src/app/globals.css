@@ -28,6 +28,7 @@ h1,h2,p { margin:0; } h1 { font-size:28px; letter-spacing:-.04em; } h2 { font-si
 .eyebrow { text-transform:uppercase; color:#7a857f; font-size:10px; letter-spacing:.16em; font-weight:800; margin-bottom:7px; }
 .top-actions { display:flex; gap:10px; } button { border:0; cursor:pointer; border-radius:10px; padding:11px 16px; font-size:13px; font-weight:700; }
 .primary { background:var(--green); color:white; }.primary:hover{background:#144735}.ghost { background:white; color:var(--ink); border:1px solid var(--line); }
+.primary:disabled,.ghost:disabled{cursor:wait;opacity:.65}
 .summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:32px 0 18px; }
 .summary-card,.panel { background:#fff; border:1px solid var(--line); border-radius:15px; box-shadow:0 3px 18px rgba(24,56,45,.04); }
 .summary-card { padding:20px; }.summary-card p { font-size:12px; color:var(--muted); }.summary-card strong { display:block; font-size:25px; margin:12px 0 5px; letter-spacing:-.04em; }.summary-card small { color:#7a857f; font-size:11px; }

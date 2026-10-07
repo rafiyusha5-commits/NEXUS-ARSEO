@@ -125,9 +125,38 @@ export function extractShipmentFields(rawText: string): ExtractionResult {
       if (!match?.[1]) continue;
       const value = clean(match[1]);
       if (!value) continue;
+      // OCR can put the next printed label on the same line as a field heading. A driver
+      // document value without any digit is a label/name, not an identity-document number.
+      if (pattern.field === "driver_document" && !/\d/u.test(value)) continue;
       data[pattern.field] = ["pallet_count", "gross_weight_kg", "net_weight_kg"].includes(pattern.field) ? Number(value.replace(/\s/g, "").replace(",", ".")) : value;
       evidence[pattern.field] = { label: pattern.label, value, confidence: pattern.confidence ?? 0.85 };
       break;
+    }
+  }
+  // Kazakhstan identity cards lay surname, name and patronymic out on separate labelled lines.
+  // Tesseract commonly reads ТЕГ as ТЕП, so accept that spelling but keep the result for review.
+  if (!data.driver_name && /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ/iu.test(text)) {
+    const identityName = text.match(/(?:ТЕГ|ТЕП)\s*\/\s*ФАМИЛИЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*АТЫ\s*\/\s*ИМЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*ӘКЕСІНІҢ\s+АТЫ\s*\/\s*ОТЧЕСТВО[,.]?\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)/u);
+    if (identityName) {
+      const value = identityName.slice(1, 4).join(" ");
+      data.driver_name = value;
+      evidence.driver_name = { label: "Водитель", value, confidence: 0.7 };
+    }
+  }
+  // Kazakhstan vehicle registration certificates encode plate and make as numbered fields 1 and 2.
+  if (/CERTIFICAT\s+D['’]?IMMATRICULATION|СВИДЕТЕЛЬСТВ\S*\s+О\s+РЕГИСТРАЦИИ/iu.test(text)) {
+    const registration = text.match(/(?:^|\n)\s*1\.\s*([A-ZА-Я0-9]{5,14})\s+2\.\s*([A-ZА-Я][A-ZА-Я0-9 ./-]{2,40}?)(?=\s+3\.)/imu);
+    if (registration) {
+      if (!data.vehicle_plate) {
+        const value = clean(registration[1]);
+        data.vehicle_plate = value;
+        evidence.vehicle_plate = { label: "Госномер автомобиля", value, confidence: 0.75 };
+      }
+      if (!data.vehicle_make) {
+        const value = clean(registration[2]);
+        data.vehicle_make = value;
+        evidence.vehicle_make = { label: "Марка автомобиля", value, confidence: 0.75 };
+      }
     }
   }
   for (const [field, label, expressions] of datePatterns) {

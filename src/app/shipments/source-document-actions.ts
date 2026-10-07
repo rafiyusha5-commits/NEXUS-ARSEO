@@ -15,7 +15,7 @@ const value = (formData: FormData, key: string) => {
   return typeof raw === "string" ? raw.trim() : "";
 };
 const back = (shipmentId: string, kind: "error" | "success", message: string) =>
-  `/shipments/${shipmentId}?${kind}=${encodeURIComponent(message)}#source-documents`;
+  `/shipments/${shipmentId}?tab=documents&source_${kind}=${encodeURIComponent(message)}#source-documents`;
 
 export async function extractShipmentSourcesAction(formData: FormData) {
   const shipmentId = value(formData, "shipment_id");
