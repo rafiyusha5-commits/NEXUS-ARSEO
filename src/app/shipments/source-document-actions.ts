@@ -7,6 +7,7 @@ import { loadPermissions } from "@/lib/permissions";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
 import { sanitizeConfirmedSourceData, SOURCE_FIELD_DEFINITIONS } from "@/lib/document-extraction/rules";
 import { publicErrorMessage } from "@/lib/errors/public-message";
+import { describeExtractionSummary } from "@/lib/document-extraction/summary";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const value = (formData: FormData, key: string) => {
@@ -28,7 +29,23 @@ export async function extractShipmentSourcesAction(formData: FormData) {
   try { summary = await extractShipmentSources(supabase, shipmentId); }
   catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы."))); }
   revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", `Готово к подтверждению: ${summary.ready}; с расхождениями: ${summary.review}; не прочитано: ${summary.failed}`));
+  redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));
+}
+
+// Another attempt for one unread document. Going beyond the attempt limit is a reviewer's decision (the database checks it).
+export async function retryShipmentSourceOcrAction(formData: FormData) {
+  const shipmentId = value(formData, "shipment_id");
+  const documentId = value(formData, "document_id");
+  if (!UUID.test(shipmentId) || !UUID.test(documentId)) redirect("/shipments?error=Некорректные данные");
+  const { supabase } = await requireUser();
+  const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.view", "shipments.view"] as const);
+  if (!permissions["source_documents.extract"] || !permissions["documents.view"] || !permissions["shipments.view"])
+    redirect(back(shipmentId, "error", "Недостаточно прав для распознавания исходных документов"));
+  let summary;
+  try { summary = await extractShipmentSources(supabase, shipmentId, { documentId, force: permissions["source_documents.review"] }); }
+  catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error, "Не удалось повторить распознавание."))); }
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back(shipmentId, summary.failed ? "error" : "success", describeExtractionSummary(summary)));
 }
 
 export async function confirmShipmentSourceAction(formData: FormData) {

@@ -1,6 +1,10 @@
 import "server-only";
 import PizZip from "pizzip";
 import ExcelJS from "exceljs";
+import { NeedsOcrError } from "@/lib/ocr/types";
+
+// A PDF whose text layer holds fewer visible characters than this is treated as a scan.
+const MIN_TEXT_LAYER_CHARS = 40;
 
 export async function extractDocumentText(bytes: Uint8Array, mimeType: string) {
   if (mimeType === "application/pdf") {
@@ -8,7 +12,7 @@ export async function extractDocumentText(bytes: Uint8Array, mimeType: string) {
     const parse = pdfParser.default as unknown as (input: Buffer) => Promise<{ text?: string }>;
     const result = await parse(Buffer.from(bytes) as never);
     const text = result.text?.trim() ?? "";
-    if (!text) throw new Error("В PDF нет текстового слоя. Требуется OCR или текстовая версия файла");
+    if (text.replace(/\s/g, "").length < MIN_TEXT_LAYER_CHARS) throw new NeedsOcrError("scan_pdf");
     return text;
   }
   if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
@@ -43,6 +47,6 @@ export async function extractDocumentText(bytes: Uint8Array, mimeType: string) {
   }
   if (mimeType === "text/csv") return new TextDecoder("utf-8").decode(bytes);
   if (mimeType === "application/vnd.ms-excel") throw new Error("Автоматическое чтение XLS пока не поддерживается. Сохраните копию в XLSX");
-  if (mimeType.startsWith("image/")) throw new Error("Для изображения требуется OCR; загрузите текстовый PDF или XLSX");
+  if (mimeType === "image/jpeg" || mimeType === "image/png") throw new NeedsOcrError("image");
   throw new Error("Формат исходного документа пока не поддерживается для распознавания");
 }

@@ -113,6 +113,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274700_export_documents_xlsx.sql" >/dev/null
 # Party requisites for the export documents only extend the review allow-list.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274800_source_document_requisites.sql" >/dev/null
+# OCR for scanned source documents: permission, columns and replaceable job RPCs are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274900_source_document_ocr.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

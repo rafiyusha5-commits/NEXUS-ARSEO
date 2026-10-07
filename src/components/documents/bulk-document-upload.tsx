@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_SIZE_BYTES, MAX_DOCUMENT_FILE_SIZE_LABEL } from "@/lib/documents/files";
+import { describeExtractionSummary } from "@/lib/document-extraction/summary";
 import { inferDocumentTypeId, titleFromFileName, type BulkDocumentType } from "@/lib/documents/bulk";
 
 type UploadType = BulkDocumentType & { category: string };
@@ -75,9 +76,9 @@ export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }
       setBatchMessage("Документы загружены. Система распознаёт комплект и сверяет данные…");
       try {
         const response = await fetch(`/api/shipments/${autoExtractShipmentId}/sources/extract`, { method: "POST" });
-        const result = await response.json() as { ok?: boolean; error?: string; summary?: { ready: number; review: number; failed: number } };
+        const result = await response.json() as { ok?: boolean; error?: string; summary?: { ready: number; review: number; failed: number; processing?: number; deferred?: number; reused?: number } };
         if (!response.ok || !result.ok || !result.summary) throw new Error(result.error || "Не удалось распознать комплект");
-        setBatchMessage(`Готово к подтверждению: ${result.summary.ready}; есть расхождения: ${result.summary.review}; не прочитано: ${result.summary.failed}.`);
+        setBatchMessage(describeExtractionSummary(result.summary));
       } catch (error) {
         setBatchMessage(`Файлы сохранены, но автоматическое распознавание не завершено: ${error instanceof Error ? error.message : "ошибка"}. Можно повторить его кнопкой ниже.`);
       }

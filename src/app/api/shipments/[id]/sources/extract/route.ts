@@ -4,6 +4,9 @@ import { extractShipmentSources } from "@/lib/document-extraction/shipment-servi
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions";
 
+// Scans are read one by one by an external service, so a run may take longer than a text-only run.
+export const maxDuration = 300;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
