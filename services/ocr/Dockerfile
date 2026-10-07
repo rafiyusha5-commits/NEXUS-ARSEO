@@ -2,7 +2,7 @@ FROM python:3.12.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    OCR_SERVICE_PORT=8080
+    PORT=8080
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -22,4 +22,4 @@ COPY app ./app
 USER ocr
 
 EXPOSE 8080
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${OCR_SERVICE_PORT} --no-access-log --workers 1"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --no-access-log --workers 1"]
