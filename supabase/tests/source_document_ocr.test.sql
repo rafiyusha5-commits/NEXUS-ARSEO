@@ -186,9 +186,12 @@ do $$ declare v jsonb; begin
  perform public.confirm_shipment_source_extraction((select id from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'));
  assert (select status from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001')='confirmed','employee confirmation works';
  v:=pg_temp.begin_ocr(repeat('d',64),'other','other-1',true);
- assert v->>'action'='reuse','a confirmed extraction is never re-run or overwritten, not even when forced';
+ assert v->>'action'='run','a reviewer can withdraw an incorrect confirmation and run OCR again';
+ assert (select status='pending' and confirmed_data='{}'::jsonb and reviewed_by is null and reviewed_at is null
+  from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'),
+  'forced re-recognition clears only the old extraction review';
  perform public.upsert_shipment_source_extraction('ff300000-0000-4000-8000-000000000001','ff200000-0000-4000-8000-000000000001','ff210001-0000-4000-8000-000000000001','driver_document','extracted','{"vehicle_plate":"changed"}');
- assert (select status from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001')='confirmed','text re-recognition does not undo a confirmation';
+ assert (select status from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001')='pending','text recognition cannot overwrite the active OCR job';
 end $$;
 
 -- ---------- OCR never writes to the shipment ----------

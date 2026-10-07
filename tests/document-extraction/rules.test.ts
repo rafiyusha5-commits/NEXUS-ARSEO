@@ -99,6 +99,11 @@ describe("shipment source document extraction", () => {
     assert.equal(result.data.driver_document, undefined);
   });
 
+  it("accepts the identity-card number read from the protected OCR document zone", () => {
+    const result = extractShipmentFields("NEXUS_DOCUMENT_NUMBER: 123456789\nУДОСТОВЕРЕНИЕ ЛИЧНОСТИ");
+    assert.equal(result.data.driver_document, "123456789");
+  });
+
   it("extracts plate and make from a Kazakhstan vehicle registration certificate", () => {
     const result = extractShipmentFields(`
 REPUBLIC OF KAZAKHSTAN CERTIFICAT D'IMMATRICULATION

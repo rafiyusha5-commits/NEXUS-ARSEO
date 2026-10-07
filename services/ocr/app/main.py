@@ -4,6 +4,7 @@ import base64
 import binascii
 import io
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Annotated, Literal
@@ -16,12 +17,12 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from pytesseract import Output
 
-SERVICE_VERSION = "tesseract-v1"
+SERVICE_VERSION = "tesseract-v2"
 MAX_FILE_BYTES = int(os.getenv("OCR_SERVICE_MAX_FILE_BYTES", str(4 * 1024 * 1024)))
 MAX_PAGES = int(os.getenv("OCR_SERVICE_MAX_PAGES", "5"))
 MAX_PIXELS = int(os.getenv("OCR_SERVICE_MAX_PIXELS", "40000000"))
 MAX_REQUEST_BYTES = 6 * 1024 * 1024
-DEFAULT_LANGUAGES = "rus+kaz+eng"
+DEFAULT_LANGUAGES = "kaz+rus+eng"
 ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 
 
@@ -168,7 +169,39 @@ def recognize_page(image: Image.Image) -> PageResult:
             continue
         if confidence >= 0:
             words.append(OcrWord(text=word[:200], confidence=min(1, confidence / 100)))
-    return PageResult(text=text, words=words)
+    extras: list[str] = []
+    if re.search(r"УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК", text, re.IGNORECASE):
+        # Kazakhstan identity cards use a stable two-sided layout. A sparse full-page pass often
+        # misses the small number on the upper-right of the reverse side, so read that zone alone.
+        width, height = image.size
+        number_zone = image.crop((int(width * 0.60), int(height * 0.39), int(width * 0.99), int(height * 0.58)))
+        number_zone = ImageOps.autocontrast(ImageOps.grayscale(number_zone)).resize(
+            (number_zone.width * 2, number_zone.height * 2), Image.Resampling.LANCZOS
+        )
+        number_text = pytesseract.image_to_string(
+            number_zone,
+            lang="eng",
+            config="--oem 1 --psm 11 -c tessedit_char_whitelist=0123456789",
+        )
+        candidates = []
+        for line in number_text.splitlines():
+            digits = re.sub(r"\D", "", line)
+            if len(digits) == 9:
+                candidates.append(digits)
+        if candidates:
+            extras.append(f"NEXUS_DOCUMENT_NUMBER: {candidates[0]}")
+
+        # Read the labelled name block with Kazakh first so І/Ұ/Ә/Ө/Ү/Қ/Ғ/Ң are not needlessly
+        # replaced by Russian look-alikes. The main pass is retained as a fallback.
+        name_zone = image.crop((int(width * 0.34), int(height * 0.12), int(width * 0.97), int(height * 0.42)))
+        name_zone = ImageOps.autocontrast(ImageOps.grayscale(name_zone)).resize(
+            (name_zone.width * 2, name_zone.height * 2), Image.Resampling.LANCZOS
+        )
+        name_text = pytesseract.image_to_string(name_zone, lang="kaz+rus", config="--oem 1 --psm 6").strip()
+        if name_text:
+            extras.append(name_text)
+    combined = "\n".join([*extras, text]).strip()
+    return PageResult(text=combined, words=words)
 
 
 @app.get("/health")

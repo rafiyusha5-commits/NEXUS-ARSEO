@@ -115,6 +115,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274800_source_document_requisites.sql" >/dev/null
 # OCR for scanned source documents: permission, columns and replaceable job RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274900_source_document_ocr.sql" >/dev/null
+# Reviewers may explicitly withdraw a wrong OCR confirmation and start a clean proposal.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
