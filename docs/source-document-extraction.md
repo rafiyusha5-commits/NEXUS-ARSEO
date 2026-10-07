@@ -79,6 +79,11 @@ XLS необходимо сохранить контролируемой коп�
 
 Контракт собственного сервиса: `POST` с `Authorization: Bearer <token>` и JSON `{ mime_type, content_base64, max_pages, language_hints }`; ответ `{ text, pages?, confidence?, words?: [{ text, confidence }] }`.
 
+Референсная реализация собственного сервиса находится в [`services/ocr`](../services/ocr/README.md).
+Она использует Tesseract с русским, казахским и английским языками, запускается в отдельном
+контейнере и не сохраняет документы. Контейнер должен находиться за корпоративным HTTPS reverse
+proxy; прямой порт сервиса нельзя публиковать в интернет.
+
 Дополнительные ограничения (необязательные): `OCR_MAX_FILE_BYTES`, `OCR_MAX_PAGES`, `OCR_MAX_PIXELS`, `OCR_TIMEOUT_MS`, `OCR_MAX_DOCUMENTS_PER_RUN`, `OCR_MAX_ATTEMPTS`, `OCR_LEASE_SECONDS`, `OCR_RUN_BUDGET_MS`. Значения нельзя хранить в репозитории; интерфейс показывает только «OCR настроен / не настроен».
 
 ### Риски передачи конфиденциальных документов
