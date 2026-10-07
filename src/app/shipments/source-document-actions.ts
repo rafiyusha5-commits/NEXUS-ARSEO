@@ -27,7 +27,10 @@ export async function extractShipmentSourcesAction(formData: FormData) {
 
   let summary;
   try { summary = await extractShipmentSources(supabase, shipmentId); }
-  catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы."))); }
+  catch (error) {
+    console.error("[source-document-extraction]", error);
+    redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы.")));
+  }
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));
 }

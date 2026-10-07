@@ -46,7 +46,10 @@ export async function extractShipmentSources(
   if (!documentIds.length) throw new Error("Сначала загрузите исходные документы поставки");
 
   const [{ data: documents, error: documentsError }, { data: generated }] = await Promise.all([
-    supabase.from("documents").select("id,title,archived_at,type:document_types(code),versions:document_versions(id,storage_path,mime_type,is_current,version_number)").in("id", documentIds),
+    supabase
+      .from("documents")
+      .select("id,title,archived_at,type:document_types(code),versions:document_versions!document_versions_document_id_fkey(id,storage_path,mime_type,is_current,version_number)")
+      .in("id", documentIds),
     supabase.from("document_generations").select("document_id").in("document_id", documentIds),
   ]);
   if (documentsError) throw new Error(documentsError.message);
