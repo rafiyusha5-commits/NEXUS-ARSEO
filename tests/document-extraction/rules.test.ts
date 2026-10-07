@@ -54,6 +54,36 @@ describe("shipment source document extraction", () => {
       driver_name: "  Иванов   Иван  ", gross_weight_kg: "12 500,5", shipping_date: "2026-10-05", unknown: "secret", conflicts: [],
     }), { driver_name: "Иванов Иван", gross_weight_kg: 12500.5, shipping_date: "2026-10-05" });
   });
+
+  it("does not treat contract prose as shipment requisites", () => {
+    const result = extractShipmentFields(`
+Договор-Заявка на международные перевозки груза No ARS-04 от 23 сентября 2026 г.
+Заказчик
+ТОО «ARSEO»
+Перевозчик
+ИП WST AUTO
+Адрес места загрузки Баишева 7
+Адрес места выгрузки г. Екатеринбург, ул. Айвазовского 52
+ФИО, паспортные данные, моб. тел.
+водителя
+Номер а/м, п/п
+Толыбай Ануар Серікболатұлы
+уд/лич: 123456789 выдано МВД РК
+Машина: ГАЗ 27055
+Заказчик Перевозчик
+Водитель должен быть штатным работником перевозчика.
+Разгрузки до даты, указанной в графе «срок доставки».
+    `);
+    assert.equal(result.data.contract_number, "ARS-04");
+    assert.equal(result.data.carrier_name, "ИП WST AUTO");
+    assert.equal(result.data.loading_address, "Баишева 7");
+    assert.equal(result.data.unloading_address, "г. Екатеринбург, ул. Айвазовского 52");
+    assert.equal(result.data.driver_name, "Толыбай Ануар Серікболатұлы");
+    assert.equal(result.data.driver_document, "123456789 выдано МВД РК");
+    assert.equal(result.data.vehicle_make, "ГАЗ 27055");
+    assert.equal(result.data.order_number, undefined);
+    assert.equal(result.data.driver_phone, undefined);
+  });
 });
 
 describe("requisites of the export documents", () => {

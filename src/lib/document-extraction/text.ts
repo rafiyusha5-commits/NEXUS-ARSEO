@@ -4,7 +4,10 @@ import ExcelJS from "exceljs";
 
 export async function extractDocumentText(bytes: Uint8Array, mimeType: string) {
   if (mimeType === "application/pdf") {
-    const pdfParser = await import("pdf-parse");
+    // Import the parser implementation directly. The package entry point contains
+    // a CLI/debug branch that Next.js can mistake for the main module and then
+    // tries to open pdf-parse's non-shipped test fixture at runtime.
+    const pdfParser = await import("pdf-parse/lib/pdf-parse.js");
     const parse = pdfParser.default as unknown as (input: Buffer) => Promise<{ text?: string }>;
     const result = await parse(Buffer.from(bytes) as never);
     const text = result.text?.trim() ?? "";
