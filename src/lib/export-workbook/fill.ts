@@ -139,6 +139,9 @@ function fillBlocks(workbook: XlsxWorkbook, model: ExportModel, packingDelta: nu
 
   put(lines, "C5", contract); put(driver, "C5", contract); put(packing, "K4", contract ? `к Контракту ${contract}` : "");
   put(lines, "C7", parties); put(driver, "C7", parties); put(packing, "K6", parties);
+  // The reference formulas point these two labels at the opposite inputs. Issued documents must
+  // show the registration number beside «Гос.номер прицепа» and the make beside «Марка прицепа».
+  put(packing, "C5", model.trailerPlate); put(packing, "C6", model.trailerMake);
 
   put(cmr, "A3", model.sellerName); put(cmr, "A4", model.sellerAddress); put(cmr, "A5", model.sellerCountry);
   put(cmr, "A9", model.buyerName); put(cmr, "A10", model.buyerAddress); put(cmr, "A11", "");

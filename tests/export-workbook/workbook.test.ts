@@ -83,6 +83,8 @@ describe("filling the reference workbook", () => {
     assert.equal(book.sheet("CMR").raw("H9"), "ТОО «Тест-Перевозчик»", "carrier is shown in CMR box 16");
     assert.equal(book.sheet("ТТН").raw("H9"), "Иванов И.И.");
     assert.equal(book.sheet("CMR").raw("A51"), "Автомобиль TESTTRUCK 111AAA11, Прицеп 22BBB22 TESTTRAILER");
+    assert.equal(book.sheet("упаков.лист").raw("C5"), "22BBB22", "номер прицепа стоит возле правильной подписи");
+    assert.equal(book.sheet("упаков.лист").raw("C6"), "TESTTRAILER", "марка прицепа стоит возле правильной подписи");
     assert.equal(book.sheet("упаков.лист").raw("K4"), "к Контракту № T-777 от 31.12.2029");
     assert.equal(book.sheet("для Диляры").raw("C7"), "ТОО «Тест-Продавец» и ООО «Тест-Покупатель»");
   });

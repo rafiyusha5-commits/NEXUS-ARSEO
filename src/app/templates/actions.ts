@@ -67,34 +67,37 @@ const PACKAGE_OUTPUTS={
 const exportErrorMessage=(error:unknown,fallback:string)=>error instanceof PreflightError?error.message:publicErrorMessage(error,fallback);
 
 export async function generateExportPackageAction(formData:FormData){
- const templateId=text(formData,"template_id"),shipmentId=text(formData,"shipment_id");
- const back=UUID.test(templateId)?`/templates/${templateId}/generate?shipment=${encodeURIComponent(shipmentId)}&prices=${text(formData,"include_prices")==="true"?"1":"0"}`:"/templates";
+ const templateId=text(formData,"template_id"),shipmentId=text(formData,"shipment_id"),transportId=text(formData,"transport_id");
+ const back=UUID.test(templateId)?`/templates/${templateId}/generate?shipment=${encodeURIComponent(shipmentId)}${UUID.test(transportId)?`&transport=${encodeURIComponent(transportId)}`:""}&prices=${text(formData,"include_prices")==="true"?"1":"0"}`:"/templates";
  if(!UUID.test(templateId)||!UUID.test(shipmentId))redirect(withMessage(back,"error","Выберите шаблон и поставку"));
  const selected=[...new Set(formData.getAll("outputs").filter((value):value is string=>typeof value==="string"&&value in PACKAGE_OUTPUTS))] as Array<keyof typeof PACKAGE_OUTPUTS>;
  if(!selected.length)redirect(withMessage(back,"error","Отметьте документы, которые нужно сформировать"));
  const{supabase}=await requireUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);
  if(!can.generate||!access["documents.create"]||!access["shipments.view"])redirect(withMessage(back,"error","Недостаточно прав для формирования комплекта"));
  const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
- let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документов.")));}
- if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
+ let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices,UUID.test(transportId)?transportId:undefined);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документов.")));}
+ const manualNumbers={cmr_number:text(formData,"cmr_number"),ttn_number:text(formData,"ttn_number"),packing_list_number:text(formData,"packing_list_number")};
+ if(Object.values(manualNumbers).some(value=>value.length>120))redirect(withMessage(back,"error","Номер документа не должен быть длиннее 120 символов"));
+ const unresolvedTemplateFields=preview.missing.filter(field=>!(field.key in manualNumbers&&manualNumbers[field.key as keyof typeof manualNumbers]));
+ if(unresolvedTemplateFields.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${unresolvedTemplateFields.map(field=>field.label).join(", ")}`));
  if(!preview.readiness.ready)redirect(withMessage(back,"error",`Комплект не готов: заполните ${preview.readiness.items.filter(item=>item.required&&!item.ready).map(item=>item.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;if(String(version.mime_type)!==XLSX_MIME)redirect(withMessage(back,"error","Экспортный комплект формируется только из утверждённой книги XLSX"));
- const generationData:Record<string,unknown>=preview.data;
+ const generationData:Record<string,unknown>={...preview.data,...Object.fromEntries(Object.entries(manualNumbers).filter(([,value])=>value))};
  const storage=supabase.storage.from(DOCUMENT_BUCKET);const{data:source,error:downloadError}=await storage.download(String(version.storage_path));
  if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
- const shipmentNumber=String(preview.data.shipment_number),templateBytes=new Uint8Array(await source.arrayBuffer());
- let built;try{built=buildExportDocuments(templateBytes,preview.data,selected,{includePrices});}catch(error){redirect(withMessage(back,"error",exportErrorMessage(error,"Не удалось заполнить книгу экспортной отгрузки.")));}
+ const shipmentNumber=String(preview.data.shipment_number),transportSuffix=preview.data.selected_transport_sequence?`-авто-${preview.data.selected_transport_sequence}`:"",templateBytes=new Uint8Array(await source.arrayBuffer());
+ let built;try{built=buildExportDocuments(templateBytes,generationData,selected,{includePrices});}catch(error){redirect(withMessage(back,"error",exportErrorMessage(error,"Не удалось заполнить книгу экспортной отгрузки.")));}
  const uploadedPaths:string[]=[];const files:Array<Record<string,unknown>>=[];
  try{
   for(const document of built){
    const key=document.output;const config=PACKAGE_OUTPUTS[key];const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();
-   const filename=key==="workbook"?generatedFileName(String(version.original_filename),shipmentNumber):`${config.label.replace(/\s+/g,"-")}-${shipmentNumber.replace(/[^A-Za-zА-Яа-я0-9._-]+/g,"-")}.xlsx`;
+    const filename=key==="workbook"?generatedFileName(String(version.original_filename),`${shipmentNumber}${transportSuffix}`):`${config.label.replace(/\s+/g,"-")}-${shipmentNumber.replace(/[^A-Za-zА-Яа-я0-9._-]+/g,"-")}${transportSuffix}.xlsx`;
    const bytes=document.bytes;
    const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());const contentType=XLSX_MIME;
    const{error:uploadError}=await storage.upload(path,bytes,{contentType,upsert:false,cacheControl:"0"});if(uploadError)throw uploadError;
-   uploadedPaths.push(path);files.push({generation_id:generationId,document_id:documentId,document_type_code:config.code,title:`${config.label} · ${shipmentNumber}`,storage_path:path,original_filename:filename,document_number:String(generationData[`${key}_number`]||shipmentNumber),output_format:config.format,checksum_sha256:await sha256Hex(bytes)});
+    uploadedPaths.push(path);files.push({generation_id:generationId,document_id:documentId,document_type_code:config.code,title:`${config.label} · ${shipmentNumber}${transportSuffix?` · Автомобиль №${preview.data.selected_transport_sequence}`:""}`,storage_path:path,original_filename:filename,document_number:String(generationData[`${key}_number`]||shipmentNumber),output_format:config.format,checksum_sha256:await sha256Hex(bytes)});
   }
-  const{error}=await supabase.rpc("register_generated_document_package",{p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_files:files,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
+   const{error}=await supabase.rpc("register_generated_document_package",{p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_files:files,p_contains_prices:includePrices,p_fields_snapshot:generationData});
   if(error)throw error;
  }catch(error){if(uploadedPaths.length)await storage.remove(uploadedPaths);redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось сформировать комплект документов.")));}
  revalidatePath("/templates");revalidatePath(`/templates/${templateId}`);revalidatePath("/documents");revalidatePath(`/shipments/${shipmentId}`);

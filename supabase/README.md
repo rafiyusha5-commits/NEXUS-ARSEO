@@ -48,5 +48,7 @@ Migration order:
 37. `202609274400_froosh_fazer_supplier_cleanup.sql` — moves legacy Froosh product and supplier-article links to Fazer, while retaining Froosh AB as an archived historical counterparty.
 38. `202609274500_calculator_identifier_reconciliation.sql` — safely matches calculator rows to one existing product by global barcodes and replaces legacy prefixed codes with the canonical ARSEO article without changing product UUIDs.
 39. `202609274600_source_document_review.sql` — adds employee correction of extracted source fields and guarded application of confirmed values to the shipment and its first active vehicle.
+40. `202609274700_export_documents_xlsx.sql` — registers a selected XLSX export-document package atomically and restricts CMR, TTN and packing-list outputs to the approved workbook format.
+41. `202609274800_source_document_requisites.sql` — extends reviewed source-document fields with party addresses, tax and bank requisites, signatory, loading details and invoice metadata used by the export workbook.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.
