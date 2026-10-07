@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { schemaToVariables } from "./rules.ts";
 import { buildShipmentGenerationData,missingGenerationFields } from "./generation.ts";
 import { mergeConfirmedSourceData } from "@/lib/document-extraction/rules.ts";
+import { buildShipmentDocumentReadiness } from "./readiness.ts";
 
 const one=<T,>(value:T|T[]|null|undefined):T|undefined=>Array.isArray(value)?value[0]:value??undefined;
 
@@ -37,6 +38,7 @@ export async function loadGenerationPreview(supabase:SupabaseClient,templateId:s
  const baseData=buildShipmentGenerationData({shipment:shipment as Record<string,unknown>,supplier:one(shipment.supplier as unknown as Array<Record<string,unknown>>),customer:one(shipment.customer as unknown as Array<Record<string,unknown>>),route:one(shipment.route as unknown as Array<Record<string,unknown>>),warehouse:one(shipment.warehouse as unknown as Array<Record<string,unknown>>),responsible:one(shipment.responsible as unknown as Array<Record<string,unknown>>),currency:one(shipment.currency as unknown as Array<Record<string,unknown>>),contract:one(shipment.contract as unknown as Array<Record<string,unknown>>),items:normalizedItems as Array<Record<string,unknown>>,products:productMap,identifiers:(identifiers??[]) as Array<Record<string,unknown>>,packaging:(packaging??[]) as Array<Record<string,unknown>>,transports:normalizedTransports as Array<Record<string,unknown>>,includePrices});
  const confirmedSources=(sourceExtractions??[]).map(row=>(row.confirmed_data??{}) as Record<string,unknown>);
  const data=sourceError?baseData:mergeConfirmedSourceData(baseData,confirmedSources);
+ const confirmedSourceFields=sourceError?[]:[...new Set(confirmedSources.flatMap(source=>Object.keys(source)))];
  const variables=schemaToVariables(template.variables_schema);
- return{template:{...template,current},shipment,data,variables,missing:missingGenerationFields(variables,data),containsPrices:includePrices,confirmedSourceFields:sourceError?[]:[...new Set(confirmedSources.flatMap(source=>Object.keys(source)))]};
+ return{template:{...template,current},shipment,data,variables,missing:missingGenerationFields(variables,data),containsPrices:includePrices,confirmedSourceFields,readiness:buildShipmentDocumentReadiness(data,confirmedSourceFields)};
 }

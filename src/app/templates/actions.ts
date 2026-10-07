@@ -75,6 +75,7 @@ export async function generateExportPackageAction(formData:FormData){
  const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
  let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документов.")));}
  if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
+ if(!preview.readiness.ready)redirect(withMessage(back,"error",`Комплект не готов: заполните ${preview.readiness.items.filter(item=>item.required&&!item.ready).map(item=>item.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;if(String(version.mime_type)!==XLSX_MIME)redirect(withMessage(back,"error","Экспортный комплект формируется только из утверждённой книги XLSX"));
  const generationData:Record<string,unknown>=preview.data;
  const storage=supabase.storage.from(DOCUMENT_BUCKET);const{data:source,error:downloadError}=await storage.download(String(version.storage_path));
@@ -106,6 +107,7 @@ export async function generateDocumentAction(formData:FormData){
  const includePrices=text(formData,"include_prices")==="true"&&can.generate_prices;
  let preview;try{preview=await loadGenerationPreview(supabase,templateId,shipmentId,includePrices);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось подготовить данные для документа.")));}
  if(preview.missing.length)redirect(withMessage(back,"error",`Не заполнены обязательные поля шаблона: ${preview.missing.map(field=>field.label).join(", ")}`));
+ if(!preview.readiness.ready)redirect(withMessage(back,"error",`Документ не готов: заполните ${preview.readiness.items.filter(item=>item.required&&!item.ready).map(item=>item.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;const storage=supabase.storage.from(DOCUMENT_BUCKET);
  const{data:source,error:downloadError}=await storage.download(String(version.storage_path));if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
  let bytes:Uint8Array;const mime=String(version.mime_type);try{const input=new Uint8Array(await source.arrayBuffer());bytes=mime===XLSX_MIME?await renderShipmentWorkbookTemplate(input,preview.data):renderDocxTemplate(input,preview.data);}catch(error){redirect(withMessage(back,"error",publicErrorMessage(error,"Не удалось заполнить шаблон.")));}
