@@ -45,6 +45,28 @@ describe("assistant tools", () => {
     assert.ok(result.rows.some((row) => row.values.ordered_quantity === 120));
   });
 
+  it("counts unique shipment SKUs independently of item lines and stages", async () => {
+    const data = fakeData({ async getShipmentItems() { return { rows: [{ internal_sku: "A" }, { internal_sku: "A" }, { internal_sku: "B" }], total: 3 }; } });
+    const result = await run("get_shipment", { shipment_id: SHIPMENT_ID }, data);
+    assert.equal(result.rows[0].values.sku_count, 2);
+    assert.equal(result.rows[0].values.item_lines_total, 3);
+    assert.equal(result.rows[0].values.stages_total, 2);
+  });
+
+  it("never presents an incomplete or unidentified SKU list as an exact total", async () => {
+    for (const items of [
+      { rows: [{ internal_sku: "A" }], total: 21 },
+      { rows: [{ internal_sku: "A" }, { internal_sku: null }], total: 2 },
+      { rows: [{ internal_sku: "A" }], total: null },
+    ]) {
+      const result = await run("get_shipment", { shipment_id: SHIPMENT_ID }, fakeData({ async getShipmentItems() { return items; } }));
+      assert.ok(!("sku_count" in result.rows[0].values));
+      assert.ok(result.notes.some((note) => note.includes("Точное количество уникальных SKU не определено")));
+    }
+    const empty = await run("get_shipment", { shipment_id: SHIPMENT_ID }, fakeData({ async getShipmentItems() { return { rows: [], total: 0 }; } }));
+    assert.equal(empty.rows[0].values.sku_count, 0);
+  });
+
   it("get_shipment_vehicles never returns driver name, phone or document", async () => {
     const result = await run("get_shipment_vehicles", { shipment_id: SHIPMENT_ID });
     assertNoSecrets(result);

@@ -132,6 +132,8 @@ const SHIPMENT_CARD_FIELDS: ToolField[] = [
   { key: "cancel_reason", label: "Причина отмены", kind: "text" },
   { key: "stages_total", label: "Этапов всего", kind: "count" },
   { key: "stages_completed", label: "Этапов завершено", kind: "count" },
+  { key: "item_lines_total", label: "Товарных строк всего", kind: "count" },
+  { key: "sku_count", label: "Уникальных SKU", kind: "count" },
   { key: "stage_name", label: "Этап", kind: "text" },
   { key: "stage_status", label: "Статус этапа", kind: "status" },
   { key: "stage_reason", label: "Причина по этапу", kind: "text" },
@@ -159,6 +161,9 @@ const getShipment: AgentTool = {
     const [stages, items] = await Promise.all([ctx.data.getShipmentStages(id, ctx.signal), ctx.data.getShipmentItems(id, MAX_TOOL_ROWS, ctx.signal)]);
     const entity = uuidRef("shipment", shipment.id);
     const subject = shipmentSubject(shipment.shipment_number);
+    const allItemsLoaded = items.total !== null && items.total === items.rows.length;
+    const skus = items.rows.map((item) => str(item.internal_sku)?.trim() || null);
+    const skuCount = allItemsLoaded && skus.every((sku) => sku !== null) ? new Set(skus).size : null;
     const card = project(subject, SHIPMENT_CARD_FIELDS, {
       ...shipmentValues(shipment),
       route: maskDataText(localized(shipment.route_name), 120),
@@ -167,6 +172,8 @@ const getShipment: AgentTool = {
       cancel_reason: shipment.status === "cancelled" ? maskDataText(str(shipment.cancel_reason)) : null,
       stages_total: stages.length,
       stages_completed: stages.filter((stage) => stage.status === "completed").length,
+      item_lines_total: items.total,
+      sku_count: skuCount,
     }, entity);
     const activeStages = stages.filter((stage) => stage.status === "in_progress" || stage.status === "blocked").slice(0, 10).map((stage) => project(`${subject} · этап «${maskDataText(localized(stage.stage_name), 80) ?? "без названия"}»`, SHIPMENT_CARD_FIELDS, {
       stage_name: maskDataText(localized(stage.stage_name), 120),
@@ -185,6 +192,7 @@ const getShipment: AgentTool = {
     const itemsTruncated = items.rows.length > MAX_TOOL_ROWS || (items.total !== null && items.total > itemRows.length);
     const notes = ["Закупочные цены и суммы в ответ ассистента не передаются."];
     if (itemsTruncated) notes.push(`Товаров в поставке больше, чем показано (${itemRows.length}).`);
+    if (skuCount === null) notes.push("Точное количество уникальных SKU не определено: список товаров неполный или есть товар без артикула.");
     return result([card, ...activeStages, ...itemRows], itemsTruncated, null, notes);
   },
 };
