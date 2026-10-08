@@ -100,7 +100,7 @@ describe("shipment source document extraction", () => {
   });
 
   it("accepts the identity-card number read from the protected OCR document zone", () => {
-    const result = extractShipmentFields("NEXUS_DOCUMENT_NUMBER: 123456789\nУДОСТОВЕРЕНИЕ ЛИЧНОСТИ");
+    const result = extractShipmentFields("NEXUS_DOCUMENT_NUMBER: 123456789\nУДОСТОВЕРЕНИЕ ЛИЧНОСТИ", { fromOcr: true });
     assert.equal(result.data.driver_document, "123456789");
   });
 

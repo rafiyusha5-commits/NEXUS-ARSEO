@@ -39,7 +39,7 @@ export type OcrProposal = {
 };
 
 export function proposeFromOcr(ocr: OcrResult, hintedKind: string): OcrProposal {
-  const result = extractShipmentFields(ocr.text);
+  const result = extractShipmentFields(ocr.text, { fromOcr: true });
   const sourceKind = detectShipmentSourceKind(ocr.text, hintedKind);
   const documentConfidence = ocr.confidence;
   const lowConfidence: string[] = [];
