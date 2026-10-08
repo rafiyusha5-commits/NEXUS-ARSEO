@@ -38,6 +38,8 @@ export function buildShipmentDocumentReadiness(data: Record<string, unknown>, co
     { key: "loading_address", label: "Адрес загрузки", group: "Перевозка", required: true, ready: present(data.loading_address), source: source("loading_address", "Подтверждённые документы"), tab: "documents" },
     { key: "unloading_address", label: "Адрес выгрузки", group: "Перевозка", required: true, ready: present(data.unloading_address) || present(data.destination_address), source: source("unloading_address", "Склад назначения"), tab: "documents" },
     { key: "invoice_number", label: "Номер инвойса", group: "Документы", required: false, ready: present(data.invoice_number), source: source("invoice_number", "Исходные документы"), tab: "documents" },
+    { key: "vehicle_documents_bound", label: "Документы привязаны к автомобилю", group: "Перевозка", required: false, ready: !present(data.unassigned_vehicle_fields), source: "Подтверждённые документы без автомобиля не используются, если в поставке несколько машин", tab: "documents" },
+    { key: "cargo_allocated", label: "Весь груз распределён по автомобилям", group: "Перевозка", required: false, ready: !(Number(data.unallocated_item_count) > 0), source: "Вкладка «Товары»: распределение по автомобилям", tab: "items" },
     { key: "order_number", label: "Номер заказа", group: "Документы", required: false, ready: present(data.order_number) || present(data.project_code), source: source("order_number", "Карточка поставки"), tab: "documents" },
   ];
   return {

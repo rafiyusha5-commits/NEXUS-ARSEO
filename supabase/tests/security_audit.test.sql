@@ -40,7 +40,7 @@ $$;
 create table tests.sec_exec_allow (role_name text, fn text, primary key (role_name, fn));
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
-  'public.add_shipment_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
+  'public.add_shipment_transport', 'public.import_calculator_master_data', 'public.my_product_master_confidential_data', 'public.my_product_master_sources', 'public.create_shipment_transport', 'public.update_shipment_transport', 'public.remove_shipment_transport', 'public.assign_source_extraction_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
   'public.add_sticker_template_version', 'public.change_sticker_order_status', 'public.create_marking_code_order', 'public.create_sticker_order', 'public.create_sticker_template',
   'public.add_customer_order_item', 'public.archive_document', 'public.archive_document_template', 'public.cancel_customer_order', 'public.cancel_listing_card',
   'public.change_shipment_operational_state', 'public.change_shipment_stage_status',

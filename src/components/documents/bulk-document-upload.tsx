@@ -19,7 +19,9 @@ type UploadRow = {
 
 const rowKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
-export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }: { types: UploadType[]; primaryLink?: string; autoExtractShipmentId?: string }) {
+export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId, transports }: { types: UploadType[]; primaryLink?: string; autoExtractShipmentId?: string; transports?: Array<{ id: string; label: string }> }) {
+  // A vehicle chosen here is the explicit link of every file of the batch; without it the files belong to the whole shipment.
+  const [transportId, setTransportId] = useState("");
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<UploadRow[]>([]);
@@ -61,7 +63,8 @@ export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }
       update(row.key, { state: "uploading", message: "Загружается…" });
       const body = new FormData();
       body.set("file", row.file); body.set("document_type_id", row.documentTypeId); body.set("title", row.title.trim());
-      if (primaryLink) body.set("link_primary", primaryLink);
+      const link = transportId ? `shipment_transport:${transportId}` : primaryLink;
+      if (link) body.set("link_primary", link);
       try {
         const response = await fetch("/api/documents/upload", { method: "POST", body });
         const result = await response.json() as { ok?: boolean; error?: string };
@@ -92,6 +95,7 @@ export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId }
       <label className="primary file-button">+ Выбрать несколько файлов<input ref={inputRef} type="file" multiple accept={DOCUMENT_FILE_ACCEPT} onChange={event => addFiles(event.target.files)} /></label>
       {rows.length > 0 && <><label className="check-label"><input type="checkbox" checked={allChecked} onChange={event => setRows(current => current.map(row => row.state === "done" ? row : { ...row, checked: event.target.checked }))} /> Выбрать все</label><button className="primary" type="button" disabled={running || !selected.length} onClick={uploadSelected}>Загрузить отмеченные ({selected.length})</button></>}
     </div>
+    {!!transports?.length && <label className="bulk-transport-choice">Документы относятся к<select value={transportId} disabled={running} onChange={event => setTransportId(event.target.value)}><option value="">Ко всей поставке (общие документы: инвойс, договор)</option>{transports.map(transport => <option key={transport.id} value={transport.id}>Автомобиль {transport.label}</option>)}</select></label>}
     <p className="form-help">Каждый отмеченный файл загружается отдельно, поэтому ошибка одного документа не отменяет остальные. Максимальный размер одного файла — {MAX_DOCUMENT_FILE_SIZE_LABEL}.</p>
     {batchMessage && <div className="setup-notice">{batchMessage}</div>}
     {rows.length > 0 && <div className="table-wrap"><table className="data-table bulk-upload-table"><thead><tr><th></th><th>Файл</th><th>Тип документа</th><th>Название</th><th>Состояние</th></tr></thead><tbody>{rows.map(row => <tr key={row.key} className={row.state === "error" ? "has-error" : ""}>

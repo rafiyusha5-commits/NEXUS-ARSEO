@@ -203,6 +203,46 @@ export function conflictsAcrossDocuments(results: Array<{ documentId: string; re
   return conflicts;
 }
 
+/** Facts about one vehicle (or one vehicle's papers). Everything else describes the shipment as a whole. */
+export const VEHICLE_SCOPED_FIELDS = [
+  "carrier_name", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "driver_name", "driver_phone", "driver_document",
+  "temperature_setpoint", "seals", "cmr_number", "ttn_number", "waybill_number", "packing_list_number", "shipping_date",
+  "pallet_count", "gross_weight_kg", "net_weight_kg",
+] as const;
+const vehicleScoped = new Set<string>(VEHICLE_SCOPED_FIELDS);
+
+export type ConfirmedSource = { data: Record<string, unknown>; transportId?: string | null };
+
+/**
+ * Overlays confirmed source values for ONE vehicle. Shipment-level facts come from every source. A vehicle fact is
+ * taken only from a source bound to that vehicle; in a shipment with a single vehicle an unbound source counts as
+ * its own (the earlier behaviour). With several vehicles an unbound source is never guessed onto a vehicle: its
+ * vehicle fields are reported in `unassigned_vehicle_fields` so the employee can bind the document.
+ */
+export function mergeConfirmedSources(
+  base: Record<string, unknown>,
+  sources: ConfirmedSource[],
+  scope: { transportId?: string | null; transportCount: number },
+) {
+  const own: Record<string, unknown>[] = [];
+  const skipped = new Set<string>();
+  const filtered = sources.map(source => {
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(source.data)) {
+      if (!vehicleScoped.has(key)) { data[key] = value; continue; }
+      const bound = source.transportId ?? null;
+      const applies = bound ? bound === scope.transportId : scope.transportCount <= 1;
+      if (applies) data[key] = value;
+      else if (!bound && value !== null && value !== "" && value !== undefined) skipped.add(key);
+    }
+    return data;
+  });
+  for (const data of filtered) own.push(data);
+  const merged = mergeConfirmedSourceData(base, own);
+  if (skipped.size) merged.unassigned_vehicle_fields = [...skipped];
+  return merged;
+}
+
 export function mergeConfirmedSourceData(base: Record<string, unknown>, sources: Array<Record<string, unknown>>) {
   const merged = { ...base };
   for (const source of sources) {
