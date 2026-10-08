@@ -10,7 +10,11 @@ export type ToolField = { key: string; label: string; kind: FieldKind };
 /** A row reference the server can turn into a link; never a URL from the model. */
 export type EntityRef = { type: "shipment" | "document" | "task"; id: string };
 
-export type ToolRow = { values: Record<string, string | number | null>; entity?: EntityRef };
+/**
+ * One result row. `subject` names the object the row describes (shipment, vehicle, document…); it is
+ * built by the tool from the data, so a verified statement never takes its object from the model.
+ */
+export type ToolRow = { subject: string; values: Record<string, string | number | null>; entity?: EntityRef };
 
 export type ToolResult = {
   rows: ToolRow[];
@@ -137,14 +141,24 @@ export interface AgentLedger {
   finish(reservation: Reservation, input: FinishInput): Promise<void>;
 }
 
-export type AnswerValue = { label: string; value: string; tool: string; row: number; field: string; link?: string };
-export type AnswerBlock =
-  | { kind: "fact"; text: string; values: AnswerValue[]; links: { label: string; href: string }[] }
-  | { kind: "assumption"; text: string }
-  | { kind: "unverified"; text: string; reason: string };
+export type FactValue = { label: string; value: string; field: string };
+
+/** A statement assembled by code from one object of one tool result; never written by the model. */
+export type VerifiedFact = {
+  subject: string;
+  values: FactValue[];
+  source: { tool: string; row: number };
+  link?: { label: string; href: string };
+};
+
+/** Free text from the model: always shown separately and never as a verified fact. */
+export type Commentary = { kind: "assumption" | "explanation"; text: string };
 
 export type AgentAnswer = {
-  blocks: AnswerBlock[];
+  facts: VerifiedFact[];
+  commentary: Commentary[];
+  /** Model selections the server refused (missing row, unknown field, empty value). */
+  rejected: string[];
   limitations: string[];
   toolsUsed: string[];
 };

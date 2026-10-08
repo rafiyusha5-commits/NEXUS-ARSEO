@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 // PostgREST rejects an embed that names a missing column, and the report used to ignore that error,
 // so its document list stayed empty. Every document_types(...) embed in src must name real columns.
@@ -23,7 +24,7 @@ describe("document type embeds", () => {
   });
 
   it("select only existing document_types columns everywhere in src", () => {
-    const root = new URL("../../src", import.meta.url).pathname;
+    const root = fileURLToPath(new URL("../../src", import.meta.url));
     const problems: string[] = [];
     for (const file of sources(root)) {
       for (const match of readFileSync(file, "utf8").matchAll(/document_types\(([^)]*)\)/g)) {

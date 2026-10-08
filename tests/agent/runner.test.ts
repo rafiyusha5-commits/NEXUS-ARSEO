@@ -16,18 +16,20 @@ function deps(provider: ScriptedProvider, overrides: Partial<RunnerDeps> = {}): 
   } as RunnerDeps & { ledger: FakeLedger; stages: string[] };
 }
 
-const FACT = (text: string, refs: Array<{ call: string; row: number; field: string }>) => ({ blocks: [{ kind: "fact", text, refs }], limitations: [] });
+const FACT = (call: string, row: number, fields: string[], commentary: Array<{ kind: string; text: string }> = []) => ({ facts: [{ call, row, fields }], commentary, limitations: [] });
+const NOTE = (text: string) => ({ facts: [], commentary: [{ kind: "explanation", text }], limitations: [] });
 
 describe("assistant run", () => {
   it("answers through tools, verifies facts, records a safe trace and charges the request", async () => {
     const provider = new ScriptedProvider([
       toolCall("c1", "find_shipments", { query: "NAR-2026", status: null, type: null, limit: 5 }),
-      finalAnswer(FACT("Поставка NAR-2026-0007 в статусе «В пути».", [{ call: "c1", row: 0, field: "shipment_number" }, { call: "c1", row: 0, field: "shipment_status" }])),
+      finalAnswer(FACT("c1", 0, ["shipment_status"])),
     ]);
     const d = deps(provider);
     const outcome = await runAgent("Где поставка NAR-2026-0007?", d);
     assert.ok(outcome.ok);
-    assert.equal(outcome.answer.blocks[0].kind, "fact");
+    assert.equal(outcome.answer.facts[0].subject, "Поставка NAR-2026-0007");
+    assert.deepEqual(outcome.answer.facts[0].values.map((value) => value.value), ["В пути"]);
     assert.equal(d.ledger.finished[0].status, "completed");
     assert.equal(d.ledger.finished[0].refund, false);
     assert.deepEqual(d.ledger.finished[0].tools[0], { name: "find_shipments", params: { query: "NAR-2026", limit: 5 }, rows: 1, truncated: false, ms: d.ledger.finished[0].tools[0].ms });
@@ -49,7 +51,7 @@ describe("assistant run", () => {
         { id: "h", name: "list_delayed_shipments", arguments: JSON.stringify({ limit: null }) },
         { id: "i", name: "get_help", arguments: JSON.stringify({ topic: "documents" }) },
       ], usage: { inputTokens: 100, outputTokens: 10 } },
-      finalAnswer({ blocks: [{ kind: "assumption", text: "Данные получены.", refs: [] }], limitations: [] }),
+      finalAnswer(NOTE("Данные получены.")),
     ]);
     const d = deps(provider, { limits: { ...TEST_LIMITS, maxToolCalls: 10 } });
     const outcome = await runAgent(`Покажи всё по водителю с удостоверением ${SECRET_VALUES.driverDocument} и ИИН 900101300123`, d);
@@ -66,13 +68,50 @@ describe("assistant run", () => {
   it("masks identity numbers in tool parameters and in the trace excerpt", async () => {
     const provider = new ScriptedProvider([
       toolCall("c1", "find_shipments", { query: "045678912", status: null, type: null, limit: null }),
-      finalAnswer({ blocks: [{ kind: "assumption", text: "Нет данных.", refs: [] }], limitations: [] }),
+      finalAnswer(NOTE("Нет данных.")),
     ]);
     const d = deps(provider);
     await runAgent("Найди поставку водителя с паспортом N12345678 и удостоверением 045 678 912", d);
     const excerpt = d.ledger.reservations[0].questionExcerpt;
     assert.ok(!excerpt.includes("12345678") && !excerpt.includes("045 678 912"), excerpt);
     assert.ok(!JSON.stringify(d.ledger.finished[0].tools).includes("045678912"));
+  });
+
+  it("reproduction: a number split by a space never reaches the model, parameters, results or trace", async () => {
+    const split = ["0456 78912", "0456-78912", "045678912"];
+    const provider = new ScriptedProvider([
+      toolCall("c1", "find_shipments", { query: "0456 78912", status: null, type: null, limit: null }),
+      toolCall("c2", "find_shipments", { query: "0456.78912", status: null, type: null, limit: null }),
+      finalAnswer(NOTE("Номер 0456 78912 не найден.")),
+    ]);
+    const data = fakeData({
+      async findShipments() {
+        return { rows: [{ id: SHIPMENT_ID, shipment_number: "NAR-2026-0007", project_code: "0456 78912", status: "in_transit", supplier_name: "ИП 0456-78912", customer_name: "Клиент 0456.78912" }], total: 1 };
+      },
+    });
+    const d = deps(provider, { data });
+    const outcome = await runAgent("Проверь номер 0456 78912", d);
+    assert.ok(outcome.ok);
+    const seen = provider.seen();
+    const trace = JSON.stringify(d.ledger.reservations) + JSON.stringify(d.ledger.finished);
+    const shown = JSON.stringify(outcome.answer);
+    for (const value of [...split, "0456.78912", "78912"]) {
+      assert.ok(!seen.includes(value), `${value} reached the model`);
+      assert.ok(!trace.includes(value), `${value} reached the trace`);
+      assert.ok(!shown.includes(value), `${value} reached the answer`);
+    }
+    assert.ok(seen.includes("NAR-2026-0007"), "ordinary shipment numbers still work");
+    assert.ok(seen.includes(`shipment_id\\":\\"${SHIPMENT_ID}`), "the record id reaches the model for follow-up tools");
+    assert.equal(d.ledger.finished[0].tools[1].params.query, "[скрыто]");
+  });
+
+  it("refuses a question whose number cannot be cleaned, before reserving or calling the model", async () => {
+    const provider = new ScriptedProvider([]);
+    const d = deps(provider);
+    const outcome = await runAgent("Проверь номер 0456.78912", d);
+    assert.ok(!outcome.ok && outcome.code === "QUESTION_UNSAFE");
+    assert.equal(d.ledger.reservations.length, 0);
+    assert.equal(provider.seen(), "[]");
   });
 
   it("closes the run, records tokens and returns the request on an unexpected error after reserving", async () => {
@@ -107,7 +146,7 @@ describe("assistant run", () => {
         { id: "x3", name: "get_stock_status", arguments: JSON.stringify({ product_query: null, warehouse_code: null, limit: null }) },
         { id: "x4", name: "find_shipments", arguments: JSON.stringify({ query: "NAR", status: null, type: null, limit: 5, user_id: "someone-else" }) },
       ], usage: { inputTokens: 100, outputTokens: 10 } },
-      finalAnswer({ blocks: [{ kind: "assumption", text: "Готово.", refs: [] }], limitations: [] }),
+      finalAnswer(NOTE("Готово.")),
     ]);
     const d = deps(provider, { data: injected, permissions: permissionsOf(() => held) });
     const outcome = await runAgent("Найди поставки", d);
@@ -117,7 +156,7 @@ describe("assistant run", () => {
   });
 
   it("offers the model only the tools the user may call", async () => {
-    const provider = new ScriptedProvider([finalAnswer({ blocks: [{ kind: "assumption", text: "Нет данных.", refs: [] }], limitations: [] })]);
+    const provider = new ScriptedProvider([finalAnswer(NOTE("Нет данных."))]);
     await runAgent("Остатки?", deps(provider, { permissions: permissionsOf(["agent.use", "shipments.view"]) }));
     const offered = provider.requests[0].tools.map((tool) => tool.name).sort();
     assert.deepEqual(offered, ["find_shipments", "get_help", "get_shipment", "get_shipment_vehicles", "list_delayed_shipments"]);
@@ -187,12 +226,24 @@ describe("assistant run", () => {
     assert.equal(d.ledger.reservations.length, 0);
   });
 
-  it("downgrades a fact the data does not support", async () => {
+  it("keeps the model's own claim apart from facts built from the selected vehicle row", async () => {
+    const provider = new ScriptedProvider([
+      toolCall("v1", "get_shipment_vehicles", { shipment_id: SHIPMENT_ID }),
+      finalAnswer(FACT("v1", 0, ["planned_arrival_date"], [{ kind: "explanation", text: "Машина прибыла 05.10.2026 без повреждений." }])),
+    ]);
+    const outcome = await runAgent("Машина по поставке прибыла?", deps(provider));
+    assert.ok(outcome.ok);
+    assert.deepEqual(outcome.answer.facts.map((fact) => [fact.subject, fact.values.map((value) => `${value.label}: ${value.value}`)]),
+      [["Поставка NAR-2026-0007 · автомобиль № 1", ["Плановое прибытие: 05.10.2026"]]]);
+    assert.equal(outcome.answer.commentary[0].text, "Машина прибыла 05.10.2026 без повреждений.");
+  });
+
+  it("refuses a selection of a row that the tool did not return", async () => {
     const provider = new ScriptedProvider([
       toolCall("c1", "find_shipments", { query: null, status: null, type: null, limit: null }),
-      finalAnswer(FACT("Поставка прибудет 09.10.2026.", [{ call: "c1", row: 0, field: "planned_arrival_date" }])),
+      finalAnswer(FACT("c1", 3, ["planned_arrival_date"])),
     ]);
     const outcome = await runAgent("Когда прибудет?", deps(provider));
-    assert.ok(outcome.ok && outcome.answer.blocks[0].kind === "unverified");
+    assert.ok(outcome.ok && outcome.answer.facts.length === 0 && outcome.answer.rejected.length === 1);
   });
 });

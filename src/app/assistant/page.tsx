@@ -8,7 +8,7 @@ import { loadPermissions } from "@/lib/permissions.ts";
 
 export const dynamic = "force-dynamic";
 
-const RUN_COLUMNS = "id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,created_at,finished_at";
+const RUN_COLUMNS = "id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,cost_status,created_at,finished_at";
 
 export default async function AssistantPage() {
   const { profile, roles, supabase, user } = await requireUser();

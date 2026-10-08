@@ -152,5 +152,19 @@ wait
 granted=$(cat "$WORKDIR"/budget_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
 limited=$(cat "$WORKDIR"/budget_*.out | grep -c 'AGENT_MONTHLY_BUDGET' || true)
 "${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_budget_check.sql" >/dev/null
+echo "test: agent settlement of abandoned runs under concurrency"
+# Abandoned runs are charged their whole reservation by the next reservation; a late finish replaces
+# the estimate. Ten late finishes race with ten reservations: each run's money is counted once.
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_settle_setup.sql" >/dev/null
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+    >"$WORKDIR/settle_reserve_$i.out" 2>&1 &
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select public.agent_finish_run(s.run_id,s.token,'failed','AGENT_PROVIDER_ERROR',false,'openai','m',1,0,50,10,300,'[]') from tests.agent_stale s where s.n=$i; select 'fin:ok';" \
+    >"$WORKDIR/settle_finish_$i.out" 2>&1 &
+done
+wait
+reserved=$(cat "$WORKDIR"/settle_reserve_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+finished=$(cat "$WORKDIR"/settle_finish_*.out | grep -cE '^fin:ok$' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v finished="$finished" -v reserved="$reserved" -f "$ROOT/supabase/tests/agent_concurrency_settle_check.sql" >/dev/null
 
 echo "database tests passed"

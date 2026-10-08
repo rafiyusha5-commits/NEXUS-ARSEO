@@ -91,23 +91,33 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
       {answer && (
         <div className="assistant-answer">
           <p className="form-help">Вопрос: {asked.current}</p>
-          {answer.blocks.map((block, index) => (
-            <article key={index} className={`assistant-block assistant-${block.kind}`}>
-              <span className="doc-badge">{block.kind === "fact" ? "Факт · проверено по данным" : block.kind === "assumption" ? "Предположение" : "Не подтверждено"}</span>
-              <p>{block.text}</p>
-              {block.kind === "unverified" && <small>{block.reason}</small>}
-              {block.kind === "fact" && block.values.length > 0 && (
-                <dl className="assistant-values">
-                  {block.values.map((value, valueIndex) => (
-                    <div key={valueIndex}><dt>{value.label}</dt><dd>{value.value}</dd><small>источник: {value.tool}{value.row >= 0 ? `, запись ${value.row + 1}` : ""}</small></div>
-                  ))}
-                </dl>
-              )}
-              {block.kind === "fact" && block.links.filter((item) => SAFE_LINK.test(item.href)).map((item) => (
-                <Link key={item.href} className="text-button" href={item.href}>Открыть: {item.label}</Link>
-              ))}
+          <h3>Проверенные данные Nexus</h3>
+          {answer.facts.length === 0 && <p className="form-help">Проверенных данных в ответе нет.</p>}
+          {answer.facts.map((fact, index) => (
+            <article key={index} className="assistant-block assistant-fact">
+              <span className="doc-badge">Факт · сформирован из данных Nexus</span>
+              <p><strong>{fact.subject}</strong></p>
+              <dl className="assistant-values">
+                {fact.values.map((value) => <div key={value.field}><dt>{value.label}</dt><dd>{value.value}</dd></div>)}
+              </dl>
+              <small>источник: {fact.source.tool}{fact.source.row >= 0 ? `, запись ${fact.source.row + 1}` : ""}</small>
+              {fact.link && SAFE_LINK.test(fact.link.href) && <Link className="text-button" href={fact.link.href}>Открыть: {fact.link.label}</Link>}
             </article>
           ))}
+          {answer.commentary.length > 0 && (
+            <div className="assistant-commentary">
+              <h3>Пояснения модели</h3>
+              {answer.commentary.map((item, index) => (
+                <article key={index} className="assistant-block assistant-assumption">
+                  <span className="doc-badge">{item.kind === "assumption" ? "Предположение · не проверено" : "Пояснение модели · не проверено"}</span>
+                  <p>{item.text}</p>
+                </article>
+              ))}
+            </div>
+          )}
+          {answer.rejected.length > 0 && (
+            <div className="setup-notice"><strong>Отклонено при проверке</strong><ul>{answer.rejected.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+          )}
           {answer.limitations.length > 0 && (
             <div className="setup-notice"><strong>Ограничения ответа</strong><ul>{answer.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
           )}

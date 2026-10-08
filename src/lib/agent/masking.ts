@@ -1,7 +1,8 @@
 // Masks identity documents, personal numbers, phones and secrets before any text leaves the server
 // (model request, trace, error). Masking is code, not an instruction to the model.
 
-type Rule = { pattern: RegExp; replace: string | ((match: string, ...groups: string[]) => string) };
+/** A replacer may return null to keep the match unchanged (it is then not counted as masked). */
+type Rule = { pattern: RegExp; replace: string | ((match: string, ...groups: string[]) => string | null) };
 
 const KEYWORD_ID =
   /((?:удостоверени\p{L}*|уд\.\s?л\.|паспорт\p{L}*|passport|ИИН|IIN|ID[- ]?card|документ\p{L}*\s+водител\p{L}*)\s*(?:№|N|#|:|-)?\s*)([\p{L}\p{N}][\p{L}\p{N} -]{3,24}[\p{L}\p{N}])/giu;
@@ -34,7 +35,43 @@ const PERSONAL_RULES: Rule[] = [
   { pattern: /(?<![\p{N}\p{L}])\d{9}(?![\p{N}\p{L}])/gu, replace: "[скрыт номер документа]" },
   // Phone numbers: +7 / 8 / international with at least 10 digits.
   { pattern: /(?<![\p{N}\p{L}])(?:\+\d{1,3}[\s()-]*|8[\s()-]*)\d{3}[\s()-]*\d{3}[\s()-]*\d{2}[\s()-]*\d{2}(?![\p{N}\p{L}])/gu, replace: "[скрыт телефон]" },
+  // Any other chain of digit groups split by spaces or hyphens (0456 78912, 04-567-8912, 4567891234):
+  // nine or more digits in total is treated as a personal or document number. Chains glued to letters
+  // (NAR-2026-0007, 123ABC02) are identifiers of Nexus objects and are kept.
+  {
+    pattern: /(?<![\p{L}\p{N}])(?<![\p{L}\p{N}] ?- ?)(?<!\p{N} )\d+(?:(?: ?- ?| )\d+)*(?! ?- ?\p{L})(?!\p{L})/gu,
+    replace: (match: string) => (digitCount(match) >= 9 ? "[скрыт номер]" : null),
+  },
 ];
+
+function digitCount(text: string): number {
+  return text.replace(/\D/g, "").length;
+}
+
+const DATE_OR_TIME = /(?<!\p{N})(?:\d{1,2}[./]\d{1,2}[./](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2})(?!\p{N})/gu;
+
+/**
+ * True when, apart from dates and times, digits joined by any separator (space, hyphen, dot,
+ * underscore, slash, brackets) add up to `minDigits` or more. Letters break a chain.
+ */
+export function hasLongDigitChain(text: string, minDigits: number): boolean {
+  const withoutDates = text.replace(UUID_TEXT, " ").replace(DATE_OR_TIME, " ");
+  for (const chain of withoutDates.match(DIGIT_CHAIN) ?? []) if (digitCount(chain) >= minDigits) return true;
+  return false;
+}
+
+const DIGIT_CHAIN = /\d+(?:[\s\-_./+()]{1,3}\d+)*/g;
+
+/**
+ * For text produced outside the user's question (the model's own turns, tool parameters): masks like
+ * maskSensitive and also hides digit chains in any separator form. Dates and times are kept.
+ */
+export function maskOutgoing(text: string): string {
+  const masked = maskSensitive(text).text;
+  const guard = protect(masked.replace(/[\uE000\uE001]/g, ""), new RegExp(`${UUID_TEXT.source}|${DATE_OR_TIME.source}`, "giu"));
+  if (!hasLongDigitChain(guard.text, 9)) return masked;
+  return guard.restore(guard.text.replace(DIGIT_CHAIN, (chain) => (digitCount(chain) >= 9 ? "[скрыто]" : chain)));
+}
 
 // Money in free text: a number with a currency marker. Applied to Nexus data only.
 const MONEY_RULE: Rule = {
@@ -52,8 +89,10 @@ function applyRules(text: string, rules: Rule[]): MaskResult {
   let current = text;
   for (const rule of rules) {
     current = current.replace(rule.pattern, (...args: string[]) => {
+      const replacement = typeof rule.replace === "string" ? rule.replace : rule.replace(args[0], ...args.slice(1));
+      if (replacement === null) return args[0];
       masked += 1;
-      return typeof rule.replace === "string" ? rule.replace : rule.replace(args[0], ...args.slice(1));
+      return replacement;
     });
   }
   return { text: current, masked };
@@ -61,10 +100,25 @@ function applyRules(text: string, rules: Rule[]): MaskResult {
 
 /** Masks secrets and personal document numbers. Used for the user's question and all outgoing text. */
 export function maskSensitive(text: string): MaskResult {
-  const clean = text.normalize("NFC").replace(INVISIBLE, "");
-  const secrets = applyRules(clean, SECRET_RULES);
+  // Unusual dashes and spaces would otherwise split a number so that no rule recognises it.
+  const clean = text.normalize("NFC").replace(INVISIBLE, "").replace(/\p{Nd}/gu, (digit) => digit.normalize("NFKC"))
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-").replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ").replace(/[ \t]{2,}/g, " ");
+  // Record identifiers (UUID) are not personal data; their digit groups must not be read as numbers.
+  const guard = protect(clean.replace(/[\uE000\uE001]/g, ""), UUID_TEXT);
+  const secrets = applyRules(guard.text, SECRET_RULES);
   const personal = applyRules(secrets.text, PERSONAL_RULES);
-  return { text: personal.text, masked: secrets.masked + personal.masked };
+  return { text: guard.restore(personal.text), masked: secrets.masked + personal.masked };
+}
+
+const UUID_TEXT = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** Replaces matches with placeholders that no rule touches, and puts them back afterwards. */
+function protect(text: string, pattern: RegExp): { text: string; restore: (masked: string) => string } {
+  const kept: string[] = [];
+  return {
+    text: text.replace(pattern, (match) => `\uE000${"\uE001".repeat(kept.push(match))}\uE000`),
+    restore: (masked) => masked.replace(/\uE000(\uE001+)\uE000/g, (_m, marks: string) => kept[marks.length - 1] ?? "[скрыто]"),
+  };
 }
 
 /**
@@ -77,7 +131,7 @@ export function maskDataText(text: string | null | undefined, maxLength = 200): 
   const money = applyRules(first.text, [MONEY_RULE]);
   const value = money.text.replace(/\s+/g, " ").trim();
   if (!value) return null;
-  if (/\d{7,}/.test(value.replace(/[\s-]/g, "").replace(/\[[^\]]*\]/g, ""))) return "[текст скрыт: возможны персональные данные]";
+  if (/\d{7,}/.test(value.replace(/[\s-]/g, "").replace(/\[[^\]]*\]/g, "")) || hasLongDigitChain(value, 7)) return "[текст скрыт: возможны персональные данные]";
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }
 
@@ -92,8 +146,9 @@ export function prepareQuestion(raw: unknown): QuestionCheck {
   if (!trimmed) return { ok: false, code: "QUESTION_EMPTY" };
   if (trimmed.length > MAX_QUESTION_LENGTH) return { ok: false, code: "QUESTION_TOO_LONG" };
   const { text, masked } = maskSensitive(trimmed);
-  // A question that is mostly masked material cannot be cleaned safely: do not send it.
-  if (masked > 5 || /PRIVATE KEY/i.test(trimmed)) return { ok: false, code: "QUESTION_UNSAFE" };
+  // A question that is mostly masked material cannot be cleaned safely: do not send it. The same
+  // holds when a long number survived masking in a form no rule recognises (0456.78912, 0456_78912).
+  if (masked > 5 || /PRIVATE KEY/i.test(trimmed) || hasLongDigitChain(text, 9)) return { ok: false, code: "QUESTION_UNSAFE" };
   return { ok: true, text, masked };
 }
 

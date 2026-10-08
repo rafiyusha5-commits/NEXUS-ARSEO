@@ -129,11 +129,60 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
 select * from public.agent_reserve_run('web',null,1000);
 select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
--- Expired reservations of a crashed server stop holding budget.
+-- Reservations older than the TTL keep holding money: a crashed server may have been billed for them.
 reset role;
 update public.agent_runs set created_at=now()-interval '2 hours' where status='running';
 set role authenticated;
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+
+-- With room for one more run, the next reservation settles the abandoned runs conservatively: each is
+-- charged its whole reservation as an estimate; the employee's request is not returned automatically.
+reset role;
+create temp table agent_before as
+ select (select spent_usd_micros from public.agent_budget_months) spent,
+  (select sum(reserved_usd_micros) from public.agent_runs where status='running') held,
+  (select count(*) from public.agent_runs where status='running') runs,
+  (select requests_used from public.agent_usage_days where user_id='aa000000-0000-4000-8000-000000000002') used;
+update public.agent_settings set monthly_budget_usd_micros=(select spent+held+1000 from agent_before);
+set role authenticated;
 select * from public.agent_reserve_run('web',null,1000);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+reset role;
+do $$begin
+ assert (select runs from agent_before)=20,'nineteen runs of the specialist and one of the marketer were open';
+ assert (select count(*) from public.agent_runs where error_code='AGENT_ABANDONED' and status='failed' and cost_status='estimated'
+   and actual_usd_micros=reserved_usd_micros and finished_at is not null and not request_refunded)=20,'abandoned runs are charged their reservation';
+ assert (select spent_usd_micros from public.agent_budget_months)=(select spent+held from agent_before),'the estimate is added to the monthly spend';
+ assert (select requests_used from public.agent_usage_days where user_id='aa000000-0000-4000-8000-000000000002')=(select used from agent_before),
+  'settling money does not touch the request counter';
+ assert (select count(*) from public.agent_runs where status='running')=1,'only the new run is open';
+end$$;
+
+-- A late finish replaces the estimate with the reported usage once: the spend moves by the difference.
+set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
+select public.agent_finish_run((select run_id from agent_runs_t where n=3),(select token from agent_runs_t where n=3),
+ 'failed','AGENT_PROVIDER_ERROR',true,'openai','gpt-4.1-mini',1,0,500,100,300,'[]');
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','gpt-4.1-mini',1,0,500,100,300,'[]')$q$,
+ (select run_id from agent_runs_t where n=3),(select token from agent_runs_t where n=3)),'AGENT_RUN_NOT_FOUND');
+select public.agent_finish_run((select run_id from agent_runs_t where n=4),(select token from agent_runs_t where n=4),
+ 'completed',null,false,'openai','gpt-4.1-mini',2,1,900,200,999999,'[]');
+reset role;
+do $$begin
+ assert (select spent_usd_micros from public.agent_budget_months)=(select spent+held-700 from agent_before),
+  'late finish corrects the estimate by the difference only; a repeated or inflated finish adds nothing';
+ assert (select input_tokens from public.agent_budget_months)=2000+500+900,'tokens of late finishes are recorded once';
+ assert (select status='failed' and error_code='AGENT_PROVIDER_ERROR' and cost_status='reconciled' and actual_usd_micros=300 and request_refunded
+   from public.agent_runs where id=(select run_id from agent_runs_t where n=3)),'the reconciled run keeps reported usage';
+ assert (select status='completed' and error_code is null and cost_status='reconciled' and actual_usd_micros=1000 and not request_refunded
+   from public.agent_runs where id=(select run_id from agent_runs_t where n=4)),'a late completed run stays charged up to its reservation';
+ assert (select requests_used from public.agent_usage_days where user_id='aa000000-0000-4000-8000-000000000002')=(select used-1 from agent_before),
+  'the request is returned only by the explicit refund of the late finish';
+end$$;
+-- A normally finished run cannot be reconciled again.
+set role authenticated;
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','m',1,0,0,0,0,'[]')$q$,
+ (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
 
 -- A direct RPC call cannot inflate the shared spend: reported usage is capped by the run's reservation.
 reset role;
@@ -144,7 +193,7 @@ grant all on agent_inflate to authenticated;
 set role authenticated;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
 insert into agent_inflate select r.run_id,r.finish_token from public.agent_reserve_run('web',null,1000) r;
-select public.agent_finish_run((select run_id from agent_inflate),(select token from agent_inflate),'failed','X',true,'fake','m',
+select public.agent_finish_run((select run_id from agent_inflate),(select token from agent_inflate),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',
  99999,99999,2000000000,2000000000,999999999999999,'[]');
 reset role;
 do $$begin
@@ -154,13 +203,64 @@ end$$;
 set role authenticated;
 
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
--- A direct RPC call cannot store unmasked identity numbers in the trace excerpt.
+-- A direct RPC call cannot store personal data or secrets in the trace excerpt, in any number form.
 select public.agent_finish_run(r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
 from public.agent_reserve_run('web','удостоверение 045 678 912, ИИН 900101300123',1000) r;
+select public.agent_finish_run(r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
+from public.agent_reserve_run('web',E'номер 0456 78912, 0456.78912, 0456_78912, (701) 555-44-33, ０４５６７８９１２, 0456–78912, password=hunter2 Bearer abc.def eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln sk-proj-abcdefghijklmnopqrstu​',1000) r;
+reset role;
 do $$begin
- assert not exists(select 1 from public.agent_runs where question_excerpt ~ '\d{3}'),'excerpts keep no digit runs';
+ assert not exists(select 1 from public.agent_runs where question_excerpt ~ '[0-9]{3}|[0-9][ ._/()-][0-9]{2}'),'excerpts keep no digit runs';
  assert exists(select 1 from public.agent_runs where question_excerpt like 'удостоверение [скрыто], ИИН [скрыто]'),'the excerpt is masked by the database';
+ assert not exists(select 1 from public.agent_runs where question_excerpt ~* 'hunter2|abc\.def|eyJ|sk-proj|​'),'secrets and invisible characters are removed';
 end$$;
+
+-- The tool trace is checked field by field; anything outside the fixed shape is refused.
+create temp table agent_pii(run_id uuid,token text);
+grant all on agent_pii to authenticated;
+set role authenticated;
+insert into agent_pii select r.run_id,r.finish_token from public.agent_reserve_run('web',null,1000) r;
+do $$declare v_sql text:=$f$select public.agent_finish_run(%L,%L,'completed',null,false,%L,%L,1,1,10,10,1,%L::jsonb)$f$;
+ bad_tools text[]:=array[
+  '{"name":"find_shipments"}',
+  '[{"name":"find_shipments","params":{},"rows":1,"truncated":false,"ms":1,"driver_phone":"+77015554433"}]',
+  '[{"name":"run_sql","params":{},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{"driver_name":"Иванов"},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{"status":"Иванов Иван 900101300123"},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{"query":{"nested":"x"}},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{"limit":500},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"get_shipment","params":{"shipment_id":"900101300123"},"rows":1,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{},"rows":1000,"truncated":false,"ms":1}]',
+  '[{"name":"find_shipments","params":{},"rows":1,"truncated":"no","ms":"1"}]',
+  '[{"name":"find_shipments","params":{},"rows":1,"truncated":false,"ms":1,"error":"Водитель 900101300123"}]',
+  '[{"name":"find_shipments","params":{},"rows":1,"truncated":false}]',
+  (select jsonb_agg('{"name":"get_help","params":{},"rows":1,"truncated":false,"ms":1}'::jsonb)::text from generate_series(1,31))];
+ bad_meta text[][]:=array[
+  array['openai','gpt 900101300123'],array['openai','model-9001013001'],array['openai',repeat('m',81)],array['openai',''],
+  array['OpenAI 900101300123','m'],array['openai; drop','m']];
+ t text;i int;
+begin
+ for i in 1..array_length(bad_tools,1) loop
+  perform tests.agent_expect_error(format(v_sql,(select run_id from agent_pii),(select token from agent_pii),'openai','gpt-4.1-mini',bad_tools[i]),'AGENT_BAD_REQUEST');
+ end loop;
+ for i in 1..array_length(bad_meta,1) loop
+  perform tests.agent_expect_error(format(v_sql,(select run_id from agent_pii),(select token from agent_pii),bad_meta[i][1],bad_meta[i][2],'[]'),'AGENT_BAD_REQUEST');
+ end loop;
+ perform tests.agent_expect_error(format($f$select public.agent_finish_run(%L,%L,'failed','IIN_NINE_ZERO',true,'openai','m',1,1,1,1,1,'[]')$f$,
+  (select run_id from agent_pii),(select token from agent_pii)),'AGENT_BAD_REQUEST');
+ perform tests.agent_expect_error(format($f$select public.agent_finish_run(%L,%L,'completed','AGENT_TIMEOUT',false,'openai','m',1,1,1,1,1,'[]')$f$,
+  (select run_id from agent_pii),(select token from agent_pii)),'AGENT_BAD_REQUEST');
+end$$;
+select public.agent_finish_run((select run_id from agent_pii),(select token from agent_pii),'completed',null,false,'openai','gpt-4.1-mini',1,2,10,10,1,
+ E'[{"name":"find_shipments","params":{"query":"0456 78912 password=hunter2\\u200b","status":"in_transit","limit":5},"rows":1,"truncated":false,"ms":12},{"name":"get_help","params":{"topic":"documents"},"rows":1,"truncated":false,"ms":0,"error":"TOOL_ERROR"}]');
+reset role;
+do $$begin
+ assert (select tools from public.agent_runs where id=(select run_id from agent_pii))=
+  '[{"name":"find_shipments","params":{"query":"[скрыто] password=[скрыто]","status":"in_transit","limit":5},"rows":1,"truncated":false,"ms":12},{"name":"get_help","params":{"topic":"documents"},"rows":1,"truncated":false,"ms":0,"error":"TOOL_ERROR"}]'::jsonb,
+  'the stored trace is rebuilt from cleaned values only';
+ assert (select model='gpt-4.1-mini' and provider='openai' from public.agent_runs where id=(select run_id from agent_pii)),'checked metadata is stored';
+end$$;
+set role authenticated;
 
 -- No direct writes from the API.
 select tests.agent_expect_error($q$update public.agent_usage_days set requests_used=0$q$,'permission denied');

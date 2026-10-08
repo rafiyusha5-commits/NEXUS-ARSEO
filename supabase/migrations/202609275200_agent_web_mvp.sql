@@ -79,13 +79,23 @@ create table if not exists public.agent_runs(
  reserved_usd_micros bigint not null default 0 check(reserved_usd_micros>=0),
  actual_usd_micros bigint not null default 0 check(actual_usd_micros>=0),
  request_refunded boolean not null default false,
- error_code text check(error_code is null or error_code ~ '^[A-Z][A-Z0-9_]{1,63}$'),
+ -- reserved: run in progress; actual: finished with reported usage; estimated: abandoned run charged
+ -- its whole reservation; reconciled: an abandoned run finished late, spend corrected to reported usage.
+ cost_status text not null default 'reserved',
+ error_code text check(error_code is null or error_code ~ '^[A-Z][A-Z_]{1,63}$'),
  finish_token_hash text not null check(finish_token_hash ~ '^[0-9a-f]{64}$'),
  created_at timestamptz not null default now(),
  finished_at timestamptz,
  check((status='running')=(finished_at is null)),
  check(not request_refunded or status<>'completed')
 );
+alter table public.agent_runs add column if not exists cost_status text not null default 'reserved';
+do $$begin
+ if not exists(select 1 from pg_constraint where conname='agent_runs_cost_status_check' and conrelid='public.agent_runs'::regclass) then
+  alter table public.agent_runs add constraint agent_runs_cost_status_check
+   check(cost_status in ('reserved','actual','estimated','reconciled') and (status='running')=(cost_status='reserved'));
+ end if;
+end$$;
 create index if not exists agent_runs_user_created_idx on public.agent_runs(user_id,created_at desc);
 create index if not exists agent_runs_month_status_idx on public.agent_runs(budget_month,status);
 
@@ -96,7 +106,7 @@ end loop;end$$;
 grant select on public.agent_settings,public.agent_usage_days,public.agent_budget_months to authenticated;
 -- The finish token hash is never readable through the API.
 grant select(id,user_id,channel,status,usage_date,budget_month,question_excerpt,tools,provider,model,steps,tool_calls,
- input_tokens,output_tokens,reserved_usd_micros,actual_usd_micros,request_refunded,error_code,created_at,finished_at)
+ input_tokens,output_tokens,reserved_usd_micros,actual_usd_micros,request_refunded,cost_status,error_code,created_at,finished_at)
  on public.agent_runs to authenticated;
 
 drop policy if exists "trace viewers read agent settings" on public.agent_settings;
@@ -121,12 +131,83 @@ create or replace function private.agent_local_date() returns date
 language sql stable set search_path='' as $$ select (now() at time zone 'Asia/Aqtobe')::date $$;
 revoke all on function private.agent_local_date() from public,anon,authenticated,service_role;
 
+-- Everything the trace stores is checked and cleaned here, whoever calls the RPC: the finish token
+-- only proves that the caller owns the run, not that the values come from the Nexus server.
+-- Free text: control and invisible characters removed, secrets and any chain of 7+ digits (also split
+-- by spaces, dots, hyphens, slashes or brackets) masked, long opaque tokens masked, length bounded.
+create or replace function private.agent_clean_text(p_text text,p_max integer) returns text
+language plpgsql immutable set search_path='' as $$
+declare v text:=p_text;
+begin
+ if v is null then return null;end if;
+ v:=regexp_replace(v,'[\u0001-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]','','g');
+ v:=regexp_replace(v,'[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]','-','g');
+ v:=regexp_replace(v,'[\s\u00a0\u2000-\u200a\u202f\u205f\u3000]+',' ','g');
+ v:=translate(v,'０１２３４５６７８９','0123456789');
+ v:=regexp_replace(v,'-----BEGIN[A-Z ]*PRIVATE KEY-----.*','[скрыт ключ]','gi');
+ v:=regexp_replace(v,'(password|passwd|пароль|token|токен|secret|секрет|api[_ -]?key|ключ api|private[_ -]?key)\s*[:=]\s*\S+','\1=[скрыто]','gi');
+ v:=regexp_replace(v,'bearer\s+\S+','Bearer [скрыто]','gi');
+ v:=regexp_replace(v,'[a-z][a-z0-9+.-]*://[^\s:/@]+:[^\s@]+@','[скрыто]@','gi');
+ v:=regexp_replace(v,'[A-Za-z0-9_+/=.-]{24,}','[скрыто]','g');
+ v:=regexp_replace(v,'[0-9](?:[ ._/()+-]{0,3}[0-9]){6,}','[скрыто]','g');
+ return nullif(btrim(left(btrim(v),p_max)),'');
+end$$;
+revoke all on function private.agent_clean_text(text,integer) from public,anon,authenticated,service_role;
+
+-- The tool trace has a fixed shape: unknown tools, keys, parameters or error codes reject the call;
+-- the stored value is rebuilt from the checked parts only.
+create or replace function private.agent_clean_tools(p_tools jsonb) returns jsonb
+language plpgsql immutable set search_path='' as $$
+declare e jsonb;k text;v jsonb;params jsonb;entry jsonb;result jsonb:='[]'::jsonb;
+begin
+ if p_tools is null then return result;end if;
+ if jsonb_typeof(p_tools)<>'array' or jsonb_array_length(p_tools)>30 then raise exception 'AGENT_BAD_REQUEST' using errcode='22023';end if;
+ for e in select x from jsonb_array_elements(p_tools) x loop
+  if jsonb_typeof(e)<>'object' then raise exception 'AGENT_BAD_REQUEST' using errcode='22023';end if;
+  if exists(select 1 from jsonb_object_keys(e) x where x not in ('name','params','rows','truncated','ms','error'))
+     or not (e ? 'name' and e ? 'params' and e ? 'rows' and e ? 'truncated' and e ? 'ms')
+     or jsonb_typeof(e->'name')<>'string' or jsonb_typeof(e->'params')<>'object' or jsonb_typeof(e->'rows')<>'number'
+     or jsonb_typeof(e->'truncated')<>'boolean' or jsonb_typeof(e->'ms')<>'number' then
+   raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
+  end if;
+  if (e->>'name') not in ('find_shipments','get_shipment','get_shipment_vehicles','get_shipment_documents','get_document_extraction',
+       'list_delayed_shipments','get_stock_status','get_my_tasks','get_help','unknown')
+     or (e->>'rows') !~ '^(100|[0-9]{1,2})$' or (e->>'ms') !~ '^(120000|1[01][0-9]{4}|[0-9]{1,5})$'
+     or (e ? 'error' and (jsonb_typeof(e->'error')<>'string' or (e->>'error') not in
+       ('TOOL_CALL_LIMIT','UNKNOWN_TOOL','INVALID_PARAMS','PERMISSION_DENIED','TOOL_TIMEOUT','TOOL_ERROR'))) then
+   raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
+  end if;
+  params:='{}'::jsonb;
+  for k,v in select * from jsonb_each(e->'params') loop
+   if k in ('query','product_query') and jsonb_typeof(v)='string' then
+    params:=params||jsonb_build_object(k,coalesce(private.agent_clean_text(v#>>'{}',60),''));
+   elsif k in ('status','type','filter','topic') and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[a-z_]{1,30}$' then
+    params:=params||jsonb_build_object(k,v);
+   elsif k='warehouse_code' and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[A-Z_]{2,20}$' then
+    params:=params||jsonb_build_object(k,v);
+   elsif k='limit' and jsonb_typeof(v)='number' and (v#>>'{}') ~ '^([1-9]|1[0-9]|20)$' then
+    params:=params||jsonb_build_object(k,v);
+   elsif k in ('shipment_id','document_id') and jsonb_typeof(v)='string'
+     and (v#>>'{}') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    params:=params||jsonb_build_object(k,v);
+   else
+    raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
+   end if;
+  end loop;
+  entry:=jsonb_build_object('name',e->'name','params',params,'rows',e->'rows','truncated',e->'truncated','ms',e->'ms');
+  if e ? 'error' then entry:=entry||jsonb_build_object('error',e->'error');end if;
+  result:=result||jsonb_build_array(entry);
+ end loop;
+ return result;
+end$$;
+revoke all on function private.agent_clean_tools(jsonb) from public,anon,authenticated,service_role;
+
 create or replace function public.agent_reserve_run(p_channel text,p_question_excerpt text,p_reserve_usd_micros bigint)
 returns table(run_id uuid,finish_token text,requests_used integer,request_limit integer)
 language plpgsql security definer set search_path='' as $$
 declare
  v_user uuid:=(select auth.uid());s public.agent_settings%rowtype;
- v_day date:=private.agent_local_date();v_month date;v_used integer;v_spent bigint;v_active bigint;v_token text;v_id uuid;
+ v_day date:=private.agent_local_date();v_month date;v_used integer;v_spent bigint;v_active bigint;v_settled bigint;v_token text;v_id uuid;
 begin
  if v_user is null or not (select private.has_permission('agent.use')) then raise exception 'AGENT_FORBIDDEN' using errcode='42501';end if;
  if p_channel is null or p_channel not in ('web','telegram') or p_reserve_usd_micros is null or p_reserve_usd_micros<=0
@@ -143,20 +224,36 @@ begin
  if v_used>=s.daily_request_limit then raise exception 'AGENT_DAILY_LIMIT' using errcode='P0001';end if;
 
  insert into public.agent_budget_months(budget_month) values(v_month) on conflict do nothing;
- -- Reservations older than the TTL (a crashed server) stop holding budget but can still be finished
- -- later, so the tokens actually charged are recorded.
  select m.spent_usd_micros into v_spent from public.agent_budget_months m where m.budget_month=v_month for update;
+ -- A run still open after the TTL was abandoned (crashed server, lost connection). Its money is never
+ -- released silently: the whole reservation is charged as an estimate, because the provider may have
+ -- billed up to that amount. A late agent_finish_run replaces the estimate with the reported usage.
+ -- The request itself is not returned to the user here: the request and the money are settled apart.
+ -- Runs being finished right now are locked and skipped; they keep holding their reservation.
+ with stale as (
+  select r.id from public.agent_runs r
+  where r.budget_month=v_month and r.status='running' and r.created_at<now()-make_interval(secs=>s.reservation_ttl_seconds)
+  for update skip locked
+ ), settled as (
+  update public.agent_runs r set status='failed',error_code='AGENT_ABANDONED',actual_usd_micros=r.reserved_usd_micros,
+   cost_status='estimated',finished_at=now()
+  from stale where r.id=stale.id returning r.reserved_usd_micros
+ ) select coalesce(sum(reserved_usd_micros),0) into v_settled from settled;
+ if v_settled>0 then
+  update public.agent_budget_months set spent_usd_micros=spent_usd_micros+v_settled,updated_at=now() where budget_month=v_month;
+  v_spent:=v_spent+v_settled;
+ end if;
+ -- Every open run holds its reservation, whatever its age.
  select coalesce(sum(r.reserved_usd_micros),0) into v_active from public.agent_runs r
- where r.budget_month=v_month and r.status='running' and r.created_at>=now()-make_interval(secs=>s.reservation_ttl_seconds);
+ where r.budget_month=v_month and r.status='running';
  if v_spent+v_active+p_reserve_usd_micros>s.monthly_budget_usd_micros then raise exception 'AGENT_MONTHLY_BUDGET' using errcode='P0001';end if;
 
  update public.agent_usage_days set requests_used=v_used+1,updated_at=now() where user_id=v_user and usage_date=v_day;
  v_token:=replace(gen_random_uuid()::text,'-','')||replace(gen_random_uuid()::text,'-','');
- -- The server masks the excerpt; the database masks again, so a direct RPC call cannot store
- -- identity or phone numbers (any run of 7+ digits, also with spaces or hyphens) in the trace.
+ -- The server masks the excerpt; the database cleans it again, so a direct RPC call cannot store
+ -- identity or phone numbers or secrets in the trace.
  insert into public.agent_runs(user_id,channel,usage_date,budget_month,question_excerpt,reserved_usd_micros,finish_token_hash)
- values(v_user,p_channel,v_day,v_month,
-  nullif(btrim(regexp_replace(p_question_excerpt,'\d(?:[ -]?\d){6,}','[скрыто]','g')),''),
+ values(v_user,p_channel,v_day,v_month,private.agent_clean_text(p_question_excerpt,200),
   p_reserve_usd_micros,encode(sha256(convert_to(v_token,'UTF8')),'hex'))
  returning id into v_id;
  return query select v_id,v_token,v_used+1,s.daily_request_limit;
@@ -168,19 +265,29 @@ create or replace function public.agent_finish_run(
  p_input_tokens integer,p_output_tokens integer,p_actual_usd_micros bigint,p_tools jsonb
 ) returns void
 language plpgsql security definer set search_path='' as $$
-declare r public.agent_runs%rowtype;
+declare r public.agent_runs%rowtype;v_tools jsonb;v_late boolean;v_delta bigint;v_refund boolean:=coalesce(p_refund,false);
 begin
+ -- Lock order: run, usage day, budget month. agent_reserve_run takes usage day, budget month and
+ -- then only skips locked runs, so the two cannot deadlock.
  select * into r from public.agent_runs where id=p_run_id for update;
- if not found or r.user_id is distinct from (select auth.uid()) or r.status<>'running'
+ -- An open run is finished once; an abandoned one (estimated cost) may be reconciled once.
+ if not found or r.user_id is distinct from (select auth.uid()) or r.cost_status not in ('reserved','estimated')
     or r.finish_token_hash<>encode(sha256(convert_to(coalesce(p_finish_token,''),'UTF8')),'hex') then
   raise exception 'AGENT_RUN_NOT_FOUND' using errcode='42501';
  end if;
- if p_status not in ('completed','failed','rejected') or (coalesce(p_refund,false) and p_status='completed')
+ v_late:=r.cost_status='estimated';
+ -- Strict checks of every stored value: reject instead of storing anything unexpected.
+ if p_status is null or p_status not in ('completed','failed','rejected') or (v_refund and p_status='completed')
+    or (p_status='completed' and p_error_code is not null)
+    or (p_error_code is not null and p_error_code not in ('AGENT_TIMEOUT','AGENT_PROVIDER_ERROR','AGENT_TOKEN_LIMIT',
+      'AGENT_STEP_LIMIT','AGENT_BAD_ANSWER','AGENT_INTERNAL_ERROR','AGENT_FORBIDDEN'))
+    or p_provider is null or p_provider !~ '^[a-z][a-z0-9_-]{0,39}$'
+    or p_model is null or p_model !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$' or p_model ~ '[0-9]{7}'
     or least(coalesce(p_steps,0),coalesce(p_tool_calls,0),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0))<0
-    or coalesce(p_actual_usd_micros,0)<0
-    or (p_tools is not null and jsonb_typeof(p_tools)<>'array') then
+    or coalesce(p_actual_usd_micros,0)<0 then
   raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
  end if;
+ v_tools:=private.agent_clean_tools(p_tools);
  -- The caller reports usage, so it is bounded by the run's own reservation: a direct RPC call cannot
  -- inflate the shared monthly spend. The server reserves the worst case with a margin.
  p_actual_usd_micros:=least(coalesce(p_actual_usd_micros,0),r.reserved_usd_micros);
@@ -188,22 +295,20 @@ begin
  p_output_tokens:=least(coalesce(p_output_tokens,0),10000000);
  p_steps:=least(coalesce(p_steps,0),50);
  p_tool_calls:=least(coalesce(p_tool_calls,0),100);
- if p_error_code is not null and p_error_code !~ '^[A-Z][A-Z0-9_]{1,63}$' then p_error_code:='AGENT_ERROR';end if;
- if p_provider is not null and p_provider !~ '^[a-z0-9_.-]{1,40}$' then p_provider:=null;end if;
- if p_model is not null and length(p_model)>80 then p_model:=left(p_model,80);end if;
- if p_tools is not null and pg_column_size(p_tools)>16384 then p_tools:='[]'::jsonb;end if;
- if coalesce(p_refund,false) then
+ -- Returning the request to the user is separate from accounting the money.
+ if v_refund and not r.request_refunded then
   update public.agent_usage_days set requests_used=greatest(requests_used-1,0),requests_refunded=requests_refunded+1,updated_at=now()
   where user_id=r.user_id and usage_date=r.usage_date;
  end if;
- -- Tokens and money that the provider actually charged are recorded even for refunded runs.
- update public.agent_budget_months set spent_usd_micros=spent_usd_micros+coalesce(p_actual_usd_micros,0),
-  input_tokens=input_tokens+coalesce(p_input_tokens,0),output_tokens=output_tokens+coalesce(p_output_tokens,0),updated_at=now()
+ -- Tokens and money that the provider actually charged are recorded even for refunded runs. A late
+ -- finish only adds the difference to the estimate already charged, so nothing is counted twice.
+ v_delta:=p_actual_usd_micros-case when v_late then r.actual_usd_micros else 0 end;
+ update public.agent_budget_months set spent_usd_micros=greatest(spent_usd_micros+v_delta,0),
+  input_tokens=input_tokens+p_input_tokens,output_tokens=output_tokens+p_output_tokens,updated_at=now()
  where budget_month=r.budget_month;
- update public.agent_runs set status=p_status,error_code=p_error_code,request_refunded=coalesce(p_refund,false),
-  provider=p_provider,model=p_model,steps=coalesce(p_steps,0),tool_calls=coalesce(p_tool_calls,0),
-  input_tokens=coalesce(p_input_tokens,0),output_tokens=coalesce(p_output_tokens,0),
-  actual_usd_micros=coalesce(p_actual_usd_micros,0),tools=coalesce(p_tools,'[]'::jsonb),finished_at=now()
+ update public.agent_runs set status=p_status,error_code=p_error_code,request_refunded=r.request_refunded or v_refund,
+  provider=p_provider,model=p_model,steps=p_steps,tool_calls=p_tool_calls,input_tokens=p_input_tokens,output_tokens=p_output_tokens,
+  actual_usd_micros=p_actual_usd_micros,tools=v_tools,cost_status=case when v_late then 'reconciled' else 'actual' end,finished_at=now()
  where id=r.id;
 end$$;
 

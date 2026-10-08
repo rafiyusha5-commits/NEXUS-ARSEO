@@ -4,10 +4,13 @@ export type TraceRun = {
   id: string; status: string; channel: string; question_excerpt: string | null; error_code: string | null;
   tools: Array<{ name?: string; params?: Record<string, unknown>; rows?: number; truncated?: boolean; ms?: number; error?: string }> | null;
   steps: number; tool_calls: number; input_tokens: number; output_tokens: number; actual_usd_micros: number;
-  request_refunded: boolean; created_at: string; finished_at: string | null; user?: { full_name: string | null } | Array<{ full_name: string | null }> | null;
+  request_refunded: boolean; cost_status?: string; created_at: string; finished_at: string | null; user?: { full_name: string | null } | Array<{ full_name: string | null }> | null;
 };
 
 const STATUS: Record<string, string> = { running: "Выполняется", completed: "Ответ дан", failed: "Ошибка", rejected: "Отклонён" };
+const COST: Record<string, string> = {
+  reserved: "резерв", actual: "по отчёту сервера", estimated: "оценка: списан весь резерв", reconciled: "сверено после позднего завершения",
+};
 
 function userName(value: TraceRun["user"]): string {
   const user = Array.isArray(value) ? value[0] : value;
@@ -48,7 +51,7 @@ export function TraceTable({ runs, showUser }: { runs: TraceRun[]; showUser: boo
                   </ul>
                 ) : "—"}
               </td>
-              <td><small>шагов {run.steps}, вызовов {run.tool_calls}<br />токены {run.input_tokens} / {run.output_tokens}<br />${(run.actual_usd_micros / 1_000_000).toFixed(4)}</small></td>
+              <td><small>шагов {run.steps}, вызовов {run.tool_calls}<br />токены {run.input_tokens} / {run.output_tokens}<br />${(run.actual_usd_micros / 1_000_000).toFixed(4)}{run.cost_status ? ` (${COST[run.cost_status] ?? run.cost_status})` : ""}</small></td>
             </tr>
           ))}
         </tbody>

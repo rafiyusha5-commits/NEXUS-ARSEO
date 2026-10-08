@@ -81,9 +81,9 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
 
     async getShipmentVehicles(id, signal) {
       const { data } = ensure(await supabase.from("shipment_transports")
-        .select("id,sequence_no,status,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name,planned_loading_date,actual_loading_date,planned_arrival_date,actual_arrival_date,temperature_setpoint")
+        .select("id,sequence_no,status,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name,planned_loading_date,actual_loading_date,planned_arrival_date,actual_arrival_date,temperature_setpoint,shipment:shipments(shipment_number)")
         .eq("shipment_id", id).order("sequence_no").limit(21).abortSignal(signal));
-      return data as ShipmentRow[];
+      return (data as ShipmentRow[]).map((row) => ({ ...row, shipment_number: one(row.shipment as { shipment_number?: unknown } | null)?.shipment_number ?? null }));
     },
 
     async getShipmentDocuments(id, signal) {

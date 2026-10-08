@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { maskDataText, maskSensitive, prepareQuestion, traceExcerpt } from "../../src/lib/agent/masking.ts";
+import { maskDataText, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "../../src/lib/agent/masking.ts";
 
 describe("assistant masking", () => {
   it("masks identity documents, IIN, passports and phones in the question", () => {
@@ -48,7 +48,9 @@ describe("assistant masking", () => {
 
   it("masks money in Nexus free text and withholds text with unknown long numbers", () => {
     assert.doesNotMatch(maskDataText("Ждём оплату 15 000 EUR и 2 500,50 ₸") ?? "", /15 000|2 500/);
-    assert.equal(maskDataText("Связаться 77015554433012"), "[текст скрыт: возможны персональные данные]");
+    assert.doesNotMatch(maskDataText("Связаться 77015554433012") ?? "", /\d{4}/);
+    assert.equal(maskDataText("Связаться 0456.78912"), "[текст скрыт: возможны персональные данные]");
+    assert.equal(maskDataText("Ждём до 05.10.2026"), "Ждём до 05.10.2026");
     assert.equal(maskDataText(""), null);
     assert.equal(maskDataText("слово ".repeat(60), 50)?.length, 50);
   });
@@ -60,6 +62,29 @@ describe("assistant masking", () => {
     assert.deepEqual(prepareQuestion("045678912 045678913 045678914 045678915 045678916 045678917"), { ok: false, code: "QUESTION_UNSAFE" });
     const ok = prepareQuestion("Где водитель с удостоверением 045678912?");
     assert.ok(ok.ok && !ok.text.includes("045678912"));
+  });
+
+  it("masks a number split by spaces or hyphens in any grouping and refuses forms it cannot clean", () => {
+    for (const value of ["0456 78912", "0456-78912", "04 56 78 912", "0456 - 78912", "0456\u2013789 12", "0456\u00a078912", "045678912345", "\uff10\uff14\uff15\uff16 78912"]) {
+      const result = prepareQuestion(`Проверь номер ${value}`);
+      assert.ok(result.ok, value);
+      assert.ok(result.ok && !/\d/.test(result.text) && result.masked >= 1, `${value} -> ${result.ok ? result.text : ""}`);
+    }
+    for (const value of ["0456.78912", "0456_78912", "0456/78912", "(0456) 789.12"]) {
+      assert.deepEqual(prepareQuestion(`Проверь номер ${value}`), { ok: false, code: "QUESTION_UNSAFE" }, value);
+    }
+  });
+
+  it("keeps ordinary shipment numbers, plates, dates and quantities in the question", () => {
+    const question = "Где поставка NAR-2026-0007 и машина 123ABC02 (прицеп 45AB02)? План 05.10.2026 12:30, 18 паллет, 2026 год";
+    assert.deepEqual(prepareQuestion(question), { ok: true, text: question, masked: 0 });
+  });
+
+  it("keeps record identifiers (UUID) intact, including all-digit groups", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    assert.equal(maskSensitive(`/shipments/${id}`).text, `/shipments/${id}`);
+    assert.deepEqual(prepareQuestion(`Что с ${id}?`), { ok: true, text: `Что с ${id}?`, masked: 0 });
+    assert.equal(maskOutgoing(JSON.stringify({ shipment_id: id, query: "0456.78912" })), JSON.stringify({ shipment_id: id, query: "[скрыто]" }));
   });
 
   it("keeps the trace excerpt short", () => {

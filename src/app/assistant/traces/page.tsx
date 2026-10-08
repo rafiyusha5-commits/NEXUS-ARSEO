@@ -13,7 +13,7 @@ export default async function AssistantTracesPage() {
   const [runsResult, budgetResult] = can["agent.view_traces"]
     ? await Promise.all([
       supabase.from("agent_runs")
-        .select("id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,created_at,finished_at,user:profiles!agent_runs_user_id_fkey(full_name)")
+        .select("id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,cost_status,created_at,finished_at,user:profiles!agent_runs_user_id_fkey(full_name)")
         .order("created_at", { ascending: false }).limit(100),
       supabase.from("agent_budget_months").select("budget_month,spent_usd_micros,input_tokens,output_tokens").order("budget_month", { ascending: false }).limit(3),
     ])

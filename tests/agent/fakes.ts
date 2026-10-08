@@ -54,7 +54,7 @@ export function fakeData(overrides: Partial<AgentDataSource> = {}): AgentDataSou
     },
     async getShipmentVehicles() {
       return [{
-        id: "v1", sequence_no: 1, status: "in_transit", vehicle_plate: "123ABC02", vehicle_make: "Volvo", trailer_plate: "45AB02", trailer_make: "Schmitz",
+        id: "v1", shipment_number: "NAR-2026-0007", sequence_no: 1, status: "in_transit", vehicle_plate: "123ABC02", vehicle_make: "Volvo", trailer_plate: "45AB02", trailer_make: "Schmitz",
         carrier_name: "Trans", planned_loading_date: "2026-09-25", actual_loading_date: "2026-09-26", planned_arrival_date: "2026-10-05", actual_arrival_date: null,
         temperature_setpoint: "+5", driver_name: SECRET_VALUES.driverName, driver_phone: SECRET_VALUES.driverPhone, driver_document: SECRET_VALUES.driverDocument,
       }];

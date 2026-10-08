@@ -6,7 +6,7 @@ import {
   documentStatusLabel, extractionStatusLabel, label, shelfLifeLabel, shipmentStatusLabel, shipmentTypeLabel,
   stageStatusLabel, taskPriorityLabel, taskStatusLabel, vehicleStatusLabel,
 } from "./labels.ts";
-import { maskDataText } from "./masking.ts";
+import { maskDataText, maskSensitive } from "./masking.ts";
 import { AGENT_TIME_ZONE } from "./time.ts";
 import type { AgentTool, EntityRef, ShipmentRow, ToolField, ToolResult, ToolRow } from "./types.ts";
 
@@ -59,10 +59,16 @@ function uuidRef(type: EntityRef["type"], id: unknown): EntityRef | undefined {
 }
 
 /** Keeps only declared fields; anything else the source returned is dropped. */
-function project(fields: readonly ToolField[], values: Record<string, string | number | null>, entity?: EntityRef): ToolRow {
+function project(subject: string, fields: readonly ToolField[], values: Record<string, string | number | null>, entity?: EntityRef): ToolRow {
   const kept: Record<string, string | number | null> = {};
   for (const field of fields) if (field.key in values && values[field.key] !== null && values[field.key] !== undefined) kept[field.key] = values[field.key];
-  return entity ? { values: kept, entity } : { values: kept };
+  // Parts of the subject come from values already masked by the caller; mask again for secrets.
+  const safeSubject = maskSensitive(subject).text.slice(0, 160);
+  return entity ? { subject: safeSubject, values: kept, entity } : { subject: safeSubject, values: kept };
+}
+
+function shipmentSubject(number: unknown): string {
+  return `Поставка ${str(number) ?? "без номера"}`;
 }
 
 function result(rows: ToolRow[], truncated: boolean, total: number | null, notes: string[] = []): ToolResult {
@@ -114,7 +120,7 @@ const findShipments: AgentTool = {
     const limit = Number(params.limit ?? 10);
     const { rows, total } = await ctx.data.findShipments({ query: params.query as string | undefined, status: params.status as string | undefined, type: params.type as string | undefined, limit }, ctx.signal);
     const shown = rows.slice(0, limit);
-    return result(shown.map((row) => project(SHIPMENT_FIELDS, shipmentValues(row), uuidRef("shipment", row.id))), rows.length > limit || (total !== null && total > shown.length), total);
+    return result(shown.map((row) => project(shipmentSubject(row.shipment_number), SHIPMENT_FIELDS, shipmentValues(row), uuidRef("shipment", row.id))), rows.length > limit || (total !== null && total > shown.length), total);
   },
 };
 
@@ -152,7 +158,8 @@ const getShipment: AgentTool = {
     if (!shipment) return result([], false, 0, ["Поставка не найдена или недоступна по вашим правам."]);
     const [stages, items] = await Promise.all([ctx.data.getShipmentStages(id, ctx.signal), ctx.data.getShipmentItems(id, MAX_TOOL_ROWS, ctx.signal)]);
     const entity = uuidRef("shipment", shipment.id);
-    const card = project(SHIPMENT_CARD_FIELDS, {
+    const subject = shipmentSubject(shipment.shipment_number);
+    const card = project(subject, SHIPMENT_CARD_FIELDS, {
       ...shipmentValues(shipment),
       route: maskDataText(localized(shipment.route_name), 120),
       responsible: maskDataText(str(shipment.responsible_name), 120),
@@ -161,12 +168,12 @@ const getShipment: AgentTool = {
       stages_total: stages.length,
       stages_completed: stages.filter((stage) => stage.status === "completed").length,
     }, entity);
-    const activeStages = stages.filter((stage) => stage.status === "in_progress" || stage.status === "blocked").slice(0, 10).map((stage) => project(SHIPMENT_CARD_FIELDS, {
+    const activeStages = stages.filter((stage) => stage.status === "in_progress" || stage.status === "blocked").slice(0, 10).map((stage) => project(`${subject} · этап «${maskDataText(localized(stage.stage_name), 80) ?? "без названия"}»`, SHIPMENT_CARD_FIELDS, {
       stage_name: maskDataText(localized(stage.stage_name), 120),
       stage_status: label(stageStatusLabel, stage.status),
       stage_reason: stage.status === "blocked" ? maskDataText(str(stage.status_reason)) : null,
     }, entity));
-    const itemRows = items.rows.slice(0, MAX_TOOL_ROWS).map((item) => project(SHIPMENT_CARD_FIELDS, {
+    const itemRows = items.rows.slice(0, MAX_TOOL_ROWS).map((item) => project(`${subject} · товар ${str(item.internal_sku) ?? "без артикула"}`, SHIPMENT_CARD_FIELDS, {
       product_sku: str(item.internal_sku),
       product_name: maskDataText(localized(item.product_name), 120),
       uom: str(item.uom),
@@ -208,7 +215,7 @@ const getShipmentVehicles: AgentTool = {
   async run(ctx, params) {
     const id = String(params.shipment_id);
     const vehicles = await ctx.data.getShipmentVehicles(id, ctx.signal);
-    const rows = vehicles.slice(0, MAX_TOOL_ROWS).map((vehicle) => project(VEHICLE_FIELDS, {
+    const rows = vehicles.slice(0, MAX_TOOL_ROWS).map((vehicle) => project(`${shipmentSubject(vehicle.shipment_number)} · автомобиль № ${num(vehicle.sequence_no) ?? "?"}`, VEHICLE_FIELDS, {
       sequence_no: num(vehicle.sequence_no),
       vehicle_status: label(vehicleStatusLabel, vehicle.status),
       vehicle_plate: maskDataText(str(vehicle.vehicle_plate), 40),
@@ -250,7 +257,10 @@ const getShipmentDocuments: AgentTool = {
     const { documents, missingTypes } = await ctx.data.getShipmentDocuments(String(params.shipment_id), ctx.signal);
     const shown = documents.slice(0, MAX_TOOL_ROWS).map((document) => {
       const personal = PERSONAL_DOCUMENT_TYPES.has(String(document.type_code));
-      return project(DOCUMENT_FIELDS, {
+      const docSubject = personal
+        ? `${str(document.type_name) ?? "Документ"} (документ водителя или автомобиля)`
+        : `${str(document.type_name) ?? "Документ"}${str(document.document_number) ? ` № ${maskDataText(str(document.document_number), 60)}` : ""}`;
+      return project(docSubject, DOCUMENT_FIELDS, {
         document_type: str(document.type_name),
         document_title: personal ? "[скрыто: документ водителя или автомобиля]" : maskDataText(str(document.title), 120),
         document_number: personal ? null : maskDataText(str(document.document_number), 60),
@@ -260,7 +270,7 @@ const getShipmentDocuments: AgentTool = {
         attached_to: document.vehicle_sequence_no ? `Автомобиль ${document.vehicle_sequence_no}` : "Поставка",
       }, uuidRef("document", document.id));
     });
-    const missing = missingTypes.slice(0, MAX_TOOL_ROWS).map((type) => project(DOCUMENT_FIELDS, { missing_document_type: str(type.type_name) }));
+    const missing = missingTypes.slice(0, MAX_TOOL_ROWS).map((type) => project(`Отсутствует обязательный документ: ${str(type.type_name) ?? "тип не указан"}`, DOCUMENT_FIELDS, { missing_document_type: str(type.type_name) }));
     const notes = ["Содержимое файлов, суммы документов и данные водителей ассистенту не передаются."];
     if (!missingTypes.length) notes.push("Отсутствующих обязательных документов по правилам процесса не найдено.");
     return result([...shown, ...missing], documents.length > MAX_TOOL_ROWS, documents.length, notes);
@@ -341,7 +351,7 @@ const getDocumentExtraction: AgentTool = {
         if (raw === null || raw === undefined || typeof raw === "object") continue;
         values[key] = field.kind === "number" ? num(raw) : field.kind === "date" ? isoDate(raw) ?? maskDataText(String(raw), 40) : maskDataText(String(raw), 120);
       }
-      return project(EXTRACTION_FIELDS, values, uuidRef("document", row.document_id));
+      return project(`Распознавание: ${values.document_title ?? "документ"}`, EXTRACTION_FIELDS, values, uuidRef("document", row.document_id));
     });
     return result(shown, rows.length > limit || (total !== null && total > shown.length), total, [
       "Цены из ЭСФ, данные водителя, адреса, реквизиты и полный текст документа ассистенту не передаются.",
@@ -370,14 +380,14 @@ const listDelayedShipments: AgentTool = {
     const limit = Number(params.limit ?? MAX_TOOL_ROWS);
     const today = localDate(new Date());
     const data = await ctx.data.listDelayedShipments({ today, limit }, ctx.signal);
-    const shipments = data.shipments.slice(0, limit).map((row) => project(DELAY_FIELDS, {
+    const shipments = data.shipments.slice(0, limit).map((row) => project(shipmentSubject(row.shipment_number), DELAY_FIELDS, {
       kind: "Поставка",
       shipment_number: str(row.shipment_number),
       status: label(shipmentStatusLabel, row.status),
       planned_arrival_date: isoDate(row.planned_arrival_date),
       days_late: isoDate(row.planned_arrival_date) ? daysBetween(isoDate(row.planned_arrival_date)!, today) : null,
     }, uuidRef("shipment", row.id)));
-    const vehicles = data.vehicles.slice(0, limit).map((row) => project(DELAY_FIELDS, {
+    const vehicles = data.vehicles.slice(0, limit).map((row) => project(`${shipmentSubject(row.shipment_number)} · автомобиль № ${num(row.sequence_no) ?? "?"}`, DELAY_FIELDS, {
       kind: "Автомобиль",
       shipment_number: str(row.shipment_number),
       sequence_no: num(row.sequence_no),
@@ -439,7 +449,7 @@ const getStockStatus: AgentTool = {
       groups.set(key, group);
     }
     const all = [...groups.values()].sort((a, b) => a.available - b.available);
-    const shown = all.slice(0, limit).map((group) => project(STOCK_FIELDS, {
+    const shown = all.slice(0, limit).map((group) => project(`Товар ${group.sku ?? "без артикула"}, склад ${group.warehouse ?? "?"}, ${group.uom ?? "ед."}`, STOCK_FIELDS, {
       internal_sku: group.sku,
       product_name: maskDataText(group.name, 120),
       warehouse_code: group.warehouse,
@@ -484,7 +494,7 @@ const getMyTasks: AgentTool = {
     const limit = Number(params.limit ?? MAX_TOOL_ROWS);
     // The assignee is the session user, never a value chosen by the model.
     const { rows, total } = await ctx.data.getMyTasks({ userId: ctx.userId, filter: String(params.filter ?? "active"), nowIso: new Date().toISOString(), limit }, ctx.signal);
-    const shown = rows.slice(0, limit).map((row) => project(TASK_FIELDS, {
+    const shown = rows.slice(0, limit).map((row) => project(`Задача «${maskDataText(str(row.title), 120) ?? "без названия"}»`, TASK_FIELDS, {
       task_title: maskDataText(str(row.title), 160),
       task_status: label(taskStatusLabel, row.status),
       priority: label(taskPriorityLabel, row.priority),
@@ -510,7 +520,7 @@ const getHelp: AgentTool = {
   timeoutMs: 1000,
   async run(_ctx, params) {
     const entry = HELP_TEXT[params.topic as HelpTopic];
-    return result([project(HELP_FIELDS, { help_title: entry.title, help_text: entry.text })], false, 1);
+    return result([project(`Справка: ${entry.title}`, HELP_FIELDS, { help_title: entry.title, help_text: entry.text })], false, 1);
   },
 };
 

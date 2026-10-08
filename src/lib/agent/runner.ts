@@ -2,7 +2,7 @@
 // the user's session data source, a fresh permission check, the ledger and the model provider.
 import { actualCostMicros, reserveCostMicros, type AgentLimits } from "./config.ts";
 import { ANSWER_JSON_SCHEMA, parseAnswer, verifyAnswer, type CallRecord } from "./facts.ts";
-import { maskSensitive, prepareQuestion, traceExcerpt } from "./masking.ts";
+import { hasLongDigitChain, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "./masking.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME } from "./tools.ts";
@@ -57,6 +57,7 @@ const TOOL_STAGE: Record<string, string> = {
   list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
 };
 const MAX_TOOL_CONTENT = 12_000;
+const MAX_TRACE_ENTRIES = 30;
 
 function withTimeout<T>(ms: number, parent: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
@@ -79,7 +80,10 @@ function withTimeout<T>(ms: number, parent: AbortSignal, work: (signal: AbortSig
 export function toolContent(callId: string, tool: AgentTool, result: ToolResult): string {
   const rows = result.rows.map((row, index) => ({
     row: index,
-    ...Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, typeof value === "string" ? maskSensitive(value).text : value])),
+    subject: maskOutgoing(row.subject),
+    // Record identifier for follow-up tools (get_shipment and others); never shown to the user as text.
+    ...(row.entity && row.entity.type !== "task" ? { [`${row.entity.type}_id`]: row.entity.id } : {}),
+    ...Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, typeof value === "string" ? maskOutgoing(value) : value])),
   }));
   let payload = JSON.stringify({ call: callId, tool: tool.name, truncated: result.truncated, total: result.total, notes: result.notes, rows });
   while (payload.length > MAX_TOOL_CONTENT && rows.length) {
@@ -97,7 +101,11 @@ function estimateTokens(messages: ModelMessage[]): number {
 }
 
 function safeParams(params: Record<string, string | number>): Record<string, string | number> {
-  return Object.fromEntries(Object.entries(params).map(([key, value]) => [key, typeof value === "string" ? maskSensitive(value).text.slice(0, 60) : value]));
+  return Object.fromEntries(Object.entries(params).map(([key, value]) => {
+    if (typeof value !== "string") return [key, value];
+    // A number that no rule recognised is not written to the trace at all.
+    return [key, hasLongDigitChain(maskSensitive(value).text, 9) ? "[скрыто]" : maskOutgoing(value).slice(0, 60)];
+  }));
 }
 
 export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<RunOutcome> {
@@ -133,10 +141,13 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     try {
       await deps.ledger.finish(reservation, {
         status, errorCode, refund, provider: deps.provider.name, model: deps.provider.model, steps, toolCalls,
-        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing), tools: trace,
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing),
+        // The database accepts at most 30 entries of a fixed shape (agent_clean_tools).
+        tools: trace.slice(0, MAX_TRACE_ENTRIES).map((entry) => ({ ...entry, ms: Math.min(Math.max(Math.round(entry.ms), 0), 120_000) })),
       });
     } catch {
-      // Accounting failure must not expose details; the reservation expires by TTL.
+      // Accounting failure must not expose details. After the TTL the database charges the whole
+      // reservation as an estimate; a later finish of the same run would reconcile it.
     }
   };
   const fail = async (code: string): Promise<RunOutcome> => {
@@ -184,7 +195,12 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       usage.outputTokens += response.usage.outputTokens;
 
       if (response.toolCalls.length) {
-        messages.push({ role: "assistant", content: response.content, toolCalls: response.toolCalls });
+        // The model's own turn is sent back on the next step; mask it like any other outgoing text.
+        messages.push({
+          role: "assistant",
+          content: response.content === null ? null : maskOutgoing(response.content),
+          toolCalls: response.toolCalls.map((call) => ({ ...call, arguments: maskOutgoing(call.arguments) })),
+        });
         for (const call of response.toolCalls) {
           const tool = TOOL_BY_NAME.get(call.name);
           const reply = (content: string) => messages.push({ role: "tool", toolCallId: call.id, content });
@@ -234,7 +250,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       if (!raw) {
         if (formatRetries < 1 && steps < deps.limits.maxSteps) {
           formatRetries += 1;
-          messages.push({ role: "assistant", content: response.content ? response.content.slice(0, 2000) : null });
+          messages.push({ role: "assistant", content: response.content ? maskOutgoing(response.content.slice(0, 2000)) : null });
           messages.push({ role: "user", content: "Ответ не соответствует JSON-схеме. Верни только JSON по схеме." });
           continue;
         }
