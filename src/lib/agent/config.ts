@@ -2,6 +2,7 @@
 // provider is acknowledged. Without prices the money budget cannot be reserved, so it stays off.
 
 type Env = Record<string, string | undefined>;
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export type AgentLimits = {
   maxSteps: number;
@@ -21,6 +22,7 @@ export type AgentConfig =
       apiKey: string;
       model: string;
       baseUrl: string;
+      reasoningEffort?: ReasoningEffort;
       limits: AgentLimits;
       /** USD per one million tokens; used for the conservative reservation and actual cost. */
       pricing: { inputUsdPerMTok: number; outputUsdPerMTok: number };
@@ -59,6 +61,8 @@ export function loadAgentConfig(env: Env = process.env): AgentConfig {
   const inputUsdPerMTok = price(env.AGENT_PRICE_INPUT_USD_PER_MTOK);
   const outputUsdPerMTok = price(env.AGENT_PRICE_OUTPUT_USD_PER_MTOK);
   if (inputUsdPerMTok === null || outputUsdPerMTok === null) return { enabled: false, reason: "PRICES_NOT_CONFIGURED" };
+  const effort = env.AGENT_REASONING_EFFORT?.trim() || (model === "gpt-5.6-terra" ? "low" : undefined);
+  if (effort && !["none", "low", "medium", "high", "xhigh", "max"].includes(effort)) return { enabled: false, reason: "INVALID_LIMITS" };
   const limits = {
     maxSteps: bounded(env.AGENT_MAX_STEPS, DEFAULT_LIMITS.maxSteps, 2, 10),
     maxToolCalls: bounded(env.AGENT_MAX_TOOL_CALLS, DEFAULT_LIMITS.maxToolCalls, 1, 16),
@@ -78,6 +82,7 @@ export function loadAgentConfig(env: Env = process.env): AgentConfig {
     apiKey,
     model,
     baseUrl: "https://api.openai.com/v1",
+    reasoningEffort: effort as ReasoningEffort | undefined,
     limits: limits as AgentLimits,
     pricing: { inputUsdPerMTok, outputUsdPerMTok },
   };
@@ -101,6 +106,6 @@ export const DISABLED_REASON_TEXT: Record<Exclude<AgentConfig, { enabled: true }
   NOT_ACKNOWLEDGED: "Ассистент выключен: не подтверждена передача данных провайдеру модели (AGENT_ACKNOWLEDGE_DATA_TRANSFER).",
   PROVIDER_NOT_CONFIGURED: "Ассистент выключен: не настроен провайдер модели (AGENT_PROVIDER, AGENT_MODEL и ключ провайдера).",
   PRICES_NOT_CONFIGURED: "Ассистент выключен: не заданы цены токенов (AGENT_PRICE_INPUT_USD_PER_MTOK, AGENT_PRICE_OUTPUT_USD_PER_MTOK), без них нельзя зарезервировать бюджет.",
-  INVALID_LIMITS: "Ассистент выключен: ограничения AGENT_MAX_* заданы неверно.",
+  INVALID_LIMITS: "Ассистент выключен: ограничения AGENT_MAX_* или AGENT_REASONING_EFFORT заданы неверно.",
   LEDGER_NOT_CONFIGURED: "Ассистент выключен: для учёта лимитов и бюджета нужен серверный ключ SUPABASE_SECRET_KEY.",
 };

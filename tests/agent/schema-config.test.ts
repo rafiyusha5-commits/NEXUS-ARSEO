@@ -34,6 +34,19 @@ describe("assistant configuration", () => {
     assert.equal(reserveCostMicros(DEFAULT_LIMITS, config.pricing), DEFAULT_LIMITS.maxInputTokensTotal * 1.5 * 2 + DEFAULT_LIMITS.maxOutputTokensTotal * 8);
     assert.equal(actualCostMicros({ inputTokens: 1000, outputTokens: 100 }, config.pricing), 2800);
   });
+
+  it("defaults Terra to low reasoning and validates an explicit effort", () => {
+    const terra = loadAgentConfig({ ...ENABLED, AGENT_MODEL: "gpt-5.6-terra" });
+    assert.ok(terra.enabled);
+    assert.equal(terra.reasoningEffort, "low");
+    const explicit = loadAgentConfig({ ...ENABLED, AGENT_MODEL: "gpt-5.6-terra", AGENT_REASONING_EFFORT: "none" });
+    assert.ok(explicit.enabled);
+    assert.equal(explicit.reasoningEffort, "none");
+    const other = loadAgentConfig(ENABLED);
+    assert.ok(other.enabled);
+    assert.equal(other.reasoningEffort, undefined);
+    assert.deepEqual(loadAgentConfig({ ...ENABLED, AGENT_REASONING_EFFORT: "invented" }), { enabled: false, reason: "INVALID_LIMITS" });
+  });
 });
 
 describe("assistant parameter schemas", () => {

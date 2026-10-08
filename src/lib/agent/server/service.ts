@@ -29,7 +29,7 @@ export async function runWebAssistant(supabase: SupabaseClient, userId: string, 
   return runAgent(question, {
     channel: "web",
     userId,
-    provider: new OpenAiProvider({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl }),
+    provider: new OpenAiProvider({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl, reasoningEffort: config.reasoningEffort }),
     ledger: createSupabaseLedger(serverClient),
     data: createSupabaseAgentData(supabase),
     permissions: sessionPermissions(supabase),
