@@ -7,6 +7,7 @@ import {
   stageStatusLabel, taskPriorityLabel, taskStatusLabel, vehicleStatusLabel,
 } from "./labels.ts";
 import { maskDataText } from "./masking.ts";
+import { AGENT_TIME_ZONE } from "./time.ts";
 import type { AgentTool, EntityRef, ShipmentRow, ToolField, ToolResult, ToolRow } from "./types.ts";
 
 export const MAX_TOOL_ROWS = 20;
@@ -15,9 +16,9 @@ const SEARCH_TEXT = /^[\p{L}\p{N} _.\-/№]+$/u;
 const SHIPMENT_STATUSES = Object.keys(shipmentStatusLabel);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Today's date in Kazakhstan (Asia/Qyzylorda, UTC+5) as YYYY-MM-DD. */
+/** Today's date in the assistant time zone (Asia/Aqtobe, UTC+5) as YYYY-MM-DD. */
 export function localDate(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Qyzylorda", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: AGENT_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -386,7 +387,7 @@ const listDelayedShipments: AgentTool = {
     }, uuidRef("shipment", row.shipment_id)));
     const truncated = (data.shipmentTotal ?? 0) > shipments.length || (data.vehicleTotal ?? 0) > vehicles.length;
     return result([...shipments, ...vehicles], truncated, (data.shipmentTotal ?? 0) + (data.vehicleTotal ?? 0), [
-      `Задержка считается по плановой дате прибытия до ${today} (Asia/Qyzylorda): поставка не закрыта и не отменена, автомобиль не прибыл, не разгружен и не отменён.`,
+      `Задержка считается по плановой дате прибытия до ${today} (${AGENT_TIME_ZONE}): поставка не закрыта и не отменена, автомобиль не прибыл, не разгружен и не отменён.`,
       `Задержанных поставок всего: ${data.shipmentTotal ?? "неизвестно"}; автомобилей: ${data.vehicleTotal ?? "неизвестно"}.`,
     ]);
   },
@@ -490,7 +491,7 @@ const getMyTasks: AgentTool = {
       due_at: isoDateTime(row.due_at),
       shipment_number: str(row.shipment_number),
     }, uuidRef("shipment", row.shipment_id) ?? uuidRef("task", row.id)));
-    return result(shown, rows.length > limit || (total !== null && total > shown.length), total, ["Время сроков — по Asia/Qyzylorda."]);
+    return result(shown, rows.length > limit || (total !== null && total > shown.length), total, [`Время сроков — по ${AGENT_TIME_ZONE}.`]);
   },
 };
 

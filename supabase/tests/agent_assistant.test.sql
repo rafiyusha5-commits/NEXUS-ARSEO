@@ -81,7 +81,7 @@ do $$declare i int;r record;begin
 end$$;
 select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_DAILY_LIMIT');
 do $$begin
- assert (select usage_date from public.my_agent_usage())=(now() at time zone 'Asia/Qyzylorda')::date,'the day follows Asia/Qyzylorda';
+ assert (select usage_date from public.my_agent_usage())=(now() at time zone 'Asia/Aqtobe')::date,'the day follows Asia/Aqtobe';
  assert (select requests_used from public.my_agent_usage())=20,'usage shows twenty requests';
 end$$;
 
@@ -134,6 +134,33 @@ reset role;
 update public.agent_runs set created_at=now()-interval '2 hours' where status='running';
 set role authenticated;
 select * from public.agent_reserve_run('web',null,1000);
+
+-- A direct RPC call cannot inflate the shared spend: reported usage is capped by the run's reservation.
+reset role;
+update public.agent_settings set monthly_budget_usd_micros=1000000000000;
+create temp table agent_spent_before as select spent_usd_micros from public.agent_budget_months;
+create temp table agent_inflate(run_id uuid,token text);
+grant all on agent_inflate to authenticated;
+set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
+insert into agent_inflate select r.run_id,r.finish_token from public.agent_reserve_run('web',null,1000) r;
+select public.agent_finish_run((select run_id from agent_inflate),(select token from agent_inflate),'failed','X',true,'fake','m',
+ 99999,99999,2000000000,2000000000,999999999999999,'[]');
+reset role;
+do $$begin
+ assert (select spent_usd_micros from public.agent_budget_months)=(select spent_usd_micros from agent_spent_before)+1000,'reported spend is capped by the reservation';
+ assert (select input_tokens=10000000 and output_tokens=10000000 and steps=50 and tool_calls=100 from public.agent_runs where id=(select run_id from agent_inflate)),'reported counters are bounded';
+end$$;
+set role authenticated;
+
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
+-- A direct RPC call cannot store unmasked identity numbers in the trace excerpt.
+select public.agent_finish_run(r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
+from public.agent_reserve_run('web','удостоверение 045 678 912, ИИН 900101300123',1000) r;
+do $$begin
+ assert not exists(select 1 from public.agent_runs where question_excerpt ~ '\d{3}'),'excerpts keep no digit runs';
+ assert exists(select 1 from public.agent_runs where question_excerpt like 'удостоверение [скрыто], ИИН [скрыто]'),'the excerpt is masked by the database';
+end$$;
 
 -- No direct writes from the API.
 select tests.agent_expect_error($q$update public.agent_usage_days set requests_used=0$q$,'permission denied');

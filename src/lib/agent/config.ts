@@ -80,9 +80,12 @@ export function loadAgentConfig(env: Env = process.env): AgentConfig {
   };
 }
 
-/** Worst-case cost of one run in USD micros (all limits used), reserved before the first call. */
+/**
+ * Worst-case cost of one run in USD micros, reserved before the first call. Input gets a 1.5x margin
+ * because input tokens are estimated before each call; the database caps recorded spend at this value.
+ */
 export function reserveCostMicros(limits: AgentLimits, pricing: { inputUsdPerMTok: number; outputUsdPerMTok: number }): number {
-  return Math.ceil(limits.maxInputTokensTotal * pricing.inputUsdPerMTok + limits.maxOutputTokensTotal * pricing.outputUsdPerMTok);
+  return Math.ceil(limits.maxInputTokensTotal * 1.5 * pricing.inputUsdPerMTok + limits.maxOutputTokensTotal * pricing.outputUsdPerMTok);
 }
 
 /** Actual cost in USD micros: tokens × USD per million tokens. */

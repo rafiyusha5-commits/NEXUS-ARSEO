@@ -27,7 +27,7 @@ describe("assistant configuration", () => {
   it("enables with all settings and reserves the worst case", () => {
     const config = loadAgentConfig(ENABLED);
     assert.ok(config.enabled);
-    assert.equal(reserveCostMicros(DEFAULT_LIMITS, config.pricing), DEFAULT_LIMITS.maxInputTokensTotal * 2 + DEFAULT_LIMITS.maxOutputTokensTotal * 8);
+    assert.equal(reserveCostMicros(DEFAULT_LIMITS, config.pricing), DEFAULT_LIMITS.maxInputTokensTotal * 1.5 * 2 + DEFAULT_LIMITS.maxOutputTokensTotal * 8);
     assert.equal(actualCostMicros({ inputTokens: 1000, outputTokens: 100 }, config.pricing), 2800);
   });
 });

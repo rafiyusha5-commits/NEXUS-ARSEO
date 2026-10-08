@@ -45,10 +45,13 @@ describe("assistant run", () => {
         { id: "d", name: "get_document_extraction", arguments: JSON.stringify({ shipment_id: SHIPMENT_ID, document_id: null, limit: null }) },
         { id: "e", name: "get_stock_status", arguments: JSON.stringify({ product_query: null, warehouse_code: null, limit: null }) },
         { id: "f", name: "get_my_tasks", arguments: JSON.stringify({ filter: null, limit: null }) },
+        { id: "g", name: "find_shipments", arguments: JSON.stringify({ query: null, status: null, type: null, limit: null }) },
+        { id: "h", name: "list_delayed_shipments", arguments: JSON.stringify({ limit: null }) },
+        { id: "i", name: "get_help", arguments: JSON.stringify({ topic: "documents" }) },
       ], usage: { inputTokens: 100, outputTokens: 10 } },
       finalAnswer({ blocks: [{ kind: "assumption", text: "Данные получены.", refs: [] }], limitations: [] }),
     ]);
-    const d = deps(provider);
+    const d = deps(provider, { limits: { ...TEST_LIMITS, maxToolCalls: 10 } });
     const outcome = await runAgent(`Покажи всё по водителю с удостоверением ${SECRET_VALUES.driverDocument} и ИИН 900101300123`, d);
     assert.ok(outcome.ok);
     const seen = provider.seen();
@@ -56,6 +59,36 @@ describe("assistant run", () => {
     assert.ok(!seen.includes("900101300123"), "IIN from the question reached the model");
     const trace = JSON.stringify(d.ledger.reservations) + JSON.stringify(d.ledger.finished);
     for (const value of [...Object.values(SECRET_VALUES), "900101300123"]) assert.ok(!trace.includes(value), `${value} reached the trace`);
+    assert.equal(d.ledger.finished[0].tools.length, 9, "all nine tools were exercised");
+    assert.ok(d.ledger.finished[0].tools.every((entry) => !entry.error), "every tool ran");
+  });
+
+  it("masks identity numbers in tool parameters and in the trace excerpt", async () => {
+    const provider = new ScriptedProvider([
+      toolCall("c1", "find_shipments", { query: "045678912", status: null, type: null, limit: null }),
+      finalAnswer({ blocks: [{ kind: "assumption", text: "Нет данных.", refs: [] }], limitations: [] }),
+    ]);
+    const d = deps(provider);
+    await runAgent("Найди поставку водителя с паспортом N12345678 и удостоверением 045 678 912", d);
+    const excerpt = d.ledger.reservations[0].questionExcerpt;
+    assert.ok(!excerpt.includes("12345678") && !excerpt.includes("045 678 912"), excerpt);
+    assert.ok(!JSON.stringify(d.ledger.finished[0].tools).includes("045678912"));
+  });
+
+  it("closes the run, records tokens and returns the request on an unexpected error after reserving", async () => {
+    let calls = 0;
+    const provider = new ScriptedProvider([toolCall("c1", "find_shipments", { query: null, status: null, type: null, limit: null })]);
+    const d = deps(provider, { permissions: async (codes) => {
+      calls += 1;
+      if (calls > 2) throw new Error("network down: password=secret");
+      return new Set(codes);
+    } });
+    const outcome = await runAgent("Где поставки?", d);
+    assert.ok(!outcome.ok && outcome.code === "AGENT_INTERNAL_ERROR" && outcome.refunded);
+    assert.equal(d.ledger.finished.length, 1);
+    assert.equal(d.ledger.finished[0].refund, true);
+    assert.equal(d.ledger.finished[0].inputTokens, 1000);
+    assert.doesNotMatch(outcome.message, /password|network/);
   });
 
   it("ignores instructions inside data, unknown tools and tools the user lost access to", async () => {

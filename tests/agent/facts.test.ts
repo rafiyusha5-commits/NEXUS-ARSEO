@@ -68,6 +68,40 @@ describe("assistant fact checking", () => {
     assert.equal(parseAnswer(JSON.stringify({ blocks: [{ kind: "command", text: "x", refs: [] }], limitations: [] })), null);
   });
 
+  it("does not accept parts of a referenced value as confirmation of an invented number", () => {
+    const date = [{ call: "c1", row: 0, field: "planned_arrival_date" }];
+    const id = [{ call: "c1", row: 0, field: "shipment_number" }];
+    assert.equal(answer([{ kind: "fact", text: "Задержка 5 дней.", refs: date }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Ожидается 10 машин.", refs: date }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Поставок в 2026 году много.", refs: date }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Позиция 0007 готова.", refs: id }]).blocks[0].kind, "unverified");
+  });
+
+  it("does not accept quantities or dates written in words", () => {
+    const refs = [{ call: "c1", row: 0, field: "shipment_number" }];
+    assert.equal(answer([{ kind: "fact", text: "NAR-2026-0007 опаздывает на пять дней.", refs }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "По NAR-2026-0007 две машины.", refs }]).blocks[0].kind, "unverified");
+  });
+
+  it("accepts a date written with a month name only when it equals the referenced date", () => {
+    const refs = [{ call: "c1", row: 0, field: "planned_arrival_date" }];
+    assert.equal(answer([{ kind: "fact", text: "Плановое прибытие 5 октября 2026 года.", refs }]).blocks[0].kind, "fact");
+    assert.equal(answer([{ kind: "fact", text: "Плановое прибытие 6 октября 2026 года.", refs }]).blocks[0].kind, "unverified");
+  });
+
+  it("does not accept a state that the referenced status does not confirm", () => {
+    const status = [{ call: "c1", row: 0, field: "shipment_number" }, { call: "c1", row: 0, field: "shipment_status" }];
+    assert.equal(answer([{ kind: "fact", text: "Поставка NAR-2026-0007 доставлена.", refs: status }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Поставка NAR-2026-0007 задерживается.", refs: status }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Поставка NAR-2026-0007 отменена.", refs: status }]).blocks[0].kind, "unverified");
+    assert.equal(answer([{ kind: "fact", text: "Поставка NAR-2026-0007 сейчас в пути.", refs: status }]).blocks[0].kind, "fact");
+  });
+
+  it("does not let a planned date be presented as the actual one", () => {
+    const refs = [{ call: "c1", row: 0, field: "planned_arrival_date" }];
+    assert.equal(answer([{ kind: "fact", text: "Фактически машина прибыла 05.10.2026.", refs }]).blocks[0].kind, "unverified");
+  });
+
   it("drops model limitations that smuggle unverified numbers but keeps server notes", () => {
     const result = answer([], ["Поставка прибудет 09.10.2026", "Нет прав на документы"]);
     assert.ok(!result.limitations.some((item) => item.includes("09.10.2026")));

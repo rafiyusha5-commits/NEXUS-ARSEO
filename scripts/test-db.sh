@@ -140,5 +140,17 @@ wait
 granted=$(cat "$WORKDIR"/agent_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
 limited=$(cat "$WORKDIR"/agent_*.out | grep -c 'AGENT_DAILY_LIMIT' || true)
 "${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_check.sql" >/dev/null
+echo "test: agent monthly budget under concurrency"
+# The monthly budget is reserved under a row lock as well: with room for exactly 7 more reservations,
+# 7 of 30 parallel requests succeed and the rest are refused by the budget.
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_budget_setup.sql" >/dev/null
+for i in $(seq 1 30); do
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+    >"$WORKDIR/budget_$i.out" 2>&1 &
+done
+wait
+granted=$(cat "$WORKDIR"/budget_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+limited=$(cat "$WORKDIR"/budget_*.out | grep -c 'AGENT_MONTHLY_BUDGET' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_budget_check.sql" >/dev/null
 
 echo "database tests passed"

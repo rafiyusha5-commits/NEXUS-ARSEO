@@ -3,6 +3,7 @@
 // tool result, and the values shown to the user are rendered by this code from that result.
 import { ALL_STATUS_LABELS } from "./labels.ts";
 import { maskSensitive } from "./masking.ts";
+import { AGENT_TIME_ZONE } from "./time.ts";
 import type { AgentAnswer, AgentTool, AnswerBlock, AnswerValue, ToolField, ToolResult } from "./types.ts";
 
 export const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
@@ -69,8 +70,8 @@ export function parseAnswer(content: string | null): RawAnswer | null {
   return answer;
 }
 
-const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Qyzylorda", day: "2-digit", month: "2-digit", year: "numeric" });
-const DATETIME_FORMAT = new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Qyzylorda", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { timeZone: AGENT_TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric" });
+const DATETIME_FORMAT = new Intl.DateTimeFormat("ru-RU", { timeZone: AGENT_TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const NUMBER_FORMAT = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 });
 
 export function formatValue(field: ToolField, value: string | number): string {
@@ -83,43 +84,86 @@ export function formatValue(field: ToolField, value: string | number): string {
   return String(value);
 }
 
-/** All spellings of a value the model may legitimately use in text. */
+/**
+ * Full spellings of a value the model may use in text. Parts of a value never count: a date
+ * 2026-10-05 does not confirm "5" or "2026", and NAR-2026-0007 does not confirm "0007".
+ */
 function variants(field: ToolField | null, value: string | number): Set<string> {
   const out = new Set<string>();
   const add = (text: string) => {
     const normalized = normalizeToken(text);
-    if (!normalized) return;
-    out.add(normalized);
-    for (const part of normalized.split(/[^\p{L}\p{N}]+/u)) if (/\d/.test(part)) out.add(part);
+    if (normalized) out.add(normalized);
   };
   add(String(value));
   if (typeof value === "number") {
     add(String(value).replace(".", ","));
     add(NUMBER_FORMAT.format(value).replace(/\s/g, ""));
-    for (const part of NUMBER_FORMAT.format(value).split(/\s/)) add(part);
   }
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    for (const text of [`${day}.${month}.${year}`, `${day}.${month}`, `${Number(day)}.${month}.${year}`, `${day}.${month}.${year.slice(2)}`, `${Number(day)}`, year]) add(text);
+  const dateOnly = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (dateOnly) {
+    const [year, month, day] = (value as string).split("-");
+    for (const text of [`${day}.${month}.${year}`, `${Number(day)}.${month}.${year}`, `${day}.${month}.${year.slice(2)}`, `${day}.${month}`, `${Number(day)}.${month}`]) add(text);
   }
   if (field?.kind === "datetime" && typeof value === "string" && !Number.isNaN(Date.parse(value))) {
-    const formatted = DATETIME_FORMAT.format(new Date(value));
-    add(formatted);
-    for (const part of formatted.split(/[\s,]+/)) add(part);
     const date = DATE_FORMAT.format(new Date(value));
     add(date);
     add(date.slice(0, 5));
+    add(DATETIME_FORMAT.format(new Date(value)).split(/,\s*/)[1] ?? "");
   }
   return out;
 }
 
 function normalizeToken(token: string): string {
-  return token.toLowerCase().replace(/^[(«"']+|[)».,:;!?"'\-/]+$/g, "").replace(/ /g, " ").trim();
+  return token.toLowerCase().replace(/^[(«"']+|[)».,:;!?"'\-/]+$/g, "").replace(/\u00a0/g, " ").trim();
+}
+
+const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+/** Puts numbers and dates written in words or with thousand separators into comparable form. */
+function normalizeNumbers(text: string): string {
+  let out = text.replace(/\u00a0/g, " ");
+  out = out.replace(new RegExp(`(?<![\\p{N}])(\\d{1,2})\\s+(${MONTHS.join("|")})(?:\\s+(\\d{4}))?(?:\\s*(?:г\\.|года))?`, "giu"),
+    (_m, day: string, month: string, year?: string) => `${day.padStart(2, "0")}.${String(MONTHS.indexOf(month.toLowerCase()) + 1).padStart(2, "0")}${year ? `.${year}` : ""}`);
+  for (let previous = ""; previous !== out;) {
+    previous = out;
+    out = out.replace(/(\d) (?=\d{3}(?!\d))/g, "$1");
+  }
+  return out;
 }
 
 function digitTokens(text: string): string[] {
-  return (text.match(/[\p{L}\p{N}][\p{L}\p{N}\-_./:]*/gu) ?? []).map(normalizeToken).filter((token) => /\d/.test(token));
+  return (normalizeNumbers(text).match(/[\p{L}\p{N}][\p{L}\p{N}\-_./:,]*/gu) ?? [])
+    .map(normalizeToken).filter((token) => /\d/.test(token));
 }
+
+// Quantities written in words cannot be compared with data, so a fact may not use them.
+const NUMBER_WORDS = /(?<![\p{L}])(ноль|нул\p{L}+|один|одна|одно|одного|одной|одну|два|две|двух|двум|три|трёх|трех|трём|четыре|четырёх|четырех|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|\p{L}+надцат\p{L}*|двадцат\p{L}*|тридцат\p{L}*|сорок\p{L}*|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяност\p{L}*|сто|двести|триста|тысяч\p{L}*|миллион\p{L}*|полтор\p{L}+|дюжин\p{L}*|перв\p{L}+|втор\p{L}+|трет\p{L}+)(?![\p{L}])/iu;
+
+/**
+ * Words that assert a state. Each needs a referenced status with one of the labels, or one of the
+ * referenced fields / tools that carry that state. Otherwise the fact is not confirmed.
+ */
+const STATE_CLAIMS: Array<{ pattern: RegExp; labels: string[]; fields?: string[]; tools?: string[] }> = [
+  { pattern: /прибы\p{L}*|прибуд\p{L}*|приехал\p{L}*/iu, labels: ["прибыл", "разгружен"], fields: ["actual_arrival_date", "planned_arrival_date"] },
+  { pattern: /доставл\p{L}*|поступил\p{L}*/iu, labels: ["прибыл", "разгружен", "приёмка", "реализация", "закрыта"], fields: ["actual_arrival_date", "received_quantity"] },
+  { pattern: /в\s+пути/iu, labels: ["в пути"] },
+  { pattern: /таможн\p{L}*/iu, labels: ["таможня", "на таможне"] },
+  { pattern: /закрыт\p{L}*/iu, labels: ["закрыта"] },
+  { pattern: /открыт\p{L}*/iu, labels: ["открыта"] },
+  { pattern: /отмен\p{L}*/iu, labels: ["отменена", "отменён"] },
+  { pattern: /приостанов\p{L}*/iu, labels: ["приостановлена"] },
+  { pattern: /заверш\p{L}*|выполнен\p{L}*/iu, labels: ["завершён", "завершена"] },
+  { pattern: /блокир\p{L}*|заблокир\p{L}*/iu, labels: ["заблокирован"] },
+  { pattern: /утвержд\p{L}*|одобрен\p{L}*/iu, labels: ["утверждён"] },
+  { pattern: /отклон\p{L}*/iu, labels: ["отклонён"] },
+  { pattern: /подтвержд\p{L}*/iu, labels: ["подтверждён"], fields: ["data_state", "confirmed_quantity"] },
+  { pattern: /разгруж\p{L}*|выгруж\p{L}*/iu, labels: ["разгружен"] },
+  { pattern: /погруж\p{L}*|загруж\p{L}*/iu, labels: ["на загрузке", "в пути"], fields: ["actual_loading_date", "planned_loading_date"] },
+  { pattern: /отгруж\p{L}*/iu, labels: ["в пути"], fields: ["shipped_quantity", "actual_loading_date"] },
+  { pattern: /в\s+работе/iu, labels: ["в работе"] },
+  { pattern: /при[её]мк\p{L}*/iu, labels: ["приёмка"] },
+  { pattern: /задерж\p{L}*|опазд\p{L}*|просроч\p{L}*/iu, labels: ["просрочен"], fields: ["days_late"], tools: ["list_delayed_shipments"] },
+];
 
 const COMPLETENESS = /(?<![\p{L}])(все|всего|полный\s+список|полностью|только\s+эти|исчерпывающ\p{L}*)(?![\p{L}])/iu;
 const URL = /\bhttps?:\/\/\S+|\bwww\.\S+|\[([^\]]*)\]\([^)]*\)/gi;
@@ -146,11 +190,14 @@ function verifyFact(block: RawBlock, calls: ReadonlyMap<string, CallRecord>): An
   const allowed = new Set<string>();
   const statusValues = new Set<string>();
   const links = new Map<string, string>();
+  const fieldKeys = new Set<string>();
+  const toolNames = new Set<string>();
   let truncated = false;
   for (const ref of block.refs) {
     const call = calls.get(ref.call);
     if (!call) return { kind: "unverified", text, reason: "Ссылка на несуществующий запрос." };
     truncated ||= call.result.truncated;
+    toolNames.add(call.tool.name);
     if (ref.field === "$count" || ref.field === "$total") {
       const value = ref.field === "$count" ? call.result.rows.length : call.result.total;
       if (value === null) return { kind: "unverified", text, reason: "Общее количество неизвестно." };
@@ -163,14 +210,29 @@ function verifyFact(block: RawBlock, calls: ReadonlyMap<string, CallRecord>): An
     const value = row?.values[ref.field];
     if (!row || !field || value === undefined || value === null) return { kind: "unverified", text, reason: "Ссылка на отсутствующее поле результата." };
     for (const item of variants(field, value)) allowed.add(item);
+    fieldKeys.add(field.key);
     if (field.kind === "status") statusValues.add(String(value).toLowerCase());
     const href = link(row.entity);
     values.push({ label: field.label, value: formatValue(field, value), tool: call.tool.name, row: ref.row, field: ref.field, ...(href ? { link: href } : {}) });
     if (href) links.set(href, row.values.shipment_number ? String(row.values.shipment_number) : field.label);
   }
-  const unmatched = digitTokens(text).filter((token) => !allowed.has(token) && !allowed.has(token.replace(/\s/g, "")));
+  const unmatched = digitTokens(text).filter((token) => !allowed.has(token));
   if (unmatched.length) return { kind: "unverified", text, reason: `Значение не совпадает с данными: ${unmatched.slice(0, 3).join(", ")}.` };
+  if (NUMBER_WORDS.test(text)) return { kind: "unverified", text, reason: "Количество или дата указаны словами, их нельзя сверить с данными." };
   const lower = text.toLowerCase();
+  for (const claim of STATE_CLAIMS) {
+    if (!(new RegExp(`(?<![\\p{L}])(?:${claim.pattern.source})`, "iu")).test(lower)) continue;
+    const confirmed = claim.labels.some((label) => statusValues.has(label))
+      || (claim.fields ?? []).some((key) => fieldKeys.has(key))
+      || (claim.tools ?? []).some((name) => toolNames.has(name));
+    if (!confirmed) return { kind: "unverified", text, reason: "Состояние в тексте не подтверждено указанными данными." };
+  }
+  if (/фактич\p{L}*/iu.test(lower) && ![...fieldKeys].some((key) => key.startsWith("actual_"))) {
+    return { kind: "unverified", text, reason: "Фактическая дата не подтверждена: указана плановая." };
+  }
+  if (/(?<![\p{L}])план\p{L}*/iu.test(lower) && [...fieldKeys].some((key) => key.startsWith("actual_")) && ![...fieldKeys].some((key) => key.startsWith("planned_"))) {
+    return { kind: "unverified", text, reason: "Плановая дата не подтверждена: указана фактическая." };
+  }
   for (const word of STATUS_WORDS) {
     const lowered = word.toLowerCase();
     if (new RegExp(`(?<![\\p{L}])${lowered.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "iu").test(lower) && !statusValues.has(lowered)) {

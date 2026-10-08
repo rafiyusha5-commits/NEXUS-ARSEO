@@ -17,7 +17,7 @@ type Localized = { ru?: string; en?: string; kk?: string };
 type Party = { legal_name?: string; short_name?: string };
 type TransportRef = { sequence_no?: number };
 type ProductRef = { internal_sku?: string; name?: Localized; brand?: string };
-type DocumentTypeRef = { code?: string; name?: Localized };
+type DocumentTypeRef = { code: string; name_ru: string | null };
 type ProfileRef = { full_name?: string };
 type BatchRef = { batch_number?: string; manufacture_date?: string; expiry_date?: string };
 type MovementRef = { quantity?: number | string };
@@ -55,7 +55,7 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
     supabase.from("shipment_items").select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,discrepancy_reason,shipment_transport_id,product:products(internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id", shipmentId).order("created_at"),
     supabase.from("shipment_transport_receipts").select("id,shipment_transport_id,performed_by_name,notes,received_at,transport:shipment_transports(sequence_no),items:shipment_transport_receipt_items(expected_quantity,accepted_quantity,damaged_quantity,shortage_quantity,overage_quantity,discrepancy_reason,shipment_item_id,batch:inventory_batches(batch_number,manufacture_date,expiry_date),movement:inventory_movements(quantity))").eq("shipment_id", shipmentId).order("received_at"),
     supabase.from("tasks").select("id,title,status,priority,due_at,assignee:profiles!tasks_assignee_user_id_fkey(full_name)").eq("shipment_id", shipmentId).in("status", ["open", "in_progress"]).order("due_at", { nullsFirst: false }),
-    supabase.from("document_requirements").select("document_type_id,is_mandatory,due_description,shipment_type,process_template_id,route_id,stage_id,type:document_types(code,name)").eq("is_active", true),
+    supabase.from("document_requirements").select("document_type_id,is_mandatory,due_description,shipment_type,process_template_id,route_id,stage_id,type:document_types(code,name_ru)").eq("is_active", true),
   ]);
   const transports = (transportResult.data ?? []) as unknown as ReportTransport[];
   const stages = (stageResult.data ?? []) as unknown as ReportStage[];
@@ -71,7 +71,7 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
   const { data: links } = await supabase.from("document_links").select("document_id,entity_type,entity_id").in("entity_type", ["shipment", "shipment_transport"]).in("entity_id", targetIds).is("removed_at", null);
   const documentIds = [...new Set((links ?? []).map((link) => link.document_id))];
   const { data: documents } = documentIds.length
-    ? await supabase.from("documents").select("id,title,document_number,status,current_version,document_date,archived_at,document_type_id,type:document_types(code,name)").in("id", documentIds).is("archived_at", null).order("created_at")
+    ? await supabase.from("documents").select("id,title,document_number,status,current_version,document_date,archived_at,document_type_id,type:document_types(code,name_ru)").in("id", documentIds).is("archived_at", null).order("created_at")
     : { data: [] };
 
   const receiptItems = receipts.flatMap((receipt) => receipt.items ?? []);

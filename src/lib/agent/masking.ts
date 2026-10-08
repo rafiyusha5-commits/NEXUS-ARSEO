@@ -23,6 +23,9 @@ const SECRET_RULES: Rule[] = [
 
 const PERSONAL_RULES: Rule[] = [
   { pattern: KEYWORD_ID, replace: (_m, prefix: string) => `${prefix}[скрыт номер документа]` },
+  // The same numbers written with spaces or hyphens: 12 digits as 6+6 or 3+3+3+3, 9 digits as 3+3+3.
+  { pattern: /(?<!\p{N}[ -]?)\d{6}[ -]\d{6}(?![ -]?\p{N})|(?<!\p{N}[ -]?)\d{3}(?:[ -]\d{3}){3}(?![ -]?\p{N})/gu, replace: "[скрыт ИИН]" },
+  { pattern: /(?<!\p{N}[ -]?)\d{3}[ -]\d{3}[ -]\d{3}(?![ -]?\p{N})/gu, replace: "[скрыт номер документа]" },
   // Kazakhstan IIN/BIN: exactly 12 digits.
   { pattern: /(?<![\p{N}\p{L}])\d{12}(?![\p{N}\p{L}])/gu, replace: "[скрыт ИИН]" },
   // Passport-like: 1–2 letters followed by 7–9 digits.

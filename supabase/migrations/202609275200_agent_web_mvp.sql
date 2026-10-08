@@ -116,9 +116,9 @@ drop trigger if exists audit_agent_settings_changes on public.agent_settings;
 create trigger audit_agent_settings_changes after insert or update on public.agent_settings
  for each row execute function private.write_access_audit();
 
--- Kazakhstan business day: the daily limit resets at midnight Asia/Qyzylorda.
+-- Kazakhstan business day: the daily limit resets at midnight Asia/Aqtobe (UTC+5).
 create or replace function private.agent_local_date() returns date
-language sql stable set search_path='' as $$ select (now() at time zone 'Asia/Qyzylorda')::date $$;
+language sql stable set search_path='' as $$ select (now() at time zone 'Asia/Aqtobe')::date $$;
 revoke all on function private.agent_local_date() from public,anon,authenticated,service_role;
 
 create or replace function public.agent_reserve_run(p_channel text,p_question_excerpt text,p_reserve_usd_micros bigint)
@@ -152,8 +152,12 @@ begin
 
  update public.agent_usage_days set requests_used=v_used+1,updated_at=now() where user_id=v_user and usage_date=v_day;
  v_token:=replace(gen_random_uuid()::text,'-','')||replace(gen_random_uuid()::text,'-','');
+ -- The server masks the excerpt; the database masks again, so a direct RPC call cannot store
+ -- identity or phone numbers (any run of 7+ digits, also with spaces or hyphens) in the trace.
  insert into public.agent_runs(user_id,channel,usage_date,budget_month,question_excerpt,reserved_usd_micros,finish_token_hash)
- values(v_user,p_channel,v_day,v_month,nullif(btrim(p_question_excerpt),''),p_reserve_usd_micros,encode(sha256(convert_to(v_token,'UTF8')),'hex'))
+ values(v_user,p_channel,v_day,v_month,
+  nullif(btrim(regexp_replace(p_question_excerpt,'\d(?:[ -]?\d){6,}','[скрыто]','g')),''),
+  p_reserve_usd_micros,encode(sha256(convert_to(v_token,'UTF8')),'hex'))
  returning id into v_id;
  return query select v_id,v_token,v_used+1,s.daily_request_limit;
 end$$;
@@ -177,6 +181,17 @@ begin
     or (p_tools is not null and jsonb_typeof(p_tools)<>'array') then
   raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
  end if;
+ -- The caller reports usage, so it is bounded by the run's own reservation: a direct RPC call cannot
+ -- inflate the shared monthly spend. The server reserves the worst case with a margin.
+ p_actual_usd_micros:=least(coalesce(p_actual_usd_micros,0),r.reserved_usd_micros);
+ p_input_tokens:=least(coalesce(p_input_tokens,0),10000000);
+ p_output_tokens:=least(coalesce(p_output_tokens,0),10000000);
+ p_steps:=least(coalesce(p_steps,0),50);
+ p_tool_calls:=least(coalesce(p_tool_calls,0),100);
+ if p_error_code is not null and p_error_code !~ '^[A-Z][A-Z0-9_]{1,63}$' then p_error_code:='AGENT_ERROR';end if;
+ if p_provider is not null and p_provider !~ '^[a-z0-9_.-]{1,40}$' then p_provider:=null;end if;
+ if p_model is not null and length(p_model)>80 then p_model:=left(p_model,80);end if;
+ if p_tools is not null and pg_column_size(p_tools)>16384 then p_tools:='[]'::jsonb;end if;
  if coalesce(p_refund,false) then
   update public.agent_usage_days set requests_used=greatest(requests_used-1,0),requests_refunded=requests_refunded+1,updated_at=now()
   where user_id=r.user_id and usage_date=r.usage_date;

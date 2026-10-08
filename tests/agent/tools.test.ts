@@ -80,7 +80,7 @@ describe("assistant tools", () => {
     const result = await run("list_delayed_shipments", {});
     assert.equal(result.truncated, true, "3 delayed shipments but 1 row returned");
     assert.equal(result.total, 3);
-    assert.ok(result.notes[0].includes("Asia/Qyzylorda"));
+    assert.ok(result.notes[0].includes("Asia/Aqtobe"));
     assert.ok(typeof result.rows[0].values.days_late === "number");
   });
 
@@ -109,7 +109,7 @@ describe("assistant tools", () => {
     }
   });
 
-  it("computes the business day in Asia/Qyzylorda (UTC+5)", () => {
+  it("computes the business day in Asia/Aqtobe (UTC+5)", () => {
     assert.equal(localDate(new Date("2026-10-07T19:30:00Z")), "2026-10-08");
     assert.equal(localDate(new Date("2026-10-07T18:59:00Z")), "2026-10-07");
   });

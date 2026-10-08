@@ -14,6 +14,12 @@ describe("assistant masking", () => {
     assert.doesNotMatch(maskSensitive("клиент 900101300123").text, /900101300123/);
   });
 
+  it("masks document numbers and IIN written with spaces or hyphens", () => {
+    for (const value of ["045 678 912", "045-678-912", "900101 300123", "900 101 300 123"]) {
+      assert.doesNotMatch(maskSensitive(`номер ${value}`).text, new RegExp(value.replace(/ /g, "\\s")), value);
+    }
+  });
+
   it("keeps ordinary logistics identifiers", () => {
     const text = maskSensitive("Поставка NAR-2026-0007, автомобиль 123ABC02, 18 паллет").text;
     assert.match(text, /NAR-2026-0007/);
