@@ -53,5 +53,6 @@ Migration order:
 42. `202609274900_source_document_ocr.sql` — OCR metadata, the `source_documents.ocr` permission and idempotent OCR job functions for scanned and photographed source documents.
 43. `202609275000_reopen_confirmed_ocr.sql` — lets a reviewer withdraw an incorrect OCR confirmation and run recognition again.
 44. `202609275100_multi_vehicle_shipments.sql` — per-vehicle driver, plate, make, trailer and carrier data; add/update/remove vehicle functions; source documents and OCR proposals bound to one vehicle; review writes only to that vehicle. See `docs/multi-vehicle-shipments.md`.
+45. `202609275200_agent_web_mvp.sql` — read-only web assistant: `agent.use` (internal roles) and `agent.view_traces` (administrator), settings with the daily limit and monthly budget, atomic per-user/day and per-month reservations, and a masked trace without full questions or answers. See `docs/ai-assistant.md`.
 
 The browser never receives a service-role key. Authorization is enforced with PostgreSQL grants and RLS in addition to application checks.

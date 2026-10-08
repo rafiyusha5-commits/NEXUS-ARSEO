@@ -1,0 +1,36 @@
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadAgentConfig } from "../config.ts";
+import { OpenAiProvider } from "../providers/openai.ts";
+import { runAgent, type RunOutcome } from "../runner.ts";
+import { createSupabaseAgentData } from "./supabase-data.ts";
+import { createSupabaseLedger } from "./supabase-ledger.ts";
+
+/** Fresh permission set from the database for the session user (my_permissions). */
+export function sessionPermissions(supabase: SupabaseClient) {
+  return async (codes: readonly string[]): Promise<ReadonlySet<string>> => {
+    const { data, error } = await supabase.rpc("my_permissions", { p_codes: [...codes] });
+    if (error || !Array.isArray(data)) return new Set();
+    return new Set(data.filter((code): code is string => typeof code === "string"));
+  };
+}
+
+/**
+ * Runs the assistant for the signed-in employee. `supabase` must be the request's session client
+ * (cookies); the service-role client is never used for business data.
+ */
+export async function runWebAssistant(supabase: SupabaseClient, userId: string, question: unknown, onStage: (label: string) => void): Promise<RunOutcome> {
+  const config = loadAgentConfig();
+  if (!config.enabled) return { ok: false, code: "AGENT_DISABLED", message: "Ассистент выключен.", refunded: false };
+  return runAgent(question, {
+    channel: "web",
+    userId,
+    provider: new OpenAiProvider({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl }),
+    ledger: createSupabaseLedger(supabase),
+    data: createSupabaseAgentData(supabase),
+    permissions: sessionPermissions(supabase),
+    limits: config.limits,
+    pricing: config.pricing,
+    onStage,
+  });
+}

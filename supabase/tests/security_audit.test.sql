@@ -71,6 +71,7 @@ select 'authenticated', unnest(array[
   'public.begin_shipment_source_ocr', 'public.finish_shipment_source_ocr',
   'public.create_inventory_operation_document', 'public.add_inventory_operation_line', 'public.remove_inventory_operation_line',
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',
+  'public.agent_reserve_run', 'public.agent_finish_run', 'public.my_agent_usage',
   'public.create_shipment_item', 'public.my_product_purchase_prices',
   'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',

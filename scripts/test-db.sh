@@ -28,7 +28,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${RUN[@]}" "$PGBIN/initdb" -D "$WORKDIR/data" -A trust -U postgres >/dev/null
+# UTF8 like Supabase: with a POSIX locale initdb would pick SQL_ASCII and length() would count bytes.
+"${RUN[@]}" "$PGBIN/initdb" -D "$WORKDIR/data" -A trust -U postgres --encoding=UTF8 --locale=C.UTF-8 >/dev/null
 "${RUN[@]}" "$PGBIN/pg_ctl" -D "$WORKDIR/data" -l "$WORKDIR/server.log" \
   -o "-k $WORKDIR -p $PORT -c listen_addresses=''" -w start >/dev/null
 
@@ -119,10 +120,25 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 # Several vehicles per shipment: columns, replaceable RPCs and the review function are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
+# Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
+
+# Parallel sessions of one employee must not exceed the daily assistant limit: the reservation
+# locks the user's day row, so exactly daily_request_limit of 30 concurrent requests succeed.
+echo "test: agent daily limit under concurrency"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_setup.sql" >/dev/null
+for i in $(seq 1 30); do
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+    >"$WORKDIR/agent_$i.out" 2>&1 &
+done
+wait
+granted=$(cat "$WORKDIR"/agent_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+limited=$(cat "$WORKDIR"/agent_*.out | grep -c 'AGENT_DAILY_LIMIT' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_check.sql" >/dev/null
 
 echo "database tests passed"

@@ -1,0 +1,144 @@
+-- Assistant permissions, atomic daily limit, monthly budget, finish token and trace visibility.
+\set ON_ERROR_STOP 1
+begin;
+
+create schema if not exists tests;
+create or replace function tests.agent_expect_error(p_sql text,p_pattern text) returns void language plpgsql as $$begin
+ execute p_sql;raise exception 'expected error but statement succeeded: %',p_sql using errcode='P0099';
+exception when sqlstate 'P0099' then raise;when others then if sqlerrm!~p_pattern then raise exception 'expected %, got %',p_pattern,sqlerrm using errcode='P0099';end if;end$$;
+grant usage on schema tests to authenticated;
+grant execute on function tests.agent_expect_error(text,text) to authenticated;
+
+-- Grants: every internal role uses the assistant, only the administrator reads other traces.
+do $$begin
+ assert (select array_agg(r.code order by r.code) from public.role_permissions rp join public.app_roles r on r.id=rp.role_id
+   join public.permissions p on p.id=rp.permission_id where p.code='agent.use' and rp.granted)
+  =(select array_agg(code order by code) from public.app_roles where audience='internal'),'agent.use is granted to exactly the internal roles';
+ assert (select array_agg(r.code) from public.role_permissions rp join public.app_roles r on r.id=rp.role_id
+   join public.permissions p on p.id=rp.permission_id where p.code='agent.view_traces' and rp.granted)=array['administrator'],
+  'agent.view_traces is granted to the administrator only';
+ assert not exists(select 1 from public.role_permissions rp join public.app_roles r on r.id=rp.role_id
+   join public.permissions p on p.id=rp.permission_id where p.code like 'agent.%' and r.audience<>'internal'),'no external role holds agent permissions';
+ assert (select daily_request_limit from public.agent_settings)=20,'default daily limit is 20';
+ assert (select monthly_budget_usd_micros=0 and max_run_reserve_usd_micros=0 from public.agent_settings),'no money budget until the owner sets one';
+ assert not has_column_privilege('authenticated','public.agent_runs','finish_token_hash','select'),'the finish token hash is not readable';
+ assert not has_table_privilege('authenticated','public.agent_runs','insert') and not has_table_privilege('authenticated','public.agent_runs','update')
+  and not has_table_privilege('authenticated','public.agent_usage_days','update') and not has_table_privilege('authenticated','public.agent_settings','update'),
+  'assistant tables are written only through the RPCs';
+ assert not has_function_privilege('anon','public.agent_reserve_run(text,text,bigint)','execute'),'anonymous cannot reserve';
+ assert (select relrowsecurity from pg_class where oid='public.agent_runs'::regclass),'agent_runs has RLS';
+end$$;
+
+insert into auth.users(id,email,raw_user_meta_data) values
+ ('aa000000-0000-4000-8000-000000000001','agent-admin@test.local','{"full_name":"Администратор"}'),
+ ('aa000000-0000-4000-8000-000000000002','agent-spec@test.local','{"full_name":"Специалист"}'),
+ ('aa000000-0000-4000-8000-000000000003','agent-mkt@test.local','{"full_name":"Маркетолог"}'),
+ ('aa000000-0000-4000-8000-000000000004','agent-client@test.local','{"full_name":"Клиент"}'),
+ ('aa000000-0000-4000-8000-000000000005','agent-denied@test.local','{"full_name":"Директор под запретом"}');
+insert into public.user_roles(user_id,role_id) select u.id::uuid,r.id from (values
+ ('aa000000-0000-4000-8000-000000000001','administrator'),('aa000000-0000-4000-8000-000000000002','logistics_specialist'),
+ ('aa000000-0000-4000-8000-000000000003','marketer'),('aa000000-0000-4000-8000-000000000005','director'))u(id,code)
+ join public.app_roles r on r.code=u.code;
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
+select 'aa000000-0000-4000-8000-000000000005',id,'deny','agent test','aa000000-0000-4000-8000-000000000001' from public.permissions where code='agent.use';
+insert into public.counterparties(id,roles,legal_name,country,tax_id) values('ab000000-0000-4000-8000-000000000001',array['customer'],'Agent client','KZ','AGENT-C');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000001',false);
+select public.configure_external_client('aa000000-0000-4000-8000-000000000004','ab000000-0000-4000-8000-000000000001','Клиент',null,'ru',true,true,false);
+reset role;
+
+-- Without a money budget nothing is reserved, even with the daily limit available.
+set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
+reset role;
+update public.agent_settings set monthly_budget_usd_micros=50000,max_run_reserve_usd_micros=2000;
+
+set role authenticated;
+-- External accounts and a personal deny of agent.use are refused before any counter moves.
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000004',false);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_FORBIDDEN');
+select tests.agent_expect_error($q$select * from public.my_agent_usage()$q$,'AGENT_FORBIDDEN');
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000005',false);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_FORBIDDEN');
+
+-- Arguments cannot raise limits: the per-run cap comes from agent_settings.
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,999999)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('sms',null,1000)$q$,'AGENT_BAD_REQUEST');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',repeat('x',201),1000)$q$,'AGENT_BAD_REQUEST');
+
+-- Twenty requests a day per employee; the twenty-first is refused.
+create temp table agent_runs_t(n int,run_id uuid,token text);
+grant all on agent_runs_t to authenticated;
+do $$declare i int;r record;begin
+ for i in 1..20 loop
+  select * into r from public.agent_reserve_run('web','вопрос '||i,1000);
+  insert into agent_runs_t values(i,r.run_id,r.finish_token);
+  assert r.requests_used=i and r.request_limit=20,'counter moves by one per request';
+ end loop;
+end$$;
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_DAILY_LIMIT');
+do $$begin
+ assert (select usage_date from public.my_agent_usage())=(now() at time zone 'Asia/Qyzylorda')::date,'the day follows Asia/Qyzylorda';
+ assert (select requests_used from public.my_agent_usage())=20,'usage shows twenty requests';
+end$$;
+
+-- The finish token is required, and a run is finished only once and only by its owner.
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,'wrong','completed',null,false,'fake','m',1,0,10,10,5,'[]')$q$,
+ (select run_id from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'completed',null,true,'fake','m',1,0,10,10,5,'[]')$q$,
+ (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_BAD_REQUEST');
+select public.agent_finish_run((select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1),'completed',null,false,'fake','m',2,1,1200,300,700,
+ '[{"name":"find_shipments","params":{"limit":5},"rows":3,"truncated":false,"ms":12}]');
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
+ (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
+select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
+ (select run_id from agent_runs_t where n=2),(select token from agent_runs_t where n=2)),'AGENT_RUN_NOT_FOUND');
+
+-- A failed run returns the request to the user but keeps the tokens actually charged.
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
+select public.agent_finish_run((select run_id from agent_runs_t where n=2),(select token from agent_runs_t where n=2),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',1,0,800,0,400,'[]');
+do $$begin
+ assert (select requests_used from public.my_agent_usage())=19,'a refunded request frees one slot';
+ assert (select request_refunded and status='failed' and input_tokens=800 from public.agent_runs where id=(select run_id from agent_runs_t where n=2)),'refunded run keeps its usage';
+ assert (select count(*) from public.agent_runs)=20,'the employee sees own runs';
+end$$;
+select * from public.agent_reserve_run('web',null,1000);
+
+-- Other employees do not see these runs; the administrator does, and the money spent is counted.
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
+do $$begin
+ assert (select count(*) from public.agent_runs)=0,'a marketer sees no other traces';
+ assert (select count(*) from public.agent_usage_days)=0,'nor other usage';
+ assert (select count(*) from public.agent_settings)=0 and (select count(*) from public.agent_budget_months)=0,'settings and budget are administrative';
+end$$;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000001',false);
+do $$begin
+ assert (select count(*) from public.agent_runs where user_id='aa000000-0000-4000-8000-000000000002')=21,'the trace viewer sees other runs';
+ assert (select spent_usd_micros=1100 and input_tokens=2000 and output_tokens=300 from public.agent_budget_months),'actual spend and tokens are accumulated';
+end$$;
+
+-- The monthly budget counts spend plus active reservations.
+reset role;
+update public.agent_settings set daily_request_limit=1000,monthly_budget_usd_micros=(select spent_usd_micros from public.agent_budget_months)
+ +(select sum(reserved_usd_micros) from public.agent_runs where status='running')+1500;
+set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
+select * from public.agent_reserve_run('web',null,1000);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+-- Expired reservations of a crashed server stop holding budget.
+reset role;
+update public.agent_runs set created_at=now()-interval '2 hours' where status='running';
+set role authenticated;
+select * from public.agent_reserve_run('web',null,1000);
+
+-- No direct writes from the API.
+select tests.agent_expect_error($q$update public.agent_usage_days set requests_used=0$q$,'permission denied');
+select tests.agent_expect_error($q$insert into public.agent_runs(user_id,channel,usage_date,budget_month,finish_token_hash) values(auth.uid(),'web',current_date,date_trunc('month',current_date)::date,repeat('0',64))$q$,'permission denied');
+
+reset role;
+rollback;
+select 'agent_assistant: passed' as result;

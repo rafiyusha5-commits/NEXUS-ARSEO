@@ -137,3 +137,16 @@ h1,h2,p { margin:0; } h1 { font-size:28px; letter-spacing:-.04em; } h2 { font-si
 .source-field-grid label.low-confidence input{border-color:#c47a00;background:#fff8ea}.source-field-grid label.low-confidence small{color:#8a4c00;font-weight:700}
 
 .transport-card{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff}.transport-card .transport-row{border:0;padding:0}.transport-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 16px;margin:0}.transport-facts div{display:grid;gap:2px}.transport-facts dt{font-size:12px;color:#6b7972}.transport-facts dd{margin:0;font-weight:600;overflow-wrap:anywhere}.transport-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end}.transport-add>summary,.transport-edit>summary,.transport-remove>summary{cursor:pointer;display:inline-block}.transport-remove-form{display:grid;gap:8px;margin-top:8px}.source-vehicle-binding{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}.bulk-transport-choice{display:grid;gap:4px;max-width:520px;margin:8px 0}
+.assistant-stages{margin:16px 0 0;padding-left:20px;color:#5b6b63;font-size:14px;line-height:1.7}
+.assistant-answer{display:grid;gap:12px;margin-top:16px}
+.assistant-block{border:1px solid #dfe6e2;border-radius:12px;padding:12px 14px;background:#fff}
+.assistant-block p{margin:8px 0}
+.assistant-fact{border-left:4px solid #2f7d55}
+.assistant-assumption{border-left:4px solid #c9a227;background:#fffdf3}
+.assistant-unverified{border-left:4px solid #b54848;background:#fff7f7}
+.assistant-values{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:8px 0}
+.assistant-values div{background:#f4f7f5;border-radius:8px;padding:8px 10px}
+.assistant-values dt{font-size:12px;color:#5b6b63}
+.assistant-values dd{margin:2px 0;font-weight:600}
+.assistant-values small,.assistant-block small{color:#6b7a72;font-size:12px}
+.assistant-trace-tools{margin:0;padding-left:16px;font-size:13px}
