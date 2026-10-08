@@ -30,7 +30,7 @@ export default async function AssistantPage() {
       <section className="workspace admin-workspace">
         <header className="topbar">
           <div><p className="eyebrow">Главная</p><h1>Ассистент</h1></div>
-          {can["agent.view_traces"] && <div className="topbar-actions"><Link className="ghost button-link" href="/assistant/traces">Трассы сотрудников</Link></div>}
+          <div className="topbar-actions">{can["agent.use"] && <Link className="ghost button-link" href="/assistant/telegram">Telegram</Link>}{can["agent.view_traces"] && <Link className="ghost button-link" href="/assistant/traces">Трассы сотрудников</Link>}</div>
         </header>
 
         {!can["agent.use"] && <div className="login-error admin-message">У вас нет права пользоваться ассистентом (agent.use).</div>}

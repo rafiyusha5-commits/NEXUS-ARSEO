@@ -122,6 +122,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
 # Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

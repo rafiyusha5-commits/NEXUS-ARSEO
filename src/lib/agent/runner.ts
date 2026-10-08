@@ -6,6 +6,7 @@ import { hasLongDigitChain, maskOutgoing, maskSensitive, prepareQuestion, traceE
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME } from "./tools.ts";
+import { channelAllowsTool } from "./channels.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
   type ModelMessage, type Reservation, type ToolResult, type TraceEntry,
@@ -160,7 +161,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   try {
     // Tools the user may call right now; the model never sees others, and each call is re-checked.
     const toolGrants = await deps.permissions([...new Set(AGENT_TOOLS.flatMap((tool) => tool.permissions))]);
-    const visibleTools = AGENT_TOOLS.filter((tool) => tool.permissions.every((code) => toolGrants.has(code)));
+    const visibleTools = AGENT_TOOLS.filter((tool) => channelAllowsTool(deps.channel, tool.name) && tool.permissions.every((code) => toolGrants.has(code)));
     const toolSpecs = visibleTools.map((tool) => ({ name: tool.name, description: tool.description, parameters: toJsonSchema(tool.params) }));
 
     const messages: ModelMessage[] = [
@@ -210,7 +211,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
             continue;
           }
           toolCalls += 1;
-          if (!tool) {
+          if (!tool || !channelAllowsTool(deps.channel, call.name)) {
             reply(JSON.stringify({ call: call.id, error: "UNKNOWN_TOOL" }));
             trace.push({ name: "unknown", params: {}, rows: 0, truncated: false, ms: 0, error: "UNKNOWN_TOOL" });
             continue;
