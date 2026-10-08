@@ -1,4 +1,5 @@
 import { normalizeProductName } from "../document-extraction/esf.ts";
+import { separateVehicle } from "./vehicle-parts.ts";
 
 // Normalised view of one shipment for the export workbook. It is built from the flat generation
 // data (shipment card + confirmed source documents) and contains no spreadsheet knowledge.
@@ -115,7 +116,7 @@ export function formatRuDate(iso: string) {
  * HS code and quantity). The invoice price is the selling price printed on CMR and ТТН, so it replaces
  * any other price of a matched item, but only when prices were requested; the HS code only fills a gap.
  */
-function reconcileWithInvoice(items: ExportItem[], lines: Array<Record<string, unknown>>, withPrices: boolean) {
+function reconcileWithInvoice(items: ExportItem[], lines: Array<Record<string, unknown>>, withPrices: boolean, vehicleScoped = false) {
   const notes: string[] = [];
   if (!lines.length) return notes;
   const invoice = lines.map(line => ({ name: str(line.product_name), hs: str(line.hs_code), quantity: num(line.quantity), price: num(line.unit_price) }));
@@ -131,9 +132,10 @@ function reconcileWithInvoice(items: ExportItem[], lines: Array<Record<string, u
     if (withPrices && line.price !== null && line.price > 0) item.unitPrice = line.price;
     if (!item.hsCode && line.hs) item.hsCode = line.hs;
     if (line.hs && item.hsCode && line.hs !== item.hsCode) notes.push(`${title}: код ТН ВЭД ${item.hsCode} в поставке, ${line.hs} в инвойсе`);
-    if (line.quantity !== null && item.pieces !== null && Math.abs(line.quantity - item.pieces) > 1e-6) notes.push(`${title}: ${item.pieces} шт. в поставке, ${line.quantity} шт. в инвойсе`);
+    // The invoice covers every vehicle: a vehicle carries only part of a line, so quantities are not comparable.
+    if (!vehicleScoped && line.quantity !== null && item.pieces !== null && Math.abs(line.quantity - item.pieces) > 1e-6) notes.push(`${title}: ${item.pieces} шт. в поставке, ${line.quantity} шт. в инвойсе`);
   });
-  invoice.forEach((line, position) => { if (!used.has(position)) notes.push(`Строка инвойса «${line.name}» (${line.quantity ?? "?"} шт.) отсутствует в поставке`); });
+  if (!vehicleScoped) invoice.forEach((line, position) => { if (!used.has(position)) notes.push(`Строка инвойса «${line.name}» (${line.quantity ?? "?"} шт.) отсутствует в поставке`); });
   return notes;
 }
 
@@ -162,8 +164,11 @@ export function buildExportModel(data: Record<string, unknown>): ExportModel {
       grossWeightKg: positive(num(item.total_gross_weight_kg)),
     };
   });
-  const invoiceNotes = reconcileWithInvoice(items, rows(data.invoice_lines), data.prices_included === true);
+  const invoiceNotes = reconcileWithInvoice(items, rows(data.invoice_lines), data.prices_included === true, data.vehicle_scoped === true);
   const includesPrices = items.some(item => item.unitPrice !== null);
+  // Make and plate are kept apart even when a document wrote them together.
+  const truck = separateVehicle(pick("vehicle_plate"), pick("vehicle_make"));
+  const trailer = separateVehicle(pick("trailer_plate"), pick("trailer_make"));
   const hsCodes = str(data.hs_codes) || [...new Set(items.map(item => item.hsCode).filter(Boolean))].join(", ");
   // A load is counted in whole pallets: per-line fractions (a pallet shared by two products) are rounded up in the total only.
   const summed = items.length && items.every(item => item.pallets !== null) ? Math.ceil(items.reduce((sum, item) => sum + (item.pallets ?? 0), 0) - 1e-9) : null;
@@ -174,10 +179,10 @@ export function buildExportModel(data: Record<string, unknown>): ExportModel {
     shippingDate: isoDate(data.shipping_date) || isoDate(first.actual_loading_date) || isoDate(first.planned_loading_date) || isoDate(data.planned_ready_date),
     driverName: pick("driver_name"),
     driverDocument: pick("driver_document"),
-    vehiclePlate: pick("vehicle_plate"),
-    vehicleMake: pick("vehicle_make"),
-    trailerPlate: pick("trailer_plate"),
-    trailerMake: pick("trailer_make"),
+    vehiclePlate: truck.plate,
+    vehicleMake: truck.make,
+    trailerPlate: trailer.plate,
+    trailerMake: trailer.make,
     carrierName: pick("carrier_name"),
     ttnNumber: str(data.ttn_number),
     loadingCity: str(data.loading_city),

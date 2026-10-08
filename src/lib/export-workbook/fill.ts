@@ -169,6 +169,18 @@ function fillBlocks(workbook: XlsxWorkbook, model: ExportModel, packingDelta: nu
   put(instruction, "C19", model.sellerPhone); put(instruction, "C20", "");
 }
 
+/**
+ * In the reference packing list the two trailer rows are linked crosswise: «Гос.номер прицепа» shows the trailer
+ * make and «Марка прицепа» shows its plate. Each caption is pointed at its own value ('для Диляры'!C13 = plate,
+ * C12 = make). The chain данные -> для Диляры -> упаков.лист and every other formula stay as in the reference.
+ */
+function separateTrailerRows(packing: XlsxSheet) {
+  if (packing.raw("B5") === "Гос.номер прицепа" && packing.raw("B6") === "Марка прицепа") {
+    packing.setFormula("C5", `${LINES_REF}!C13`);
+    packing.setFormula("C6", `${LINES_REF}!C12`);
+  }
+}
+
 export function fillExportWorkbook(template: Uint8Array, model: ExportModel) {
   const workbook = XlsxWorkbook.load(template);
   assertReferenceLayout(workbook);
@@ -180,6 +192,7 @@ export function fillExportWorkbook(template: Uint8Array, model: ExportModel) {
   // Notes the template author left under the input block must not reach issued documents.
   for (const cell of ["C29", "C30", "C31"]) input.clear(cell);
   const lineStarts = fillLines(workbook.sheet(SHEETS.lines), model);
+  separateTrailerRows(workbook.sheet(SHEETS.packing));
   const packingDelta = fillPacking(workbook, workbook.sheet(SHEETS.packing), model, lineStarts);
   fillBlocks(workbook, model, packingDelta);
   return workbook;

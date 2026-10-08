@@ -15,6 +15,8 @@ import { loadGenerationPreview } from "@/lib/templates/generation-service.ts";
 import { DOCX_MIME, renderDocxTemplate } from "@/lib/templates/generation-docx.ts";
 import { XLSX_MIME, renderShipmentWorkbookTemplate } from "@/lib/templates/generation-xlsx.ts";
 import { buildExportDocuments, PreflightError } from "@/lib/export-workbook/index.ts";
+import { findNumberConflicts, type IssuedRow } from "@/lib/templates/vehicle-sets.ts";
+import { describeTransport } from "@/lib/shipments/transport-form.ts";
 import { generatedFileName } from "@/lib/templates/generation.ts";
 import { DOCUMENT_BUCKET, buildDocumentStoragePath, normalizeFileName } from "@/lib/documents/files.ts";
 
@@ -83,6 +85,22 @@ export async function generateExportPackageAction(formData:FormData){
  if(!preview.readiness.ready)redirect(withMessage(back,"error",`Комплект не готов: заполните ${preview.readiness.items.filter(item=>item.required&&!item.ready).map(item=>item.label).join(", ")}`));
  const version=preview.template.current as Record<string,unknown>;if(String(version.mime_type)!==XLSX_MIME)redirect(withMessage(back,"error","Экспортный комплект формируется только из утверждённой книги XLSX"));
  const generationData:Record<string,unknown>={...preview.data,...Object.fromEntries(Object.entries(manualNumbers).filter(([,value])=>value))};
+ // Several vehicles: the employee must have seen and confirmed which vehicle the set is for, and a number printed for
+ // one vehicle is never reused for another vehicle of the same shipment.
+ if(preview.data.vehicle_scoped===true){
+  if(!preview.data.selected_transport_id)redirect(withMessage(back,"error","Выберите автомобиль, для которого формируется комплект"));
+  if(text(formData,"confirm_vehicle")!=="on")redirect(withMessage(back,"error","Подтвердите, для какого автомобиля формируется комплект"));
+ }
+ if(preview.data.selected_transport_id){
+  const[{data:issuedRaw},{data:allVehicles}]=await Promise.all([
+   supabase.from("document_generations").select("generated_at,selected:fields_snapshot->>selected_transport_id,cmr:fields_snapshot->>cmr_number,ttn:fields_snapshot->>ttn_number,pl:fields_snapshot->>packing_list_number,document:documents(type:document_types(code))").eq("shipment_id",shipmentId),
+   supabase.from("shipment_transports").select("id,sequence_no,vehicle_plate,driver_name").eq("shipment_id",shipmentId),
+  ]);
+  const labels=new Map((allVehicles??[]).map(vehicle=>[vehicle.id as string,describeTransport(vehicle)]));
+  const issuedRows:IssuedRow[]=((issuedRaw??[]) as unknown as Array<{generated_at:string;selected:string|null;cmr:string|null;ttn:string|null;pl:string|null;document:{type:{code:string}|Array<{code:string}>|null}|Array<{type:{code:string}|Array<{code:string}>|null}>|null}>).map(row=>{const document=Array.isArray(row.document)?row.document[0]:row.document;const type=Array.isArray(document?.type)?document?.type[0]:document?.type;return{selected:row.selected,cmr:row.cmr,ttn:row.ttn,pl:row.pl,type:type?.code??null,at:row.generated_at};});
+  const conflicts=findNumberConflicts(issuedRows,{id:String(preview.data.selected_transport_id),label:""},{cmr_number:String(generationData.cmr_number??""),ttn_number:String(generationData.ttn_number??""),packing_list_number:String(generationData.packing_list_number??"")},id=>labels.get(id)??"другого автомобиля");
+  if(conflicts.length)redirect(withMessage(back,"error",conflicts.join(" ")));
+ }
  const storage=supabase.storage.from(DOCUMENT_BUCKET);const{data:source,error:downloadError}=await storage.download(String(version.storage_path));
  if(downloadError||!source)redirect(withMessage(back,"error",publicErrorMessage(downloadError,"Файл шаблона не найден.")));
  const shipmentNumber=String(preview.data.shipment_number),transportSuffix=preview.data.selected_transport_sequence?`-авто-${preview.data.selected_transport_sequence}`:"",templateBytes=new Uint8Array(await source.arrayBuffer());

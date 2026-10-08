@@ -22,6 +22,6 @@ describe("export package scope for several vehicles", () => {
 
   it("rejects a foreign vehicle and a vehicle without allocated goods", () => {
     assert.throws(() => selectGenerationScope(items, transports, "other"), /не относится к поставке/);
-    assert.throws(() => selectGenerationScope([], transports, "car-1"), /не распределены товары/);
+    assert.throws(() => selectGenerationScope([], transports, "car-1"), /не закреплён груз/);
   });
 });

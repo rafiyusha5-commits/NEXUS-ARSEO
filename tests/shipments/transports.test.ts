@@ -123,13 +123,17 @@ describe("generation for a vehicle", () => {
     for (const key of ["vehicle_make", "trailer_make", "driver_document", "driver_name", "vehicle_plate", "trailer_plate", "carrier_name"]) assert.ok(keys.includes(key), key);
   });
 
-  it("forces a choice of vehicle for several vehicles and only takes the cargo bound to it", () => {
-    const items = [{ id: "a", shipment_transport_id: "t1" }, { id: "b", shipment_transport_id: "t2" }, { id: "c", shipment_transport_id: null }];
+  it("forces a choice of vehicle for several vehicles, blocks while cargo is unallocated, then takes only the cargo bound to the vehicle", () => {
     const transports = [{ id: "t1", sequence_no: 1 }, { id: "t2", sequence_no: 2 }];
-    assert.throws(() => selectGenerationScope(items, transports), /Выберите автомобиль/);
-    assert.deepEqual(selectGenerationScope(items, transports, "t2").selectedItems.map(item => item.id), ["b"], "unallocated cargo is not assigned automatically");
-    assert.throws(() => selectGenerationScope([{ id: "c", shipment_transport_id: null }], transports, "t1"), /не распределены/);
-    assert.equal(selectGenerationScope(items, [transports[0]]).selectedItems.length, 3, "a single vehicle takes the whole shipment");
+    const partlyAllocated = [{ id: "a", shipment_transport_id: "t1" }, { id: "b", shipment_transport_id: "t2" }, { id: "c", shipment_transport_id: null }];
+    assert.throws(() => selectGenerationScope(partlyAllocated, transports), /Выберите автомобиль/);
+    assert.throws(() => selectGenerationScope(partlyAllocated, transports, "t2"), /часть груза не распределена/, "unallocated cargo blocks the set instead of being guessed onto a vehicle");
+    const allocated = [{ id: "a", shipment_transport_id: "t1" }, { id: "b", shipment_transport_id: "t2" }, { id: "c", shipment_transport_id: "t2" }];
+    assert.deepEqual(selectGenerationScope(allocated, transports, "t2").selectedItems.map(item => item.id), ["b", "c"]);
+    assert.deepEqual(selectGenerationScope(allocated, transports, "t1").selectedItems.map(item => item.id), ["a"]);
+    assert.throws(() => selectGenerationScope([{ id: "a", shipment_transport_id: "t1" }], transports, "t2"), /не закреплён груз/);
+    assert.equal(selectGenerationScope(partlyAllocated, [transports[0]]).selectedItems.length, 3, "a single vehicle takes the whole shipment");
+    assert.equal(selectGenerationScope(partlyAllocated, [transports[0]], "t1").selectedItems.length, 2, "a single vehicle also takes cargo that was never allocated");
   });
 
   it("warns about documents without a vehicle and about cargo that is not allocated", () => {
