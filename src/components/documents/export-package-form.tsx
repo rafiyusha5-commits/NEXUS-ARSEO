@@ -17,6 +17,8 @@ export function ExportPackageForm({
   templateId,
   shipmentId,
   transportId,
+  vehicleLabel,
+  confirmVehicle,
   includePrices,
   readiness,
   initialNumbers,
@@ -26,6 +28,9 @@ export function ExportPackageForm({
   templateId: string;
   shipmentId: string;
   transportId?: string;
+  vehicleLabel?: string;
+  /** Several vehicles: the employee confirms which vehicle the set is for. */
+  confirmVehicle?: boolean;
   includePrices: boolean;
   readiness: OutputReadiness[];
   initialNumbers: { cmr: string; ttn: string; packing_list: string };
@@ -34,6 +39,7 @@ export function ExportPackageForm({
 }) {
   const [selected, setSelected] = useState<ExportOutput[]>(OUTPUTS);
   const [numbers, setNumbers] = useState(initialNumbers);
+  const [vehicleConfirmed, setVehicleConfirmed] = useState(false);
   const selectedReadiness = useMemo(() => readiness.filter(item => selected.includes(item.output)).map(item => {
     const issues = item.issues.filter(issue => !(
       (issue.key === "cmrNumber" && numbers.cmr.trim())
@@ -49,7 +55,7 @@ export function ExportPackageForm({
     || (key === "ttn_number" && numbers.ttn.trim())
     || (key === "packing_list_number" && numbers.packing_list.trim())
   ));
-  const disabled = selected.length === 0 || unresolvedTemplateFields.length > 0 || !shipmentReady || selectedMissing;
+  const disabled = selected.length === 0 || unresolvedTemplateFields.length > 0 || !shipmentReady || selectedMissing || (!!confirmVehicle && !vehicleConfirmed);
 
   const toggle = (output: ExportOutput, checked: boolean) => setSelected(current => checked
     ? [...current, output]
@@ -79,6 +85,7 @@ export function ExportPackageForm({
         <input type="hidden" name="shipment_id" value={shipmentId}/>
         {transportId && <input type="hidden" name="transport_id" value={transportId}/>} 
         <input type="hidden" name="include_prices" value={includePrices ? "true" : "false"}/>
+        {vehicleLabel && <div className="doc-form-full setup-notice"><strong>Комплект формируется для автомобиля {vehicleLabel}.</strong> В документы попадут данные только этого автомобиля и закреплённый за ним груз.{confirmVehicle && <label className="check-label"><input type="checkbox" name="confirm_vehicle" checked={vehicleConfirmed} onChange={event => setVehicleConfirmed(event.target.checked)}/> Подтверждаю: комплект для автомобиля {vehicleLabel}</label>}</div>}
         {(selected.includes("workbook") || selected.includes("cmr")) && <label>Номер CMR<input name="cmr_number" maxLength={120} required value={numbers.cmr} onChange={event => setNumbers(current => ({...current, cmr: event.target.value}))}/></label>}
         {(selected.includes("workbook") || selected.includes("ttn")) && <label>Номер ТТН<input name="ttn_number" maxLength={120} required value={numbers.ttn} onChange={event => setNumbers(current => ({...current, ttn: event.target.value}))}/></label>}
         {(selected.includes("workbook") || selected.includes("packing_list")) && <label>Номер упаковочного листа<input name="packing_list_number" maxLength={120} required value={numbers.packing_list} onChange={event => setNumbers(current => ({...current, packing_list: event.target.value}))}/></label>}

@@ -1,8 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { schemaToVariables } from "./rules.ts";
-import { buildShipmentGenerationData,missingGenerationFields } from "./generation.ts";
-import { mergeConfirmedSources } from "@/lib/document-extraction/rules.ts";
+import { missingGenerationFields } from "./generation.ts";
+import { assembleGenerationData, type SourceRow } from "./generation-assembly.ts";
 import { buildShipmentDocumentReadiness } from "./readiness.ts";
 import { buildExportModel, preflightExport, type ExportOutput } from "../export-workbook/index.ts";
 import { selectGenerationScope } from "./generation-scope.ts";
@@ -26,7 +26,7 @@ export async function loadGenerationPreview(supabase:SupabaseClient,templateId:s
  if(template.status!=="approved"||!template.is_active)throw new Error("Для формирования нужен включённый утверждённый шаблон");
  if(!["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(current.mime_type)))throw new Error("Автоматическое формирование поддерживает шаблоны DOCX и XLSX");
  if(template.counterparty_id&&((template.flow_direction==="input"&&template.counterparty_id!==shipment.supplier_id)||(template.flow_direction==="output"&&template.counterparty_id!==shipment.customer_id)))throw new Error("Шаблон предназначен для другого контрагента");
- const{selectedTransport,selectedItems}=selectGenerationScope(items??[],transports??[],transportId);
+ const{selectedItems}=selectGenerationScope(items??[],transports??[],transportId);
  const productIds=[...new Set(selectedItems.map(item=>item.product_id as string))];
  const productResults=productIds.length?await Promise.all([
   supabase.from("products").select("id,internal_sku,name,brand,hs_code,country_of_origin").in("id",productIds),
@@ -35,20 +35,11 @@ export async function loadGenerationPreview(supabase:SupabaseClient,templateId:s
  ]):[{data:[]},{data:[]},{data:[]}];
  const productError=productResults.map(result=>("error" in result?result.error:null)).find(Boolean);if(productError)throw new Error(productError.message);
  const [{data:products},{data:identifiers},{data:packaging}]=productResults;
- const productMap=new Map((products??[]).map(product=>[product.id as string,product as Record<string,unknown>]));
  const {data:priceRows,error:priceError}=includePrices?await supabase.rpc("my_shipment_item_purchase_prices",{p_shipment_id:shipmentId}):{data:[],error:null};
  if(priceError)throw new Error(priceError.message);
- const priceByItem=new Map((priceRows??[]).map((row:{item_id:string;unit_price:number|string|null})=>[row.item_id,row.unit_price]));
- const normalizedItems=selectedItems.map(item=>({...item,unit_price:includePrices?priceByItem.get(item.id)??null:null,currency_code:one(item.currency as unknown as Array<{code:string}>)?.code}));
- const normalizedTransports=(transports??[]).map(transport=>{const carrier=one(transport.carrier as unknown as Array<Record<string,unknown>>);return{...transport,carrier:carrier?{...carrier,counterparty:one(carrier.counterparty as Array<Record<string,unknown>>)}:undefined,vehicle:one(transport.vehicle as unknown as Array<Record<string,unknown>>)};});
- const generationTransports=selectedTransport?normalizedTransports.filter(transport=>transport.id===transportId):normalizedTransports;
- const baseData=buildShipmentGenerationData({shipment:shipment as Record<string,unknown>,supplier:one(shipment.supplier as unknown as Array<Record<string,unknown>>),customer:one(shipment.customer as unknown as Array<Record<string,unknown>>),route:one(shipment.route as unknown as Array<Record<string,unknown>>),warehouse:one(shipment.warehouse as unknown as Array<Record<string,unknown>>),responsible:one(shipment.responsible as unknown as Array<Record<string,unknown>>),currency:one(shipment.currency as unknown as Array<Record<string,unknown>>),contract:one(shipment.contract as unknown as Array<Record<string,unknown>>),items:normalizedItems as Array<Record<string,unknown>>,products:productMap,identifiers:(identifiers??[]) as Array<Record<string,unknown>>,packaging:(packaging??[]) as Array<Record<string,unknown>>,transports:generationTransports as Array<Record<string,unknown>>,includePrices});
- const confirmedSources=(sourceExtractions??[]).map(row=>(row.confirmed_data??{}) as Record<string,unknown>);
- const boundSources=(sourceExtractions??[]).map(row=>({data:(row.confirmed_data??{}) as Record<string,unknown>,transportId:(row.shipment_transport_id as string|null)??null}));
- const unallocatedItems=(transports??[]).length>1?(items??[]).filter(item=>!item.shipment_transport_id).length:0;
- const invoiceLines=sourceError?[]:(sourceExtractions??[]).flatMap(row=>{const lines=(row.extracted_data as Record<string,unknown>|null)?.invoice_items;return Array.isArray(lines)?lines:[];});
- const data={...(sourceError?baseData:mergeConfirmedSources(baseData,boundSources,{transportId:selectedTransport?.id??null,transportCount:(transports??[]).length})),invoice_lines:invoiceLines,prices_included:includePrices,selected_transport_id:selectedTransport?.id??null,selected_transport_sequence:selectedTransport?.sequence_no??null,unallocated_item_count:unallocatedItems} as typeof baseData&Record<string,unknown>;
- const confirmedSourceFields=sourceError?[]:[...new Set(confirmedSources.flatMap(source=>Object.keys(source)))];
+ const priceByItem=new Map<string,unknown>((priceRows??[]).map((row:{item_id:string;unit_price:number|string|null})=>[row.item_id,row.unit_price]));
+ // The data of one vehicle's set is assembled by a pure function (tested for isolation between vehicles).
+ const{data,confirmedSourceFields}=assembleGenerationData({shipment:shipment as Record<string,unknown>,items:(items??[]) as Array<Record<string,unknown>>,transports:(transports??[]) as Array<Record<string,unknown>>,transportId,products:(products??[]) as Array<Record<string,unknown>>,identifiers:(identifiers??[]) as Array<Record<string,unknown>>,packaging:(packaging??[]) as Array<Record<string,unknown>>,priceByItem,includePrices,sources:(sourceExtractions??[]) as SourceRow[],sourcesUnavailable:!!sourceError});
  const variables=schemaToVariables(template.variables_schema);
  const exportModel=String(current.mime_type)===XLSX_MIME_TYPE?buildExportModel(data):null;
  const exportReadiness=exportModel?EXPORT_OUTPUTS.map(output=>({output,...preflightExport(exportModel,[output],{includePrices})})):[];
