@@ -17,7 +17,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from pytesseract import Output
 
-SERVICE_VERSION = "tesseract-v2"
+SERVICE_VERSION = "tesseract-v3"
 MAX_FILE_BYTES = int(os.getenv("OCR_SERVICE_MAX_FILE_BYTES", str(4 * 1024 * 1024)))
 MAX_PAGES = int(os.getenv("OCR_SERVICE_MAX_PAGES", "5"))
 MAX_PIXELS = int(os.getenv("OCR_SERVICE_MAX_PIXELS", "40000000"))

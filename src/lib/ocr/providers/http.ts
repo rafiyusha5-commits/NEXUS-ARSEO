@@ -6,7 +6,7 @@
 
 import { OcrError, type OcrInput, type OcrProvider, type OcrResult, type OcrWord } from "../types.ts";
 
-export const HTTP_OCR_VERSION = "http-v2";
+export const HTTP_OCR_VERSION = "http-v3";
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_TEXT_CHARS = 400_000;
 

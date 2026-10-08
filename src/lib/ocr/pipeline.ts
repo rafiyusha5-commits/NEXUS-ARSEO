@@ -39,6 +39,7 @@ export type PreparedOcr =
   | { state: "failed"; extractionId: string; message: string; ms: number };
 
 const LANGUAGES = ["ru", "kk", "en"];
+const OCR_EXTRACTOR_VERSION = "ocr-rules-v2";
 
 export const permissionMessage = "Нет права передавать документы на OCR";
 
@@ -94,7 +95,7 @@ export async function persistOcrOutcome(deps: PipelineDeps, prepared: PreparedOc
     const evidence = Object.fromEntries(Object.entries(proposal.result.evidence).map(([field, item]) => [field, { ...item, method: "ocr" }]));
     const { error } = await deps.db.rpc("finish_shipment_source_ocr", {
       p_extraction_id: extractionId, p_status: status, p_extracted_data: proposal.result.data, p_field_evidence: evidence,
-      p_conflicts: conflicts, p_error_message: proposal.error, p_extractor_version: `ocr-rules-v1`, p_page_count: ocr.pageCount,
+      p_conflicts: conflicts, p_error_message: proposal.error, p_extractor_version: OCR_EXTRACTOR_VERSION, p_page_count: ocr.pageCount,
       p_processing_ms: ms, p_confidence: proposal.confidence === null ? null : Math.round(proposal.confidence * 1000) / 1000,
       p_source_kind: proposal.sourceKind,
     });
@@ -103,7 +104,7 @@ export async function persistOcrOutcome(deps: PipelineDeps, prepared: PreparedOc
   if (prepared.state === "failed") {
     const { error } = await deps.db.rpc("finish_shipment_source_ocr", {
       p_extraction_id: prepared.extractionId, p_status: "failed", p_extracted_data: {}, p_field_evidence: {}, p_conflicts: [],
-      p_error_message: prepared.message, p_extractor_version: "ocr-rules-v1", p_page_count: null, p_processing_ms: prepared.ms, p_confidence: null,
+      p_error_message: prepared.message, p_extractor_version: OCR_EXTRACTOR_VERSION, p_page_count: null, p_processing_ms: prepared.ms, p_confidence: null,
     });
     return { ok: !error, status: "failed" as const };
   }
