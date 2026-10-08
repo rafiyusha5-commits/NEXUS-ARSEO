@@ -202,14 +202,23 @@ begin
 end$$;
 revoke all on function private.agent_clean_tools(jsonb) from public,anon,authenticated,service_role;
 
-create or replace function public.agent_reserve_run(p_channel text,p_question_excerpt text,p_reserve_usd_micros bigint)
+-- Budget accounting is a server-only operation. An employee's session must not reserve or finish
+-- runs: the finish token would be returned to the employee, who could then report invented usage
+-- and refunds and exhaust the shared budget without any model call. Both RPCs are executable only
+-- by service_role (the Nexus server's secret key). The server passes the employee id it verified
+-- from the session; business data is still read only with the employee's own session.
+drop function if exists public.agent_reserve_run(text,text,bigint);
+drop function if exists public.agent_finish_run(uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb);
+
+create or replace function public.agent_reserve_run(p_user_id uuid,p_channel text,p_question_excerpt text,p_reserve_usd_micros bigint)
 returns table(run_id uuid,finish_token text,requests_used integer,request_limit integer)
 language plpgsql security definer set search_path='' as $$
 declare
- v_user uuid:=(select auth.uid());s public.agent_settings%rowtype;
+ v_user uuid:=p_user_id;s public.agent_settings%rowtype;
  v_day date:=private.agent_local_date();v_month date;v_used integer;v_spent bigint;v_active bigint;v_settled bigint;v_token text;v_id uuid;
 begin
- if v_user is null or not (select private.has_permission('agent.use')) then raise exception 'AGENT_FORBIDDEN' using errcode='42501';end if;
+ -- Active internal employee holding agent.use (deny overrides and role expiry included).
+ if v_user is null or not private.user_has_permission(v_user,'agent.use') then raise exception 'AGENT_FORBIDDEN' using errcode='42501';end if;
  if p_channel is null or p_channel not in ('web','telegram') or p_reserve_usd_micros is null or p_reserve_usd_micros<=0
     or (p_question_excerpt is not null and length(p_question_excerpt)>200) then
   raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
@@ -260,7 +269,7 @@ begin
 end$$;
 
 create or replace function public.agent_finish_run(
- p_run_id uuid,p_finish_token text,p_status text,p_error_code text,p_refund boolean,
+ p_user_id uuid,p_run_id uuid,p_finish_token text,p_status text,p_error_code text,p_refund boolean,
  p_provider text,p_model text,p_steps integer,p_tool_calls integer,
  p_input_tokens integer,p_output_tokens integer,p_actual_usd_micros bigint,p_tools jsonb
 ) returns void
@@ -271,7 +280,7 @@ begin
  -- then only skips locked runs, so the two cannot deadlock.
  select * into r from public.agent_runs where id=p_run_id for update;
  -- An open run is finished once; an abandoned one (estimated cost) may be reconciled once.
- if not found or r.user_id is distinct from (select auth.uid()) or r.cost_status not in ('reserved','estimated')
+ if not found or p_user_id is null or r.user_id is distinct from p_user_id or r.cost_status not in ('reserved','estimated')
     or r.finish_token_hash<>encode(sha256(convert_to(coalesce(p_finish_token,''),'UTF8')),'hex') then
   raise exception 'AGENT_RUN_NOT_FOUND' using errcode='42501';
  end if;
@@ -325,10 +334,14 @@ begin
 end$$;
 
 do $$declare f text;begin foreach f in array array[
- 'public.agent_reserve_run(text,text,bigint)',
- 'public.agent_finish_run(uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb)',
+ 'public.agent_reserve_run(uuid,text,text,bigint)',
+ 'public.agent_finish_run(uuid,uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb)',
  'public.my_agent_usage()'
-] loop execute format('revoke all on function %s from public,anon,authenticated,service_role',f);execute format('grant execute on function %s to authenticated',f);end loop;end$$;
+] loop execute format('revoke all on function %s from public,anon,authenticated,service_role',f);end loop;end$$;
+-- Accounting only by the trusted server; reading one's own usage with the employee session.
+grant execute on function public.agent_reserve_run(uuid,text,text,bigint) to service_role;
+grant execute on function public.agent_finish_run(uuid,uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb) to service_role;
+grant execute on function public.my_agent_usage() to authenticated;
 
 comment on table public.agent_runs is 'Assistant run trace: masked excerpt, tool names, safe parameters, usage, error code. No full questions, answers or tool results.';
 comment on table public.agent_settings is 'Single row: daily request limit and monthly assistant budget. Changed only from the SQL editor by an administrator.';

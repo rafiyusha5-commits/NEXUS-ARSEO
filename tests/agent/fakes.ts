@@ -132,13 +132,13 @@ export function finalAnswer(answer: unknown, usage = { inputTokens: 1500, output
 }
 
 export class FakeLedger implements AgentLedger {
-  reservations: Array<{ channel: string; questionExcerpt: string; reserveUsdMicros: number }> = [];
+  reservations: Array<{ userId: string; channel: string; questionExcerpt: string; reserveUsdMicros: number }> = [];
   finished: FinishInput[] = [];
   reserveError: string | null = null;
-  async reserve(input: { channel: "web" | "telegram"; questionExcerpt: string; reserveUsdMicros: number }): Promise<Reservation> {
+  async reserve(input: { userId: string; channel: "web" | "telegram"; questionExcerpt: string; reserveUsdMicros: number }): Promise<Reservation> {
     if (this.reserveError) throw new Error(this.reserveError);
     this.reservations.push(input);
-    return { runId: "run-1", finishToken: "token", requestsUsed: this.reservations.length, requestLimit: 20 };
+    return { userId: input.userId, runId: "run-1", finishToken: "token", requestsUsed: this.reservations.length, requestLimit: 20 };
   }
   async finish(_reservation: Reservation, input: FinishInput): Promise<void> {
     this.finished.push(input);

@@ -8,6 +8,12 @@ create or replace function tests.agent_expect_error(p_sql text,p_pattern text) r
 exception when sqlstate 'P0099' then raise;when others then if sqlerrm!~p_pattern then raise exception 'expected %, got %',p_pattern,sqlerrm using errcode='P0099';end if;end$$;
 grant usage on schema tests to authenticated;
 grant execute on function tests.agent_expect_error(text,text) to authenticated;
+-- Tests act as the Nexus server (service_role) for accounting and pass the employee id that the
+-- server takes from the verified session; here the simulated session is request.jwt.claim.sub.
+create or replace function tests.agent_me() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+grant usage on schema tests to service_role;
+grant execute on function tests.agent_me() to authenticated,service_role;
+grant execute on function tests.agent_expect_error(text,text) to service_role;
 
 -- Grants: every internal role uses the assistant, only the administrator reads other traces.
 do $$begin
@@ -25,7 +31,18 @@ do $$begin
  assert not has_table_privilege('authenticated','public.agent_runs','insert') and not has_table_privilege('authenticated','public.agent_runs','update')
   and not has_table_privilege('authenticated','public.agent_usage_days','update') and not has_table_privilege('authenticated','public.agent_settings','update'),
   'assistant tables are written only through the RPCs';
- assert not has_function_privilege('anon','public.agent_reserve_run(text,text,bigint)','execute'),'anonymous cannot reserve';
+ assert not has_function_privilege('anon','public.agent_reserve_run(uuid,text,text,bigint)','execute'),'anonymous cannot reserve';
+ -- Accounting belongs to the trusted server only: an employee session can neither reserve nor finish.
+ assert not has_function_privilege('authenticated','public.agent_reserve_run(uuid,text,text,bigint)','execute')
+  and not has_function_privilege('authenticated','public.agent_finish_run(uuid,uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb)','execute'),
+  'employees cannot call the accounting RPCs';
+ assert has_function_privilege('service_role','public.agent_reserve_run(uuid,text,text,bigint)','execute')
+  and has_function_privilege('service_role','public.agent_finish_run(uuid,uuid,text,text,text,boolean,text,text,integer,integer,integer,integer,bigint,jsonb)','execute'),
+  'the server key can';
+ assert has_function_privilege('authenticated','public.my_agent_usage()','execute') and not has_function_privilege('service_role','public.my_agent_usage()','execute'),
+  'employees read their own usage';
+ assert not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('agent_reserve_run','agent_finish_run') and pronargs<>case p.proname when 'agent_reserve_run' then 4 else 14 end),
+  'no older overload of the accounting RPCs remains';
  assert (select relrowsecurity from pg_class where oid='public.agent_runs'::regclass),'agent_runs has RLS';
 end$$;
 
@@ -49,64 +66,109 @@ select public.configure_external_client('aa000000-0000-4000-8000-000000000004','
 reset role;
 
 -- Without a money budget nothing is reserved, even with the daily limit available.
-set role authenticated;
+set role service_role;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
 reset role;
 update public.agent_settings set monthly_budget_usd_micros=50000,max_run_reserve_usd_micros=2000;
 
+-- An employee session cannot touch the accounting. Repeated reserve -> finish with an invented spend
+-- and refund=true would exhaust the shared budget without any model call; every attempt is refused
+-- by privileges, with the employee's own id or anyone else's, and nothing moves.
+create temp table agent_abuse_before as select
+ (select coalesce(sum(spent_usd_micros),0) from public.agent_budget_months) spent,
+ (select count(*) from public.agent_runs) runs,(select count(*) from public.agent_usage_days) days;
 set role authenticated;
+select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
+do $$declare i int;v_user uuid;begin
+ foreach v_user in array array['aa000000-0000-4000-8000-000000000002','aa000000-0000-4000-8000-000000000001']::uuid[] loop
+  for i in 1..5 loop
+   begin
+    perform * from public.agent_reserve_run(v_user,'web',null,2000);
+    raise exception 'an employee reserved budget' using errcode='P0099';
+   exception when insufficient_privilege then null;
+   end;
+   begin
+    perform public.agent_finish_run(v_user,gen_random_uuid(),repeat('a',64),'failed','AGENT_PROVIDER_ERROR',true,'openai','m',1,0,
+     2000000,2000000,2000,'[]');
+    raise exception 'an employee finished a run' using errcode='P0099';
+   exception when insufficient_privilege then null;
+   end;
+  end loop;
+ end loop;
+end$$;
+-- The former employee-callable signatures are gone.
+select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'does not exist');
+select tests.agent_expect_error($q$select public.agent_finish_run(gen_random_uuid(),'t','failed','AGENT_PROVIDER_ERROR',true,'openai','m',1,0,0,0,2000,'[]'::jsonb)$q$,'does not exist');
+-- Nor can the employee reach the internals or the tables directly.
+select tests.agent_expect_error($q$select private.agent_clean_tools('[]')$q$,'permission denied');
+select tests.agent_expect_error($q$update public.agent_budget_months set spent_usd_micros=0$q$,'permission denied');
+reset role;
+do $$begin
+ assert (select coalesce(sum(spent_usd_micros),0) from public.agent_budget_months)=(select spent from agent_abuse_before),'the shared spend did not move';
+ assert (select count(*) from public.agent_runs)=(select runs from agent_abuse_before),'no run was created';
+ assert (select count(*) from public.agent_usage_days)=(select days from agent_abuse_before),'no usage was counted';
+end$$;
+
+set role service_role;
 -- External accounts and a personal deny of agent.use are refused before any counter moves.
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000004',false);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_FORBIDDEN');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_FORBIDDEN');
+set role authenticated;
 select tests.agent_expect_error($q$select * from public.my_agent_usage()$q$,'AGENT_FORBIDDEN');
+set role service_role;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000005',false);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_FORBIDDEN');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_FORBIDDEN');
 
 -- Arguments cannot raise limits: the per-run cap comes from agent_settings.
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,999999)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('sms',null,1000)$q$,'AGENT_BAD_REQUEST');
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',repeat('x',201),1000)$q$,'AGENT_BAD_REQUEST');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,999999)$q$,'AGENT_RUN_BUDGET_EXCEEDED');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'sms',null,1000)$q$,'AGENT_BAD_REQUEST');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',repeat('x',201),1000)$q$,'AGENT_BAD_REQUEST');
 
 -- Twenty requests a day per employee; the twenty-first is refused.
 create temp table agent_runs_t(n int,run_id uuid,token text);
-grant all on agent_runs_t to authenticated;
+grant all on agent_runs_t to authenticated,service_role;
 do $$declare i int;r record;begin
  for i in 1..20 loop
-  select * into r from public.agent_reserve_run('web','вопрос '||i,1000);
+  select * into r from public.agent_reserve_run(tests.agent_me(),'web','вопрос '||i,1000);
   insert into agent_runs_t values(i,r.run_id,r.finish_token);
   assert r.requests_used=i and r.request_limit=20,'counter moves by one per request';
  end loop;
 end$$;
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_DAILY_LIMIT');
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_DAILY_LIMIT');
+set role authenticated;
 do $$begin
  assert (select usage_date from public.my_agent_usage())=(now() at time zone 'Asia/Aqtobe')::date,'the day follows Asia/Aqtobe';
  assert (select requests_used from public.my_agent_usage())=20,'usage shows twenty requests';
 end$$;
+set role service_role;
 
 -- The finish token is required, and a run is finished only once and only by its owner.
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,'wrong','completed',null,false,'fake','m',1,0,10,10,5,'[]')$q$,
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,'wrong','completed',null,false,'fake','m',1,0,10,10,5,'[]')$q$,
  (select run_id from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'completed',null,true,'fake','m',1,0,10,10,5,'[]')$q$,
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,%L,'completed',null,true,'fake','m',1,0,10,10,5,'[]')$q$,
  (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_BAD_REQUEST');
-select public.agent_finish_run((select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1),'completed',null,false,'fake','m',2,1,1200,300,700,
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1),'completed',null,false,'fake','m',2,1,1200,300,700,
  '[{"name":"find_shipments","params":{"limit":5},"rows":3,"truncated":false,"ms":12}]');
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
  (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,%L,'failed','X',true,'fake','m',1,0,0,0,0,'[]')$q$,
  (select run_id from agent_runs_t where n=2),(select token from agent_runs_t where n=2)),'AGENT_RUN_NOT_FOUND');
 
 -- A failed run returns the request to the user but keeps the tokens actually charged.
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
-select public.agent_finish_run((select run_id from agent_runs_t where n=2),(select token from agent_runs_t where n=2),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',1,0,800,0,400,'[]');
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_runs_t where n=2),(select token from agent_runs_t where n=2),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',1,0,800,0,400,'[]');
+set role authenticated;
 do $$begin
  assert (select requests_used from public.my_agent_usage())=19,'a refunded request frees one slot';
  assert (select request_refunded and status='failed' and input_tokens=800 from public.agent_runs where id=(select run_id from agent_runs_t where n=2)),'refunded run keeps its usage';
  assert (select count(*) from public.agent_runs)=20,'the employee sees own runs';
 end$$;
-select * from public.agent_reserve_run('web',null,1000);
+set role service_role;
+select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000);
+set role authenticated;
 
 -- Other employees do not see these runs; the administrator does, and the money spent is counted.
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
@@ -125,15 +187,15 @@ end$$;
 reset role;
 update public.agent_settings set daily_request_limit=1000,monthly_budget_usd_micros=(select spent_usd_micros from public.agent_budget_months)
  +(select sum(reserved_usd_micros) from public.agent_runs where status='running')+1500;
-set role authenticated;
+set role service_role;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
-select * from public.agent_reserve_run('web',null,1000);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
 -- Reservations older than the TTL keep holding money: a crashed server may have been billed for them.
 reset role;
 update public.agent_runs set created_at=now()-interval '2 hours' where status='running';
-set role authenticated;
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+set role service_role;
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
 
 -- With room for one more run, the next reservation settles the abandoned runs conservatively: each is
 -- charged its whole reservation as an estimate; the employee's request is not returned automatically.
@@ -144,9 +206,9 @@ create temp table agent_before as
   (select count(*) from public.agent_runs where status='running') runs,
   (select requests_used from public.agent_usage_days where user_id='aa000000-0000-4000-8000-000000000002') used;
 update public.agent_settings set monthly_budget_usd_micros=(select spent+held+1000 from agent_before);
-set role authenticated;
-select * from public.agent_reserve_run('web',null,1000);
-select tests.agent_expect_error($q$select * from public.agent_reserve_run('web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
+set role service_role;
+select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000);
+select tests.agent_expect_error($q$select * from public.agent_reserve_run(tests.agent_me(),'web',null,1000)$q$,'AGENT_MONTHLY_BUDGET');
 reset role;
 do $$begin
  assert (select runs from agent_before)=20,'nineteen runs of the specialist and one of the marketer were open';
@@ -159,13 +221,13 @@ do $$begin
 end$$;
 
 -- A late finish replaces the estimate with the reported usage once: the spend moves by the difference.
-set role authenticated;
+set role service_role;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000002',false);
-select public.agent_finish_run((select run_id from agent_runs_t where n=3),(select token from agent_runs_t where n=3),
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_runs_t where n=3),(select token from agent_runs_t where n=3),
  'failed','AGENT_PROVIDER_ERROR',true,'openai','gpt-4.1-mini',1,0,500,100,300,'[]');
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','gpt-4.1-mini',1,0,500,100,300,'[]')$q$,
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','gpt-4.1-mini',1,0,500,100,300,'[]')$q$,
  (select run_id from agent_runs_t where n=3),(select token from agent_runs_t where n=3)),'AGENT_RUN_NOT_FOUND');
-select public.agent_finish_run((select run_id from agent_runs_t where n=4),(select token from agent_runs_t where n=4),
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_runs_t where n=4),(select token from agent_runs_t where n=4),
  'completed',null,false,'openai','gpt-4.1-mini',2,1,900,200,999999,'[]');
 reset role;
 do $$begin
@@ -180,8 +242,8 @@ do $$begin
   'the request is returned only by the explicit refund of the late finish';
 end$$;
 -- A normally finished run cannot be reconciled again.
-set role authenticated;
-select tests.agent_expect_error(format($q$select public.agent_finish_run(%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','m',1,0,0,0,0,'[]')$q$,
+set role service_role;
+select tests.agent_expect_error(format($q$select public.agent_finish_run(tests.agent_me(),%L,%L,'failed','AGENT_PROVIDER_ERROR',true,'openai','m',1,0,0,0,0,'[]')$q$,
  (select run_id from agent_runs_t where n=1),(select token from agent_runs_t where n=1)),'AGENT_RUN_NOT_FOUND');
 
 -- A direct RPC call cannot inflate the shared spend: reported usage is capped by the run's reservation.
@@ -189,25 +251,25 @@ reset role;
 update public.agent_settings set monthly_budget_usd_micros=1000000000000;
 create temp table agent_spent_before as select spent_usd_micros from public.agent_budget_months;
 create temp table agent_inflate(run_id uuid,token text);
-grant all on agent_inflate to authenticated;
-set role authenticated;
+grant all on agent_inflate to authenticated,service_role;
+set role service_role;
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
-insert into agent_inflate select r.run_id,r.finish_token from public.agent_reserve_run('web',null,1000) r;
-select public.agent_finish_run((select run_id from agent_inflate),(select token from agent_inflate),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',
+insert into agent_inflate select r.run_id,r.finish_token from public.agent_reserve_run(tests.agent_me(),'web',null,1000) r;
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_inflate),(select token from agent_inflate),'failed','AGENT_PROVIDER_ERROR',true,'fake','m',
  99999,99999,2000000000,2000000000,999999999999999,'[]');
 reset role;
 do $$begin
  assert (select spent_usd_micros from public.agent_budget_months)=(select spent_usd_micros from agent_spent_before)+1000,'reported spend is capped by the reservation';
  assert (select input_tokens=10000000 and output_tokens=10000000 and steps=50 and tool_calls=100 from public.agent_runs where id=(select run_id from agent_inflate)),'reported counters are bounded';
 end$$;
-set role authenticated;
+set role service_role;
 
 select set_config('request.jwt.claim.sub','aa000000-0000-4000-8000-000000000003',false);
 -- A direct RPC call cannot store personal data or secrets in the trace excerpt, in any number form.
-select public.agent_finish_run(r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
-from public.agent_reserve_run('web','удостоверение 045 678 912, ИИН 900101300123',1000) r;
-select public.agent_finish_run(r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
-from public.agent_reserve_run('web',E'номер 0456 78912, 0456.78912, 0456_78912, (701) 555-44-33, ０４５６７８９１２, 0456–78912, password=hunter2 Bearer abc.def eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln sk-proj-abcdefghijklmnopqrstu​',1000) r;
+select public.agent_finish_run(tests.agent_me(),r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
+from public.agent_reserve_run(tests.agent_me(),'web','удостоверение 045 678 912, ИИН 900101300123',1000) r;
+select public.agent_finish_run(tests.agent_me(),r.run_id,r.finish_token,'rejected',null,true,'fake','m',0,0,0,0,0,'[]')
+from public.agent_reserve_run(tests.agent_me(),'web',E'номер 0456 78912, 0456.78912, 0456_78912, (701) 555-44-33, ０４５６７８９１２, 0456–78912, password=hunter2 Bearer abc.def eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln sk-proj-abcdefghijklmnopqrstu​',1000) r;
 reset role;
 do $$begin
  assert not exists(select 1 from public.agent_runs where question_excerpt ~ '[0-9]{3}|[0-9][ ._/()-][0-9]{2}'),'excerpts keep no digit runs';
@@ -217,10 +279,10 @@ end$$;
 
 -- The tool trace is checked field by field; anything outside the fixed shape is refused.
 create temp table agent_pii(run_id uuid,token text);
-grant all on agent_pii to authenticated;
-set role authenticated;
-insert into agent_pii select r.run_id,r.finish_token from public.agent_reserve_run('web',null,1000) r;
-do $$declare v_sql text:=$f$select public.agent_finish_run(%L,%L,'completed',null,false,%L,%L,1,1,10,10,1,%L::jsonb)$f$;
+grant all on agent_pii to authenticated,service_role;
+set role service_role;
+insert into agent_pii select r.run_id,r.finish_token from public.agent_reserve_run(tests.agent_me(),'web',null,1000) r;
+do $$declare v_sql text:=$f$select public.agent_finish_run(tests.agent_me(),%L,%L,'completed',null,false,%L,%L,1,1,10,10,1,%L::jsonb)$f$;
  bad_tools text[]:=array[
   '{"name":"find_shipments"}',
   '[{"name":"find_shipments","params":{},"rows":1,"truncated":false,"ms":1,"driver_phone":"+77015554433"}]',
@@ -246,12 +308,12 @@ begin
  for i in 1..array_length(bad_meta,1) loop
   perform tests.agent_expect_error(format(v_sql,(select run_id from agent_pii),(select token from agent_pii),bad_meta[i][1],bad_meta[i][2],'[]'),'AGENT_BAD_REQUEST');
  end loop;
- perform tests.agent_expect_error(format($f$select public.agent_finish_run(%L,%L,'failed','IIN_NINE_ZERO',true,'openai','m',1,1,1,1,1,'[]')$f$,
+ perform tests.agent_expect_error(format($f$select public.agent_finish_run(tests.agent_me(),%L,%L,'failed','IIN_NINE_ZERO',true,'openai','m',1,1,1,1,1,'[]')$f$,
   (select run_id from agent_pii),(select token from agent_pii)),'AGENT_BAD_REQUEST');
- perform tests.agent_expect_error(format($f$select public.agent_finish_run(%L,%L,'completed','AGENT_TIMEOUT',false,'openai','m',1,1,1,1,1,'[]')$f$,
+ perform tests.agent_expect_error(format($f$select public.agent_finish_run(tests.agent_me(),%L,%L,'completed','AGENT_TIMEOUT',false,'openai','m',1,1,1,1,1,'[]')$f$,
   (select run_id from agent_pii),(select token from agent_pii)),'AGENT_BAD_REQUEST');
 end$$;
-select public.agent_finish_run((select run_id from agent_pii),(select token from agent_pii),'completed',null,false,'openai','gpt-4.1-mini',1,2,10,10,1,
+select public.agent_finish_run(tests.agent_me(),(select run_id from agent_pii),(select token from agent_pii),'completed',null,false,'openai','gpt-4.1-mini',1,2,10,10,1,
  E'[{"name":"find_shipments","params":{"query":"0456 78912 password=hunter2\\u200b","status":"in_transit","limit":5},"rows":1,"truncated":false,"ms":12},{"name":"get_help","params":{"topic":"documents"},"rows":1,"truncated":false,"ms":0,"error":"TOOL_ERROR"}]');
 reset role;
 do $$begin

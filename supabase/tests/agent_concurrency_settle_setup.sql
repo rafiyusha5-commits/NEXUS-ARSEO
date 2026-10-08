@@ -7,14 +7,13 @@ update public.agent_runs set status='failed',error_code='AGENT_INTERNAL_ERROR',c
 create schema if not exists tests;
 drop table if exists tests.agent_stale;
 create table tests.agent_stale(n int primary key,run_id uuid,token text);
-grant usage on schema tests to authenticated;
-grant select,insert on tests.agent_stale to authenticated;
-set role authenticated;
-select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false);
+grant usage on schema tests to service_role;
+grant select,insert on tests.agent_stale to service_role;
+set role service_role;
 insert into tests.agent_stale select g,r.run_id,r.finish_token from generate_series(1,10) g
- cross join lateral public.agent_reserve_run('web','stale '||g,1000) r;
+ cross join lateral public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web','stale '||g,1000) r;
 reset role;
-revoke insert on tests.agent_stale from authenticated;
+revoke insert on tests.agent_stale from service_role;
 update public.agent_runs set created_at=now()-interval '2 hours' where id in (select run_id from tests.agent_stale);
 drop table if exists tests.agent_settle_before;
 create table tests.agent_settle_before as

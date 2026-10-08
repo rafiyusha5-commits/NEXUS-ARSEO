@@ -71,7 +71,7 @@ select 'authenticated', unnest(array[
   'public.begin_shipment_source_ocr', 'public.finish_shipment_source_ocr',
   'public.create_inventory_operation_document', 'public.add_inventory_operation_line', 'public.remove_inventory_operation_line',
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',
-  'public.agent_reserve_run', 'public.agent_finish_run', 'public.my_agent_usage',
+  'public.my_agent_usage',
   'public.create_shipment_item', 'public.my_product_purchase_prices',
   'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
@@ -82,7 +82,8 @@ select 'authenticated', unnest(array[
   'private.external_can_access_document', 'private.external_can_read_document_file', 'private.external_can_upload_document_file',
   'private.document_matches_counterparty', 'private.document_is_external_safe'])
 union all
-select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key']);
+select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
+  'public.agent_reserve_run', 'public.agent_finish_run']);
 
 do $$
 declare

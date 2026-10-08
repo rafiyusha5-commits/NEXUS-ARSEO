@@ -119,7 +119,8 @@ export type TraceEntry = {
   error?: string;
 };
 
-export type Reservation = { runId: string; finishToken: string; requestsUsed: number; requestLimit: number };
+/** userId is the employee the server verified from the session; the run is closed for the same user. */
+export type Reservation = { userId: string; runId: string; finishToken: string; requestsUsed: number; requestLimit: number };
 
 export type FinishInput = {
   status: "completed" | "failed" | "rejected";
@@ -135,9 +136,12 @@ export type FinishInput = {
   tools: TraceEntry[];
 };
 
-/** Atomic accounting in the database (agent_reserve_run / agent_finish_run). */
+/**
+ * Atomic accounting in the database (agent_reserve_run / agent_finish_run). Only the trusted server
+ * may call it: the RPCs are executable by service_role, never by an employee session.
+ */
 export interface AgentLedger {
-  reserve(input: { channel: "web" | "telegram"; questionExcerpt: string; reserveUsdMicros: number }): Promise<Reservation>;
+  reserve(input: { userId: string; channel: "web" | "telegram"; questionExcerpt: string; reserveUsdMicros: number }): Promise<Reservation>;
   finish(reservation: Reservation, input: FinishInput): Promise<void>;
 }
 

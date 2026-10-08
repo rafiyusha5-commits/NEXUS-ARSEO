@@ -30,6 +30,7 @@ describe("assistant run", () => {
     assert.ok(outcome.ok);
     assert.equal(outcome.answer.facts[0].subject, "Поставка NAR-2026-0007");
     assert.deepEqual(outcome.answer.facts[0].values.map((value) => value.value), ["В пути"]);
+    assert.equal(d.ledger.reservations[0].userId, USER_ID, "the run is reserved for the session user the server verified");
     assert.equal(d.ledger.finished[0].status, "completed");
     assert.equal(d.ledger.finished[0].refund, false);
     assert.deepEqual(d.ledger.finished[0].tools[0], { name: "find_shipments", params: { query: "NAR-2026", limit: 5 }, rows: 1, truncated: false, ms: d.ledger.finished[0].tools[0].ms });

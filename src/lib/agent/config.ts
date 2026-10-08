@@ -14,7 +14,7 @@ export type AgentLimits = {
 };
 
 export type AgentConfig =
-  | { enabled: false; reason: "DISABLED" | "NOT_ACKNOWLEDGED" | "PROVIDER_NOT_CONFIGURED" | "PRICES_NOT_CONFIGURED" | "INVALID_LIMITS" }
+  | { enabled: false; reason: "DISABLED" | "NOT_ACKNOWLEDGED" | "PROVIDER_NOT_CONFIGURED" | "PRICES_NOT_CONFIGURED" | "INVALID_LIMITS" | "LEDGER_NOT_CONFIGURED" }
   | {
       enabled: true;
       provider: "openai";
@@ -69,6 +69,9 @@ export function loadAgentConfig(env: Env = process.env): AgentConfig {
     runDeadlineMs: DEFAULT_LIMITS.runDeadlineMs,
   };
   if (Object.values(limits).some((value) => value === null)) return { enabled: false, reason: "INVALID_LIMITS" };
+  // Budget accounting runs only with the server key (agent_reserve_run / agent_finish_run are
+  // executable by service_role only). Business data is still read with the employee's session.
+  if (!env.SUPABASE_SECRET_KEY?.trim() && !env.SUPABASE_SERVICE_ROLE_KEY?.trim()) return { enabled: false, reason: "LEDGER_NOT_CONFIGURED" };
   return {
     enabled: true,
     provider: "openai",
@@ -99,4 +102,5 @@ export const DISABLED_REASON_TEXT: Record<Exclude<AgentConfig, { enabled: true }
   PROVIDER_NOT_CONFIGURED: "Ассистент выключен: не настроен провайдер модели (AGENT_PROVIDER, AGENT_MODEL и ключ провайдера).",
   PRICES_NOT_CONFIGURED: "Ассистент выключен: не заданы цены токенов (AGENT_PRICE_INPUT_USD_PER_MTOK, AGENT_PRICE_OUTPUT_USD_PER_MTOK), без них нельзя зарезервировать бюджет.",
   INVALID_LIMITS: "Ассистент выключен: ограничения AGENT_MAX_* заданы неверно.",
+  LEDGER_NOT_CONFIGURED: "Ассистент выключен: для учёта лимитов и бюджета нужен серверный ключ SUPABASE_SECRET_KEY.",
 };

@@ -128,12 +128,13 @@ for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
 
-# Parallel sessions of one employee must not exceed the daily assistant limit: the reservation
+# Parallel server calls for one employee must not exceed the daily assistant limit (accounting RPCs
+# are executable only by service_role, the Nexus server key): the reservation
 # locks the user's day row, so exactly daily_request_limit of 30 concurrent requests succeed.
 echo "test: agent daily limit under concurrency"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_setup.sql" >/dev/null
 for i in $(seq 1 30); do
-  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
     >"$WORKDIR/agent_$i.out" 2>&1 &
 done
 wait
@@ -145,7 +146,7 @@ echo "test: agent monthly budget under concurrency"
 # 7 of 30 parallel requests succeed and the rest are refused by the budget.
 "${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_budget_setup.sql" >/dev/null
 for i in $(seq 1 30); do
-  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
     >"$WORKDIR/budget_$i.out" 2>&1 &
 done
 wait
@@ -157,9 +158,9 @@ echo "test: agent settlement of abandoned runs under concurrency"
 # the estimate. Ten late finishes race with ten reservations: each run's money is counted once.
 "${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_settle_setup.sql" >/dev/null
 for i in $(seq 1 10); do
-  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select 'run:'||run_id from public.agent_reserve_run('web',null,1000);" \
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
     >"$WORKDIR/settle_reserve_$i.out" 2>&1 &
-  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ac000000-0000-4000-8000-000000000001',false); select public.agent_finish_run(s.run_id,s.token,'failed','AGENT_PROVIDER_ERROR',false,'openai','m',1,0,50,10,300,'[]') from tests.agent_stale s where s.n=$i; select 'fin:ok';" \
+  "${PSQL[@]}" -tA -c "set role service_role; select public.agent_finish_run('ac000000-0000-4000-8000-000000000001',s.run_id,s.token,'failed','AGENT_PROVIDER_ERROR',false,'openai','m',1,0,50,10,300,'[]') from tests.agent_stale s where s.n=$i; select 'fin:ok';" \
     >"$WORKDIR/settle_finish_$i.out" 2>&1 &
 done
 wait

@@ -7,6 +7,7 @@ import { AGENT_TOOLS } from "../../src/lib/agent/tools.ts";
 const ENABLED = {
   AGENT_ENABLED: "true", AGENT_ACKNOWLEDGE_DATA_TRANSFER: "true", AGENT_PROVIDER: "openai", OPENAI_API_KEY: "test-key",
   AGENT_MODEL: "test-model", AGENT_PRICE_INPUT_USD_PER_MTOK: "2", AGENT_PRICE_OUTPUT_USD_PER_MTOK: "8",
+  SUPABASE_SECRET_KEY: "test-server-key",
 };
 
 describe("assistant configuration", () => {
@@ -22,6 +23,9 @@ describe("assistant configuration", () => {
     assert.equal(loadAgentConfig({ ...ENABLED, AGENT_PROVIDER: "nvidia" }).enabled, false);
     assert.deepEqual(loadAgentConfig({ ...ENABLED, AGENT_PRICE_OUTPUT_USD_PER_MTOK: "" }), { enabled: false, reason: "PRICES_NOT_CONFIGURED" });
     assert.deepEqual(loadAgentConfig({ ...ENABLED, AGENT_MAX_STEPS: "99" }), { enabled: false, reason: "INVALID_LIMITS" });
+    // Accounting RPCs are server-only, so without the server key there is no budget control.
+    assert.deepEqual(loadAgentConfig({ ...ENABLED, SUPABASE_SECRET_KEY: " " }), { enabled: false, reason: "LEDGER_NOT_CONFIGURED" });
+    assert.equal(loadAgentConfig({ ...ENABLED, SUPABASE_SECRET_KEY: undefined, SUPABASE_SERVICE_ROLE_KEY: "legacy" }).enabled, true);
   });
 
   it("enables with all settings and reserves the worst case", () => {

@@ -120,7 +120,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
 
   let reservation: Reservation;
   try {
-    reservation = await deps.ledger.reserve({ channel: deps.channel, questionExcerpt: traceExcerpt(question.text), reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) });
+    reservation = await deps.ledger.reserve({ userId: deps.userId, channel: deps.channel, questionExcerpt: traceExcerpt(question.text), reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) });
   } catch (error) {
     const code = error instanceof Error && LEDGER_CODES.has(error.message) ? error.message : "AGENT_LEDGER_ERROR";
     return { ok: false, code, message: errorText(code), refunded: false };
