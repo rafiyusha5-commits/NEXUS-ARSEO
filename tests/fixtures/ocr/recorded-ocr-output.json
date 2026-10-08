@@ -1,0 +1,504 @@
+{
+"ru.png": {
+"text": "Водитель: Иванов Иван Иванович\nТелефон водителя: +7 701 123 45 67\nГос.номер авто: 754ВА04\n\nМарка авто: SCANIA\n\nГос.номер прицепа: 6601А04\n\nМарка прицепа: SCHMITZ 5.КО 24/1\nПеревозчик: ТОО Рокос",
+"pages": 1,
+"confidence": 0.9321428571428572,
+"words": [
+{
+"text": "Водитель:",
+"confidence": 0.91
+},
+{
+"text": "Иванов",
+"confidence": 0.96
+},
+{
+"text": "Иван",
+"confidence": 0.91
+},
+{
+"text": "Иванович",
+"confidence": 0.96
+},
+{
+"text": "Телефон",
+"confidence": 0.96
+},
+{
+"text": "водителя:",
+"confidence": 0.96
+},
+{
+"text": "+7",
+"confidence": 0.96
+},
+{
+"text": "701",
+"confidence": 0.96
+},
+{
+"text": "123",
+"confidence": 0.95
+},
+{
+"text": "45",
+"confidence": 0.96
+},
+{
+"text": "67",
+"confidence": 0.96
+},
+{
+"text": "Гос.номер",
+"confidence": 0.9
+},
+{
+"text": "авто:",
+"confidence": 0.93
+},
+{
+"text": "754ВА04",
+"confidence": 0.87
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "авто:",
+"confidence": 0.93
+},
+{
+"text": "SCANIA",
+"confidence": 0.92
+},
+{
+"text": "Гос.номер",
+"confidence": 0.9
+},
+{
+"text": "прицепа:",
+"confidence": 0.92
+},
+{
+"text": "6601А04",
+"confidence": 0.85
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "прицепа:",
+"confidence": 0.93
+},
+{
+"text": "SCHMITZ",
+"confidence": 0.91
+},
+{
+"text": "5.КО",
+"confidence": 0.92
+},
+{
+"text": "24/1",
+"confidence": 0.96
+},
+{
+"text": "Перевозчик:",
+"confidence": 0.96
+},
+{
+"text": "ТОО",
+"confidence": 0.92
+},
+{
+"text": "Рокос",
+"confidence": 0.91
+}
+]
+},
+"kaz.jpg": {
+"text": "Водитель: Әбдірахманов Қайрат Ұлықбекұлы\nТелефон водителя: 8 (701) 123-45-67\nГос.номер авто: 044WST04\n\nМарка авто: ГАЗ 27055",
+"pages": 1,
+"confidence": 0.9475,
+"words": [
+{
+"text": "Водитель:",
+"confidence": 0.9
+},
+{
+"text": "Әбдірахманов",
+"confidence": 0.96
+},
+{
+"text": "Қайрат",
+"confidence": 0.96
+},
+{
+"text": "Ұлықбекұлы",
+"confidence": 0.96
+},
+{
+"text": "Телефон",
+"confidence": 0.96
+},
+{
+"text": "водителя:",
+"confidence": 0.96
+},
+{
+"text": "8",
+"confidence": 0.96
+},
+{
+"text": "(701)",
+"confidence": 0.96
+},
+{
+"text": "123-45-67",
+"confidence": 0.96
+},
+{
+"text": "Гос.номер",
+"confidence": 0.9
+},
+{
+"text": "авто:",
+"confidence": 0.93
+},
+{
+"text": "044WST04",
+"confidence": 0.91
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "авто:",
+"confidence": 0.96
+},
+{
+"text": "ГАЗ",
+"confidence": 0.96
+},
+{
+"text": "27055",
+"confidence": 0.96
+}
+]
+},
+"scan.pdf": {
+"text": "Водитель: Иванов Иван Иванович\nТелефон водителя: +7 701 123 45 67\nГос.номер авто: 754ВА04\n\nМарка авто: SCANIA\n\nГос.номер прицепа: 6601А04\n\nМарка прицепа: SCHMITZ S.KO 24/1\nПеревозчик: ТОО Рокос",
+"pages": 1,
+"confidence": 0.9360714285714286,
+"words": [
+{
+"text": "Водитель:",
+"confidence": 0.96
+},
+{
+"text": "Иванов",
+"confidence": 0.95
+},
+{
+"text": "Иван",
+"confidence": 0.96
+},
+{
+"text": "Иванович",
+"confidence": 0.96
+},
+{
+"text": "Телефон",
+"confidence": 0.96
+},
+{
+"text": "водителя:",
+"confidence": 0.96
+},
+{
+"text": "+7",
+"confidence": 0.96
+},
+{
+"text": "701",
+"confidence": 0.96
+},
+{
+"text": "123",
+"confidence": 0.94
+},
+{
+"text": "45",
+"confidence": 0.93
+},
+{
+"text": "67",
+"confidence": 0.94
+},
+{
+"text": "Гос.номер",
+"confidence": 0.91
+},
+{
+"text": "авто:",
+"confidence": 0.92
+},
+{
+"text": "754ВА04",
+"confidence": 0.92
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "авто:",
+"confidence": 0.93
+},
+{
+"text": "SCANIA",
+"confidence": 0.91
+},
+{
+"text": "Гос.номер",
+"confidence": 0.9
+},
+{
+"text": "прицепа:",
+"confidence": 0.93
+},
+{
+"text": "6601А04",
+"confidence": 0.91
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "прицепа:",
+"confidence": 0.92
+},
+{
+"text": "SCHMITZ",
+"confidence": 0.91
+},
+{
+"text": "S.KO",
+"confidence": 0.91
+},
+{
+"text": "24/1",
+"confidence": 0.96
+},
+{
+"text": "Перевозчик:",
+"confidence": 0.96
+},
+{
+"text": "ТОО",
+"confidence": 0.93
+},
+{
+"text": "Рокос",
+"confidence": 0.89
+}
+]
+},
+"empty_fields.png": {
+"text": "Водитель:\nГос.номер авто:\nМарка авто:\nГос.номер прицепа:\nМарка прицепа:\nТелефон водителя:",
+"pages": 1,
+"confidence": 0.9472727272727273,
+"words": [
+{
+"text": "Водитель:",
+"confidence": 0.96
+},
+{
+"text": "Гос.номер",
+"confidence": 0.89
+},
+{
+"text": "авто:",
+"confidence": 0.95
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "авто:",
+"confidence": 0.95
+},
+{
+"text": "Гос.номер",
+"confidence": 0.91
+},
+{
+"text": "прицепа:",
+"confidence": 0.96
+},
+{
+"text": "Марка",
+"confidence": 0.96
+},
+{
+"text": "прицепа:",
+"confidence": 0.96
+},
+{
+"text": "Телефон",
+"confidence": 0.96
+},
+{
+"text": "водителя:",
+"confidence": 0.96
+}
+]
+},
+"labels_only.png": {
+"text": "ФИО водителя\nНомер а/м, п/п\nТелефон водителя\nПеревозчик",
+"pages": 1,
+"confidence": 0.92125,
+"words": [
+{
+"text": "ФИО",
+"confidence": 0.92
+},
+{
+"text": "водителя",
+"confidence": 0.9
+},
+{
+"text": "Номер",
+"confidence": 0.93
+},
+{
+"text": "а/м,",
+"confidence": 0.91
+},
+{
+"text": "п/п",
+"confidence": 0.96
+},
+{
+"text": "Телефон",
+"confidence": 0.93
+},
+{
+"text": "водителя",
+"confidence": 0.9
+},
+{
+"text": "Перевозчик",
+"confidence": 0.92
+}
+]
+},
+"idcard.png": {
+"text": "NEXUS_DOCUMENT_NUMBER: 123456789\nЛӘГГІГІУІГ ЛИГЕ, ГИ\nТЕГІ / ФАМИЛИЯ\nТОЛЫБАЙ\nАТЫ / ИМЯ\nАНУАР\nҚАЗАҚСТАН РЕСПУБЛИКАСЫ / РЕСПУБЛИКА КАЗАХСТАН\nЖЕКЕ КУӘЛІК / УДОСТОВЕРЕНИЕ ЛИЧНОСТИ\n\nТЕГІ / ФАМИЛИЯ\n\nТОЛЫБАЙ\n\nАТЫ / ИМЯ\n\nАНУАР\n\nӘКЕСІНІҢ АТЫ / ОТЧЕСТВО\n\nСЕРІКБОЛАТҰЛЫ 123456789",
+"pages": 1,
+"confidence": 0.9341666666666667,
+"words": [
+{
+"text": "ҚАЗАҚСТАН",
+"confidence": 0.96
+},
+{
+"text": "РЕСПУБЛИКАСЫ",
+"confidence": 0.93
+},
+{
+"text": "/",
+"confidence": 0.93
+},
+{
+"text": "РЕСПУБЛИКА",
+"confidence": 0.96
+},
+{
+"text": "КАЗАХСТАН",
+"confidence": 0.96
+},
+{
+"text": "ЖЕКЕ",
+"confidence": 0.96
+},
+{
+"text": "КУӘЛІК",
+"confidence": 0.85
+},
+{
+"text": "/",
+"confidence": 0.91
+},
+{
+"text": "УДОСТОВЕРЕНИЕ",
+"confidence": 0.91
+},
+{
+"text": "ЛИЧНОСТИ",
+"confidence": 0.96
+},
+{
+"text": "ТЕГІ",
+"confidence": 0.93
+},
+{
+"text": "/",
+"confidence": 0.92
+},
+{
+"text": "ФАМИЛИЯ",
+"confidence": 0.96
+},
+{
+"text": "ТОЛЫБАЙ",
+"confidence": 0.96
+},
+{
+"text": "АТЫ",
+"confidence": 0.89
+},
+{
+"text": "/",
+"confidence": 0.89
+},
+{
+"text": "ИМЯ",
+"confidence": 0.96
+},
+{
+"text": "АНУАР",
+"confidence": 0.96
+},
+{
+"text": "ӘКЕСІНІҢ",
+"confidence": 0.94
+},
+{
+"text": "АТЫ",
+"confidence": 0.93
+},
+{
+"text": "/",
+"confidence": 0.92
+},
+{
+"text": "ОТЧЕСТВО",
+"confidence": 0.96
+},
+{
+"text": "СЕРІКБОЛАТҰЛЫ",
+"confidence": 0.91
+},
+{
+"text": "123456789",
+"confidence": 0.96
+}
+]
+}
+}

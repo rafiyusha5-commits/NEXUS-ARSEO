@@ -116,3 +116,16 @@ gcloud run deploy nexus-ocr \
 Обновление выполняется заменой контейнера на новую версию. Для мгновенного отключения удалите
 `OCR_ACKNOWLEDGE_DATA_TRANSFER` или установите `OCR_PROVIDER=disabled` в Nexus и перезапустите
 приложение. Уже подтверждённые данные в Nexus сохранятся; новые файлы перестанут отправляться.
+
+## Тесты и защита запросов
+
+Токен проверяется **до** чтения тела запроса, а тело ограничивается при потоковом чтении (`RequestGuard` в `app/main.py`): запрос без токена получает 401, не загрузив ни байта, слишком большой запрос получает 413, даже если у него нет заголовка `Content-Length`.
+
+Тесты запускаются в образе сервиса (в нём есть Tesseract):
+
+```bash
+docker build -t nexus-ocr:local services/ocr
+docker run --rm --user root -v "$PWD/services/ocr:/app" nexus-ocr:local   sh -c "apt-get update -qq && apt-get install -y -qq fonts-dejavu-core && pip install -q -r requirements-dev.txt && python -m pytest -q"
+```
+
+`tests/make_fixtures.py` создаёт синтетические документы для проверок в `tests/fixtures/ocr` репозитория (в контейнере с шрифтами DejaVu, выходная папка `/out`).

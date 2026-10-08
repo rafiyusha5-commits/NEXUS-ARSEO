@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 
 import pypdfium2 as pdfium
 import pytesseract
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
@@ -63,29 +63,95 @@ app = FastAPI(
 )
 
 
-@app.middleware("http")
-async def reject_oversized_requests(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if content_length:
+def authorization_problem(header: str) -> tuple[int, str, bool] | None:
+    """Returns (status, detail, send WWW-Authenticate) when the Authorization header is not acceptable."""
+    configured = os.getenv("OCR_SERVICE_TOKEN", "")
+    if len(configured) < 32:
+        return status.HTTP_503_SERVICE_UNAVAILABLE, "service is not configured", False
+    supplied = header.removeprefix("Bearer ") if header.startswith("Bearer ") else ""
+    if not supplied or not secrets.compare_digest(supplied, configured):
+        return status.HTTP_401_UNAUTHORIZED, "unauthorized", True
+    return None
+
+
+class _BodyTooLarge(Exception):
+    pass
+
+
+class RequestGuard:
+    """Refuses bad callers before their body is read and caps how much of a body is ever read.
+
+    Checking only Content-Length is not enough: a chunked request has none, and FastAPI validates the whole body
+    before it runs the token dependency. Both happen here, at the ASGI level, ahead of any parsing.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    @staticmethod
+    async def _respond(send, code: int, detail: str, authenticate: bool = False) -> None:
+        body = JSONResponse({"detail": detail}).body
+        headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+        if authenticate:
+            headers.append((b"www-authenticate", b"Bearer"))
+        await send({"type": "http.response.start", "status": code, "headers": headers})
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") != "POST":
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope["headers"]}
+        if scope["path"].startswith("/v1/"):
+            problem = authorization_problem(headers.get(b"authorization", b"").decode("latin-1"))
+            if problem:
+                await self._respond(send, problem[0], problem[1], problem[2])
+                return
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                if int(declared) > MAX_REQUEST_BYTES:
+                    await self._respond(send, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "request too large")
+                    return
+            except ValueError:
+                await self._respond(send, status.HTTP_400_BAD_REQUEST, "invalid content length")
+                return
+
+        received = 0
+        responded = False
+
+        async def limited_receive():
+            nonlocal received, responded
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > MAX_REQUEST_BYTES and not responded:
+                    # Answer at once: the framework would turn the interruption into a generic 400.
+                    responded = True
+                    await self._respond(send, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "request too large")
+                    raise _BodyTooLarge
+            return message
+
+        async def guarded_send(message):
+            # After the 413 nothing else may be written to this connection.
+            if not responded:
+                await send(message)
+
         try:
-            if int(content_length) > MAX_REQUEST_BYTES:
-                return JSONResponse(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, content={"detail": "request too large"})
-        except ValueError:
-            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": "invalid content length"})
-    return await call_next(request)
+            await self.app(scope, limited_receive, guarded_send)
+        except _BodyTooLarge:
+            pass
+
+
+app.add_middleware(RequestGuard)
 
 
 def require_token(authorization: Annotated[str | None, Header()] = None) -> None:
-    configured = os.getenv("OCR_SERVICE_TOKEN", "")
-    if len(configured) < 32:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="service is not configured")
-    supplied = authorization.removeprefix("Bearer ") if authorization and authorization.startswith("Bearer ") else ""
-    if not supplied or not secrets.compare_digest(supplied, configured):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="unauthorized",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # The guard above already refused bad callers; this stays as a second line of defence for direct use.
+    problem = authorization_problem(authorization or "")
+    if problem:
+        code, detail, authenticate = problem
+        raise HTTPException(status_code=code, detail=detail, headers={"WWW-Authenticate": "Bearer"} if authenticate else None)
 
 
 def decode_document(value: str) -> bytes:

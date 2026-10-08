@@ -23,7 +23,7 @@ const patterns: Pattern[] = [
   { field: "packing_list_number", label: "Номер упаковочного листа", expressions: [/упаковочн(?:ый|ого)\s+лист(?:а)?\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
   { field: "waybill_number", label: "Номер накладной", expressions: [/(?:накладная|накладной)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,40})/iu] },
   { field: "esf_number", label: "Номер ЭСФ", expressions: [/(?:ЭСФ|электронн\S*\s+сч[её]т[- ]фактур\S*)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,40})/iu] },
-  { field: "driver_name", label: "Водитель", expressions: [/(?:ФИО\s+водителя|фамилия\s+и\s+инициалы\s+водителя|водитель)\s*[:—-]\s*(\p{Lu}[\p{L}.-]+(?:\s+\p{Lu}[\p{L}.-]+){1,3})/iu, /ФИО[^\n]{0,100}\n\s*водителя(?:\s*\n\s*Номер[^\n]*)?\s*\n\s*(\p{Lu}[\p{L}-]+(?:\s+\p{Lu}[\p{L}-]+){1,3})/u] },
+  { field: "driver_name", label: "Водитель", expressions: [/(?:ФИО\s+водителя|фамилия\s+и\s+инициалы\s+водителя|водитель)\s*[:—-]\s*(\p{Lu}[\p{L}.-]+(?:[ \t]+\p{Lu}[\p{L}.-]+){1,3})/iu, /ФИО[^\n]{0,100}\n\s*водителя(?:\s*\n\s*Номер[^\n]*)?\s*\n\s*(\p{Lu}[\p{L}-]+(?:\s+\p{Lu}[\p{L}-]+){1,3})/u] },
   { field: "driver_document", label: "Документ водителя", expressions: [/NEXUS_DOCUMENT_NUMBER\s*:\s*(\d{9})/u, /(?:уд\/лич|удостоверени\S*\s+(?:личности|водителя)|паспорт(?:ные\s+данные)?\s+водителя)\s*[:№—-]?\s*([^\n]{5,180})/iu, /паспорт\s*[:№—-]\s*([^\n]{5,180})/iu] },
   { field: "driver_phone", label: "Телефон водителя", expressions: [/(?:телефон\S*\s+водителя|моб\.?\s*тел\.?\s+водителя)\s*[:—-]?\s*(\+?[0-9][0-9 ()-]{7,20})/iu] },
   { field: "vehicle_plate", label: "Госномер автомобиля", expressions: [/(?:гос\.?\s*номер\s+(?:авто|тягача)|регистрац\S*\s+номер\s+тягача)\s*[:—-]?\s*([A-ZА-Я0-9 -]{4,20})/iu] },
@@ -115,7 +115,39 @@ function isoDate(value: string) {
   return `${year}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
 }
 
-export function extractShipmentFields(rawText: string): ExtractionResult {
+// ---- values that are really the next printed label ---------------------------------------------------------------------
+// A form flattened to text (and OCR above all) puts labels and values side by side. When a value is missing, a
+// pattern that reads "after the label" picks up the NEXT label ("Гос.номер авто:" -> "Марка авто"). Such a value is
+// refused, and a label glued to the tail of a real value ("Иванов Иван Телефон") is cut off.
+const LABEL_WORDS = String.raw`гос\.?\s*номер|марка\s+(?:авто|тягача|прицепа|полуприцепа)|номер\s+а\s*\/\s*м|телефон|тел\.|водител[ья]|ф\.?\s?и\.?\s?о\b|перевозчик|(?:полу)?прицеп|тягач|количество|кол-во|пломб|температур|уд\s*\/\s*лич|паспорт|удостоверени`;
+const LABEL_AT_START = new RegExp(`^(?:${LABEL_WORDS})`, "iu");
+const LABEL_INSIDE = new RegExp(`(?<![\p{L}\p{N}])(?:${LABEL_WORDS})`, "iu");
+const LABEL_SENSITIVE = new Set(["driver_name", "driver_document", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "seals", "carrier_name"]);
+
+export function cleanFieldValue(field: string, value: string) {
+  if (!LABEL_SENSITIVE.has(field)) return value;
+  if (LABEL_AT_START.test(value)) return "";
+  const inside = LABEL_INSIDE.exec(value);
+  return inside && inside.index > 0 ? value.slice(0, inside.index).replace(/[\s,;:–—-]+$/u, "") : value;
+}
+
+// A value of the right shape is not necessarily right, but one of the wrong shape is certainly worth a second look.
+const PLATE_SHAPE = /^(?:\d{2,3}[A-ZА-ЯЁ]{2,3}\d{2,3}|[A-ZА-ЯЁ]\d{3}[A-ZА-ЯЁ]{2}\d{2,3})$/iu;
+export function looksPlausible(field: string, value: string) {
+  if (field === "vehicle_plate" || field === "trailer_plate") return PLATE_SHAPE.test(value.replace(/[\s-]+/g, ""));
+  if (field === "driver_phone") return value.replace(/\D/g, "").length >= 10;
+  if (field === "driver_document") return /\d{6,}/.test(value.replace(/\s/g, ""));
+  return true;
+}
+
+export type ExtractOptions = {
+  /** The text comes from the OCR service, which may prepend its own marker lines (see NEXUS_DOCUMENT_NUMBER). */
+  fromOcr?: boolean;
+};
+
+const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
+
+export function extractShipmentFields(rawText: string, options: ExtractOptions = {}): ExtractionResult {
   const text = rawText.replace(/\r/g, "\n").replace(/[\t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n");
   const data: Record<string, unknown> = {};
   const evidence: Record<string, ExtractionEvidence> = {};
@@ -123,20 +155,22 @@ export function extractShipmentFields(rawText: string): ExtractionResult {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);
       if (!match?.[1]) continue;
-      const value = clean(match[1]);
+      const value = cleanFieldValue(pattern.field, clean(match[1]));
       if (!value) continue;
+      // The marker line of the OCR service is trusted only when it really comes from the service.
+      if (/^NEXUS_DOCUMENT_NUMBER/u.test(match[0]) && !(options.fromOcr && IDENTITY_CARD.test(text) && /^\s*NEXUS_DOCUMENT_NUMBER/u.test(text))) continue;
       // OCR can put the next printed label on the same line as a field heading. A driver
       // document value without any digit is a label/name, not an identity-document number.
       if (pattern.field === "driver_document" && !/\d/u.test(value)) continue;
       data[pattern.field] = ["pallet_count", "gross_weight_kg", "net_weight_kg"].includes(pattern.field) ? Number(value.replace(/\s/g, "").replace(",", ".")) : value;
-      evidence[pattern.field] = { label: pattern.label, value, confidence: pattern.confidence ?? 0.85 };
+      evidence[pattern.field] = { label: pattern.label, value, confidence: looksPlausible(pattern.field, value) ? pattern.confidence ?? 0.85 : 0.55 };
       break;
     }
   }
   // Kazakhstan identity cards lay surname, name and patronymic out on separate labelled lines.
   // Tesseract commonly reads ТЕГ as ТЕП, so accept that spelling but keep the result for review.
   if (!data.driver_name && /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ/iu.test(text)) {
-    const identityName = text.match(/(?:ТЕГ|ТЕП)\s*\/\s*ФАМИЛИЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*АТЫ\s*\/\s*ИМЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*ӘКЕСІНІҢ\s+АТЫ\s*\/\s*ОТЧЕСТВО[,.]?\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)/u);
+    const identityName = text.match(/(?:ТЕГІ|ТЕГ|ТЕП|ТЕГ1)\s*\/\s*ФАМИЛИЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*АТЫ\s*\/\s*ИМЯ\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)\s*\n+\s*ӘКЕСІНІҢ\s+АТЫ\s*\/\s*ОТЧЕСТВО[,.]?\s*\n+\s*(\p{Lu}[\p{L}0-9-]+)/u);
     if (identityName) {
       const value = identityName.slice(1, 4).join(" ");
       data.driver_name = value;
@@ -182,23 +216,38 @@ export function extractShipmentFields(rawText: string): ExtractionResult {
   return { data, evidence, conflicts: [] };
 }
 
+// Letters that look alike in Latin and Cyrillic: OCR and keyboards mix them freely in plates.
+const HOMOGLYPHS: Record<string, string> = { А: "A", В: "B", Е: "E", К: "K", М: "M", Н: "H", О: "O", Р: "P", С: "C", Т: "T", У: "Y", Х: "X" };
+const PLATE_FIELDS = new Set(["vehicle_plate", "trailer_plate"]);
+const PHONE_FIELDS = new Set(["driver_phone", "seller_phone"]);
+
+/** The key under which two values count as the same fact. */
+export function comparableValue(field: string, value: string) {
+  if (PLATE_FIELDS.has(field)) return [...value.toLocaleUpperCase("ru-RU")].map(character => HOMOGLYPHS[character] ?? character).join("").replace(/[^A-Z0-9]/g, "");
+  if (PHONE_FIELDS.has(field)) return value.replace(/\D/g, "").slice(-10);
+  return value.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
+}
+
 export function conflictsAcrossDocuments(results: Array<{ documentId: string; result: ExtractionResult }>) {
-  const values = new Map<string, Map<string, string[]>>();
+  const values = new Map<string, Map<string, { shown: string; documents: string[] }>>();
   for (const { documentId, result } of results) {
     for (const [field, raw] of Object.entries(result.data)) {
       if (raw === null || typeof raw === "object") continue;
       const value = String(raw).trim();
       if (!value) continue;
-      const normalized = value.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
-      const byValue = values.get(field) ?? new Map<string, string[]>();
-      byValue.set(normalized, [...(byValue.get(normalized) ?? []), documentId]);
+      const key = comparableValue(field, value);
+      if (!key) continue;
+      const byValue = values.get(field) ?? new Map<string, { shown: string; documents: string[] }>();
+      const entry = byValue.get(key) ?? { shown: value, documents: [] };
+      entry.documents.push(documentId);
+      byValue.set(key, entry);
       values.set(field, byValue);
     }
   }
   const conflicts: ExtractionConflict[] = [];
   for (const [field, byValue] of values) {
     if (byValue.size < 2) continue;
-    conflicts.push({ field, values: [...byValue.keys()], documents: [...new Set([...byValue.values()].flat())] });
+    conflicts.push({ field, values: [...byValue.values()].map(entry => entry.shown), documents: [...new Set([...byValue.values()].flatMap(entry => entry.documents))] });
   }
   return conflicts;
 }
