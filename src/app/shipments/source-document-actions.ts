@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
 import { sanitizeConfirmedSourceData, SOURCE_FIELD_DEFINITIONS } from "@/lib/document-extraction/rules";
-import { publicErrorMessage } from "@/lib/errors/public-message";
+import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { describeExtractionSummary } from "@/lib/document-extraction/summary";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,7 +63,20 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   const permissions=await loadPermissions(supabase,["source_documents.review","shipments.update"] as const);
   if(!permissions["source_documents.review"])redirect(back(shipmentId,"error","Недостаточно прав для подтверждения данных"));
   const { error } = await supabase.rpc("review_shipment_source_extraction", { p_extraction_id: extractionId,p_confirmed_data:confirmedData,p_apply_to_shipment:applyToShipment&&permissions["shipments.update"] });
-  if (error) redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось подтвердить распознанные данные.")));
+  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error,"Не удалось подтвердить распознанные данные.")));
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
+}
+
+// Binds an unconfirmed document or OCR proposal to one vehicle (or back to the whole shipment). Nothing is guessed.
+export async function assignSourceTransportAction(formData: FormData) {
+  const shipmentId = value(formData, "shipment_id");
+  const extractionId = value(formData, "extraction_id");
+  const transportId = value(formData, "transport_id");
+  if (!UUID.test(shipmentId) || !UUID.test(extractionId) || (transportId && !UUID.test(transportId))) redirect("/shipments?error=Некорректные данные");
+  const { supabase } = await requireUser();
+  const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null });
+  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back(shipmentId, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
 }

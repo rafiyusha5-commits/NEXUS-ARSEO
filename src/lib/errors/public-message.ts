@@ -44,3 +44,14 @@ export function publicErrorMessage(error: unknown, fallback = DEFAULT_MESSAGE): 
   return fallback;
 }
 
+/**
+ * Business rules of the database raise exceptions with an authored Russian message ("Автомобиль с госномером … уже есть").
+ * Those are meant for the employee and are shown as they are; every other database error keeps the generic fallback.
+ */
+export function ruleViolationMessage(error: unknown, fallback = DEFAULT_MESSAGE): string {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "P0001" && typeof message === "string" && /^[А-ЯЁ]/.test(message) && message.length <= 300) return message;
+  }
+  return publicErrorMessage(error, fallback);
+}

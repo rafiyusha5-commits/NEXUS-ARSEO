@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
-import { publicErrorMessage } from "@/lib/errors/public-message";
+import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
+import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(formData: FormData, name: string) { const value=formData.get(name); return typeof value==="string"?value.trim():""; }
@@ -52,16 +53,28 @@ export async function addShipmentItem(formData:FormData){
 
 export async function addShipmentTransport(formData:FormData){
   const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
-  // One transaction in the database: the vehicle, its number and its transport stages.
-  const {data:sequenceNo,error}=await supabase.rpc("add_shipment_transport",{
-    p_shipment_id:shipmentId,
-    p_planned_loading_date:text(formData,"planned_loading_date")||null,
-    p_planned_arrival_date:text(formData,"planned_arrival_date")||null,
-    p_temperature_setpoint:text(formData,"temperature_setpoint")||null,
-    p_notes:text(formData,"notes")||null,
-  });
-  if(error||!sequenceNo)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось создать перевозку."))}`);
-  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Перевозка №${sequenceNo} добавлена`)}`);
+  const form=readTransportForm(key=>text(formData,key));
+  if(!form.ok)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(form.error)}#transports`);
+  // One transaction in the database: the vehicle with its driver, plates and carrier, its number and its transport stages.
+  const {data:sequenceNo,error}=await supabase.rpc("create_shipment_transport",createTransportArguments(String(shipmentId),form.values));
+  if(error||!sequenceNo)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось добавить автомобиль."))}#transports`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Автомобиль №${sequenceNo} добавлен`)}#transports`);
+}
+
+export async function updateShipmentTransport(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const form=readTransportForm(key=>text(formData,key));
+  if(!form.ok)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(form.error)}#transports`);
+  const {error}=await supabase.rpc("update_shipment_transport",{p_transport_id:uuid(formData,"transport_id"),p_changes:transportChanges(form.values)});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось изменить автомобиль."))}#transports`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Данные автомобиля сохранены")}#transports`);
+}
+
+export async function removeShipmentTransport(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
+  const {error}=await supabase.rpc("remove_shipment_transport",{p_transport_id:uuid(formData,"transport_id")});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось удалить автомобиль."))}#transports`);
+  revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Автомобиль удалён")}#transports`);
 }
 
 export async function allocateShipmentItem(formData:FormData){

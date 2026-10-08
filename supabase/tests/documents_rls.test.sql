@@ -4,11 +4,11 @@
 
 \set ON_ERROR_STOP 1
 
-create schema tests;
+create schema if not exists tests;
 grant usage on schema tests to authenticated;
 
 -- Runs p_sql and fails unless it raises an error whose message matches p_pattern.
-create function tests.expect_error(p_sql text, p_pattern text) returns void
+create or replace function tests.expect_error(p_sql text, p_pattern text) returns void
 language plpgsql as $$
 begin
   execute p_sql;
@@ -25,7 +25,7 @@ end;
 $$;
 
 -- Runs an UPDATE/DELETE and returns the number of affected rows.
-create function tests.affected(p_sql text) returns integer
+create or replace function tests.affected(p_sql text) returns integer
 language plpgsql as $$
 declare
   v_count integer;
@@ -36,7 +36,7 @@ begin
 end;
 $$;
 
-create function tests.act_as(p_user uuid) returns void
+create or replace function tests.act_as(p_user uuid) returns void
 language sql as $$ select set_config('request.jwt.claim.sub', p_user::text, false) $$;
 
 grant execute on all functions in schema tests to authenticated;

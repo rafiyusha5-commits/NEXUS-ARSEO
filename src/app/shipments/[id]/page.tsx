@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
+import { ShipmentTransportsPanel } from "@/components/shipments/shipment-transports-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { OperationTabs } from "@/components/operation-tabs";
@@ -11,10 +12,8 @@ import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/
 import { loadGenerationPreview } from "@/lib/templates/generation-service";
 import {
   addShipmentItem,
-  addShipmentTransport,
   allocateShipmentItem,
   changeShipmentOperationalState,
-  changeShipmentTransportStatus,
   changeStageStatus,
   deleteShipmentItem,
   updateShipmentItem,
@@ -22,7 +21,6 @@ import {
 
 const shipmentStatus:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 const stageStatus:Record<string,string>={pending:"Ожидает",in_progress:"В работе",blocked:"Заблокирован",completed:"Завершён",skipped:"Пропущен",not_applicable:"Не требуется"};
-const transportStatus:Record<string,string>={planned:"Запланирован",loading:"На загрузке",in_transit:"В пути",at_customs:"На таможне",arrived:"Прибыл",unloaded:"Разгружен",cancelled:"Отменён"};
 const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"Налог",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const v=value as Record<string,unknown>;return String(v.ru??v.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
@@ -37,7 +35,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku"),
     supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
-    supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes").eq("shipment_id",id).order("sequence_no"),
+    supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes,driver_name,driver_phone,driver_document,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
     supabase.from("expenses").select("id,expense_type,amount,incurred_at,is_planned,status,currency:currencies(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name)").eq("shipment_id",id).order("incurred_at",{ascending:false}),
     supabase.from("shipment_stage_history").select("id,from_status,to_status,performed_by_name,reason,created_at,run:shipment_stage_runs(stage:shipment_stages(name),transport:shipment_transports(sequence_no)),user:profiles!shipment_stage_history_changed_by_fkey(full_name)").eq("shipment_id",id).order("created_at",{ascending:false}),
@@ -116,10 +114,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
         {loadSummary.warnings.length>0&&<div className="setup-notice"><strong>Есть неполные данные:</strong> проверьте выделенные позиции и заполните упаковку в карточках товаров.</div>}
         <p className="form-help">Эти же количества и веса используются при формировании CMR, ТТН, упаковочного листа и экспортного Excel. Контроль превышения грузоподъёмности включится после добавления допустимого веса в карточку автомобиля.</p>
       </section>
-      <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Логистика</p><h2>Перевозки</h2></div><span className="page-count">{transports?.length??0}</span></div>
-        {canEdit&&<form action={addShipmentTransport} className="shipment-subform transport-subform"><input type="hidden" name="shipment_id" value={shipment.id}/><label>План загрузки<input name="planned_loading_date" type="date"/></label><label>План прибытия<input name="planned_arrival_date" type="date"/></label><label>Температура<input name="temperature_setpoint" placeholder="+15…+25 °C"/></label><label>Примечание<input name="notes" placeholder="Автомобиль или рейс"/></label><button className="primary" type="submit">Добавить автомобиль</button></form>}
-        <div className="compact-list">{transports?.map((transport)=>{const isReceived=receivedTransports.has(transport.id);return <div className="transport-row" key={transport.id}><div><strong>Автомобиль №{transport.sequence_no}</strong><small>{transport.notes||"Перевозчик будет назначен позже"}</small></div><span className={`status transport-${transport.status}`}>{transportStatus[transport.status]??transport.status}</span><div><strong>{transport.planned_loading_date?new Intl.DateTimeFormat("ru-RU").format(new Date(transport.planned_loading_date)):"—"}</strong><small>план загрузки</small></div><div className="transport-actions">{permissions["inventory.receive"]&&(transport.status==="arrived"||isReceived)&&<Link className={isReceived?"ghost button-link compact":"primary button-link compact"} href={`/shipments/${shipment.id}/receiving?transport=${transport.id}`}>{isReceived?"Приёмка завершена":"Принять товар"}</Link>}{canEdit&&<form action={changeShipmentTransportStatus} className="transport-status-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="transport_id" value={transport.id}/><select name="status" defaultValue={transport.status}><option value="planned">Запланирован</option><option value="loading">На загрузке</option><option value="in_transit">В пути</option><option value="at_customs">На таможне</option><option value="arrived">Прибыл</option><option value="unloaded">Разгружен</option><option value="cancelled">Отменён</option></select><button className="ghost compact" type="submit">Сохранить</button></form>}</div></div>})}{!transports?.length&&<div className="empty-state">Добавьте первый автомобиль для распределения товара.</div>}</div>
-      </section>
+      <ShipmentTransportsPanel shipmentId={shipment.id} transports={transports??[]} receivedIds={[...receivedTransports]} canEdit={canEdit} canReceive={!!permissions["inventory.receive"]} loadLines={loadSummary.lines}/>
     <>
     <ShipmentSourceDocumentsPanel shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
     {generationPreview&&<ShipmentDocumentReadiness shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
