@@ -22,6 +22,7 @@ export function validateParams(schema: Record<string, ParamSchema>, input: unkno
       continue;
     }
     if (typeof raw !== "string") return { ok: false, error: `PARAM_INVALID:${key}` };
+    if (rule.type === "date" && (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || !Number.isFinite(Date.parse(raw)) || new Date(raw).toISOString().slice(0, 10) !== raw)) return { ok: false, error: `PARAM_INVALID:${key}` };
     if (rule.type === "uuid" && !UUID.test(raw)) return { ok: false, error: `PARAM_INVALID:${key}` };
     if (rule.type === "enum" && !rule.values.includes(raw)) return { ok: false, error: `PARAM_INVALID:${key}` };
     if (rule.type === "string") {
@@ -43,6 +44,7 @@ export function toJsonSchema(schema: Record<string, ParamSchema>): Record<string
     if (rule.type === "integer") properties[key] = { type: nullable("integer"), minimum: rule.min, maximum: rule.max, description: rule.description };
     else if (rule.type === "enum") properties[key] = { type: nullable("string"), enum: rule.optional ? [...rule.values, null] : [...rule.values], description: rule.description };
     else if (rule.type === "uuid") properties[key] = { type: nullable("string"), description: `${rule.description} (UUID)` };
+    else if (rule.type === "date") properties[key] = { type: nullable("string"), description: `${rule.description} (YYYY-MM-DD, календарная дата)` };
     else properties[key] = { type: nullable("string"), maxLength: rule.maxLength, description: rule.description };
   }
   return { type: "object", properties, required: Object.keys(schema), additionalProperties: false };

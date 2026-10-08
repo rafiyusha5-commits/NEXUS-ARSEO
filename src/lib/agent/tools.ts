@@ -88,6 +88,7 @@ const SHIPMENT_FIELDS: ToolField[] = [
   { key: "planned_arrival_date", label: "Плановое прибытие", kind: "date" },
   { key: "supplier", label: "Поставщик", kind: "text" },
   { key: "customer", label: "Клиент", kind: "text" },
+  { key: "matched_date_kind", label: "Совпадение по дате", kind: "text" },
 ];
 
 function shipmentValues(row: ShipmentRow) {
@@ -100,17 +101,20 @@ function shipmentValues(row: ShipmentRow) {
     planned_arrival_date: isoDate(row.planned_arrival_date),
     supplier: maskDataText(str(row.supplier_name), 120),
     customer: maskDataText(str(row.customer_name), 120),
+    matched_date_kind: str(row.matched_date_kind),
   };
 }
 
 const findShipments: AgentTool = {
   name: "find_shipments",
-  description: "Найти поставки по номеру или коду проекта, статусу и типу. Возвращает не больше 20 записей.",
+  description: "Найти поставки по номеру, коду проекта, статусу, типу или дате готовности, прибытия либо загрузки машины. Возвращает не больше 20 записей.",
   permissions: ["shipments.view"],
   params: {
     query: { type: "string", maxLength: 60, pattern: SEARCH_TEXT, optional: true, description: "Часть номера поставки или кода проекта" },
     status: { type: "enum", values: SHIPMENT_STATUSES, optional: true, description: "Статус поставки" },
     type: { type: "enum", values: ["import", "export", "domestic_transfer"], optional: true, description: "Тип поставки" },
+    date: { type: "date", optional: true, description: "Искомая дата; для 15.10 без года используй текущий год" },
+    date_kind: { type: "enum", values: ["ready", "arrival", "loading", "any"], optional: true, description: "ready — готовность, arrival — прибытие, loading — загрузка машины, any — дата без уточнения" },
     limit: limitParam("по умолчанию 10"),
   },
   fields: SHIPMENT_FIELDS,
@@ -118,7 +122,8 @@ const findShipments: AgentTool = {
   timeoutMs: DEFAULT_TIMEOUT_MS,
   async run(ctx, params) {
     const limit = Number(params.limit ?? 10);
-    const { rows, total } = await ctx.data.findShipments({ query: params.query as string | undefined, status: params.status as string | undefined, type: params.type as string | undefined, limit }, ctx.signal);
+    const { rows, total } = await ctx.data.findShipments({ query: params.query as string | undefined, status: params.status as string | undefined, type: params.type as string | undefined,
+      date: params.date as string | undefined, dateKind: params.date_kind as "ready" | "arrival" | "loading" | "any" | undefined, limit }, ctx.signal);
     const shown = rows.slice(0, limit);
     return result(shown.map((row) => project(shipmentSubject(row.shipment_number), SHIPMENT_FIELDS, shipmentValues(row), uuidRef("shipment", row.id))), rows.length > limit || (total !== null && total > shown.length), total);
   },

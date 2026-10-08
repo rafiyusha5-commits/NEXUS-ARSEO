@@ -64,6 +64,10 @@ describe("assistant parameter schemas", () => {
   it("accepts nulls for optional fields from strict function calling", () => {
     assert.deepEqual(validateParams(tool.params, { query: "NAR-2026", status: null, type: null, limit: 5 }), { ok: true, value: { query: "NAR-2026", limit: 5 } });
   });
+  it("accepts real ISO dates and rejects impossible dates and filter injection", () => {
+    for (const date of ["2026-10-15", "2024-02-29"]) assert.equal(validateParams(tool.params, { date, date_kind: "any" }).ok, true);
+    for (const date of ["15.10", "2026-02-29", "2026-04-31", "2026-10-15,or(id.not.is.null)"]) assert.equal(validateParams(tool.params, { date }).ok, false);
+  });
 
   it("requires UUIDs where identifiers are expected", () => {
     const get = AGENT_TOOLS.find((item) => item.name === "get_shipment")!;

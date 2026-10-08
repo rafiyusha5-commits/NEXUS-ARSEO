@@ -34,18 +34,40 @@ function searchTerm(value: string): string {
 
 export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSource {
   return {
-    async findShipments({ query, status, type, limit }, signal) {
+    async findShipments({ query, status, type, date, dateKind = "any", limit }, signal) {
+      const load = async (kind: "ready" | "arrival" | "loading" | "any"): Promise<{ rows: ShipmentRow[]; total: number | null }> => {
       let request = supabase.from("shipments")
-        .select("id,shipment_number,project_code,type,status,planned_ready_date,planned_arrival_date,supplier:counterparties!shipments_supplier_id_fkey(short_name,legal_name),customer:counterparties!shipments_customer_id_fkey(short_name,legal_name)", { count: "exact" })
+        .select("id,created_at,shipment_number,project_code,type,status,planned_ready_date,planned_arrival_date,supplier:counterparties!shipments_supplier_id_fkey(short_name,legal_name),customer:counterparties!shipments_customer_id_fkey(short_name,legal_name)" + (date && kind === "loading" ? ",transports:shipment_transports!inner(planned_loading_date)" : ""), { count: "exact" })
         .order("created_at", { ascending: false })
-        .limit(limit)
+        .limit(date && dateKind === "any" ? limit + 1 : limit)
         .abortSignal(signal);
       if (status) request = request.eq("status", status);
       if (type) request = request.eq("type", type);
       const term = query ? searchTerm(query) : "";
-      if (term) request = request.or(`shipment_number.ilike.%${term}%,project_code.ilike.%${term}%`);
+      const textFilter = `shipment_number.ilike.%${term}%,project_code.ilike.%${term}%`;
+      if (term && !(date && kind === "any")) request = request.or(textFilter);
+      if (date) {
+        if (kind === "loading") request = request.eq("transports.planned_loading_date", date);
+        else if (kind === "ready") request = request.eq("planned_ready_date", date);
+        else if (kind === "arrival") request = request.eq("planned_arrival_date", date);
+        else {
+          const dateFilter = `planned_ready_date.eq.${date},planned_arrival_date.eq.${date}`;
+          request = request.or(term ? `and(or(${textFilter}),or(${dateFilter}))` : dateFilter);
+        }
+      }
       const { data, count } = ensure(await request);
-      return { rows: (data as ShipmentRow[]).map((row) => ({ ...row, supplier_name: partyName(row.supplier), customer_name: partyName(row.customer) })), total: count };
+      return { rows: (data as unknown as ShipmentRow[]).map((row) => ({ ...row, supplier_name: partyName(row.supplier), customer_name: partyName(row.customer),
+        matched_date_kind: date ? [row.planned_ready_date === date && "Готовность", row.planned_arrival_date === date && "Прибытие", kind === "loading" && "Загрузка машины"].filter(Boolean).join(", ") : null })), total: count };
+      };
+      if (!date || dateKind !== "any") return load(dateKind);
+      const groups = await Promise.all([load("any"), load("loading")]);
+      const unique = new Map<string, ShipmentRow>();
+      for (const group of groups) for (const row of group.rows) {
+        const previous = unique.get(String(row.id));
+        unique.set(String(row.id), previous ? { ...previous, matched_date_kind: [...new Set(`${previous.matched_date_kind}, ${row.matched_date_kind}`.split(", "))].join(", ") } : row);
+      }
+      const rows = [...unique.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      return { rows: rows.slice(0, limit + 1), total: groups.every(group => group.total !== null && group.total === group.rows.length) ? rows.length : null };
     },
 
     async getShipment(id, signal) {

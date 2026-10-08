@@ -27,6 +27,7 @@ export type ToolResult = {
 };
 
 export type ParamSchema =
+  | { type: "date"; optional?: boolean; description: string }
   | { type: "string"; maxLength: number; pattern?: RegExp; optional?: boolean; description: string }
   | { type: "uuid"; optional?: boolean; description: string }
   | { type: "enum"; values: readonly string[]; optional?: boolean; description: string }
@@ -57,7 +58,7 @@ export type ShipmentRow = Record<string, unknown>;
  * the columns the tools need; tools project the result through their allow-lists again.
  */
 export interface AgentDataSource {
-  findShipments(input: { query?: string; status?: string; type?: string; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
+  findShipments(input: { query?: string; status?: string; type?: string; date?: string; dateKind?: "ready" | "arrival" | "loading" | "any"; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
   getShipment(id: string, signal: AbortSignal): Promise<ShipmentRow | null>;
   getShipmentStages(id: string, signal: AbortSignal): Promise<ShipmentRow[]>;
   getShipmentItems(id: string, limit: number, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;

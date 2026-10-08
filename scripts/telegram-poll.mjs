@@ -29,6 +29,7 @@ while (!stopping) {
         message_id: source.message_id, chat: { id: source.chat?.id, type: source.chat?.type },
         from: { id: source.from?.id, is_bot: source.from?.is_bot, first_name: source.from?.first_name, last_name: source.from?.last_name },
         text: typeof source.text === "string" ? source.text : null,
+        voice: source.voice ? { file_id: source.voice.file_id, duration: source.voice.duration, file_size: source.voice.file_size } : undefined,
       } : undefined };
       const response = await fetch("http://127.0.0.1:3000/api/telegram/process", {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(90000),

@@ -44,6 +44,12 @@ describe("assistant tools", () => {
     assert.ok(result.rows.some((row) => row.values.stage_status === "Заблокирован" && row.values.stage_reason === "Нет CMR"));
     assert.ok(result.rows.some((row) => row.values.ordered_quantity === 120));
   });
+  it("passes a date filter without turning the date into a shipment-number search", async () => {
+    let seen: unknown;
+    const result = await run("find_shipments", { date: "2026-10-15", date_kind: "any" }, fakeData({ async findShipments(input) { seen = input; return { rows: [{ shipment_number: "NAR-2026-0003", planned_ready_date: "2026-10-15", matched_date_kind: "Готовность, Загрузка машины" }], total: 1 }; } }));
+    assert.deepEqual(seen, { query: undefined, status: undefined, type: undefined, date: "2026-10-15", dateKind: "any", limit: 10 });
+    assert.equal(result.rows[0].values.matched_date_kind, "Готовность, Загрузка машины");
+  });
 
   it("counts unique shipment SKUs independently of item lines and stages", async () => {
     const data = fakeData({ async getShipmentItems() { return { rows: [{ internal_sku: "A" }, { internal_sku: "A" }, { internal_sku: "B" }], total: 3 }; } });

@@ -5,7 +5,7 @@ import { ANSWER_JSON_SCHEMA, parseAnswer, verifyAnswer, type CallRecord } from "
 import { hasLongDigitChain, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "./masking.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
-import { AGENT_TOOLS, TOOL_BY_NAME } from "./tools.ts";
+import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
 import { channelAllowsTool } from "./channels.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
@@ -24,7 +24,13 @@ export type RunnerDeps = {
   pricing: { inputUsdPerMTok: number; outputUsdPerMTok: number };
   onStage?: (label: string) => void;
   now?: () => number;
+  questionPreparation?: { reserveUsdMicros: number; prepare: (signal: AbortSignal) => Promise<{ text: string; costUsdMicros: number; durationSeconds: number }> };
 };
+
+export class QuestionPreparationError extends Error {
+  readonly costUsdMicros: number;
+  constructor(code: string, costUsdMicros = 0) { super(code); this.costUsdMicros = costUsdMicros; }
+}
 
 export type RunOutcome =
   | { ok: true; answer: AgentAnswer; requestsUsed: number; requestLimit: number }
@@ -112,7 +118,7 @@ function safeParams(params: Record<string, string | number>): Record<string, str
 export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<RunOutcome> {
   const stage = (label: string) => deps.onStage?.(label);
   const now = deps.now ?? Date.now;
-  const question = prepareQuestion(rawQuestion);
+  let question = prepareQuestion(rawQuestion);
   if (!question.ok) return { ok: false, code: question.code, message: errorText(question.code), refunded: false };
 
   stage("Проверяю права");
@@ -121,7 +127,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
 
   let reservation: Reservation;
   try {
-    reservation = await deps.ledger.reserve({ userId: deps.userId, channel: deps.channel, questionExcerpt: traceExcerpt(question.text), reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) });
+    reservation = await deps.ledger.reserve({ userId: deps.userId, channel: deps.channel, questionExcerpt: traceExcerpt(question.text), reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) + (deps.questionPreparation?.reserveUsdMicros ?? 0) });
   } catch (error) {
     const code = error instanceof Error && LEDGER_CODES.has(error.message) ? error.message : "AGENT_LEDGER_ERROR";
     return { ok: false, code, message: errorText(code), refunded: false };
@@ -134,6 +140,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   let steps = 0;
   let toolCalls = 0;
   let formatRetries = 0;
+  let preparationCost = 0;
 
   let finished = false;
   const finish = async (status: "completed" | "failed", errorCode: string | null, refund: boolean) => {
@@ -142,7 +149,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     try {
       await deps.ledger.finish(reservation, {
         status, errorCode, refund, provider: deps.provider.name, model: deps.provider.model, steps, toolCalls,
-        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing),
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing) + preparationCost,
         // The database accepts at most 30 entries of a fixed shape (agent_clean_tools).
         tools: trace.slice(0, MAX_TRACE_ENTRIES).map((entry) => ({ ...entry, ms: Math.min(Math.max(Math.round(entry.ms), 0), 120_000) })),
       });
@@ -159,13 +166,27 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   // Anything unexpected after the reservation still closes the run: tokens are recorded and the
   // request is returned to the user.
   try {
+    if (deps.questionPreparation) {
+      stage("Распознаю голос");
+      try {
+        const prepared = await deps.questionPreparation.prepare(deadline);
+        preparationCost = prepared.costUsdMicros;
+        trace.push({ name: "speech_to_text", params: { duration_seconds: prepared.durationSeconds }, rows: 0, truncated: false, ms: 0 });
+        question = prepareQuestion(prepared.text);
+        if (!question.ok) return fail(question.code);
+      } catch (error) {
+        preparationCost = error instanceof QuestionPreparationError ? error.costUsdMicros : deps.questionPreparation.reserveUsdMicros;
+        await finish("failed", "AGENT_SPEECH_ERROR", true);
+        return { ok: false, code: "AGENT_SPEECH_ERROR", message: "Не удалось распознать голос. Попробуйте короткое сообщение или напишите вопрос текстом.", refunded: true };
+      }
+    }
     // Tools the user may call right now; the model never sees others, and each call is re-checked.
     const toolGrants = await deps.permissions([...new Set(AGENT_TOOLS.flatMap((tool) => tool.permissions))]);
     const visibleTools = AGENT_TOOLS.filter((tool) => channelAllowsTool(deps.channel, tool.name) && tool.permissions.every((code) => toolGrants.has(code)));
     const toolSpecs = visibleTools.map((tool) => ({ name: tool.name, description: tool.description, parameters: toJsonSchema(tool.params) }));
 
     const messages: ModelMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.` },
       { role: "user", content: userMessage(question.text) },
     ];
 
@@ -252,7 +273,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
         if (formatRetries < 1 && steps < deps.limits.maxSteps) {
           formatRetries += 1;
           messages.push({ role: "assistant", content: response.content ? maskOutgoing(response.content.slice(0, 2000)) : null });
-          messages.push({ role: "user", content: "Ответ не соответствует JSON-схеме. Верни только JSON по схеме." });
+          messages.push({ role: "user", content: "Ответ не соответствует JSON-схеме. Верни только JSON: не больше 12 facts, в каждом fields от 1 до 8; commentary не больше 6, text до 600 символов; limitations не больше 5, до 300 символов каждое. Только call,row,fields в факте; только kind,text в пояснении. Раздели большую карточку на несколько фактов." });
           continue;
         }
         return fail("AGENT_BAD_ANSWER");

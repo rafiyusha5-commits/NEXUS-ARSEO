@@ -1,5 +1,5 @@
 // Telegram input is untrusted. Only a human's own private chat may enter the assistant.
-export type PrivateMessage = { updateId: number; messageId: number; chatId: number; text: string | null; displayName: string };
+export type PrivateMessage = { updateId: number; messageId: number; chatId: number; text: string | null; displayName: string; voice?: unknown };
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const positiveId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
@@ -11,6 +11,7 @@ export function privateMessage(update: unknown): PrivateMessage | null {
   return {
     updateId: Number(update.update_id), messageId: message.message_id, chatId: message.chat.id,
     text: typeof message.text === "string" ? message.text.trim() : null,
+    voice: message.voice,
     displayName: [message.from.first_name, message.from.last_name].filter((v) => typeof v === "string").join(" ").slice(0, 100),
   };
 }

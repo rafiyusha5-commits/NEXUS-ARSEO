@@ -15,7 +15,7 @@ export class TelegramClient {
     this.token = token; this.fetcher = fetcher;
   }
 
-  async call(method: "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction", payload: Record<string, unknown> = {}): Promise<unknown> {
+  async call(method: "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction" | "getFile", payload: Record<string, unknown> = {}): Promise<unknown> {
     try {
       const response = await this.fetcher(`https://api.telegram.org/bot${this.token}/${method}`, {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(method === "getUpdates" ? 35000 : 12000),
@@ -37,5 +37,11 @@ export class TelegramClient {
       if (error instanceof TelegramError) throw error;
       throw new TelegramError("TELEGRAM_UNAVAILABLE");
     }
+  }
+
+  async downloadVoice(path: string): Promise<Response> {
+    if (!/^voice\/[A-Za-z0-9_.-]+\.oga$|^voice\/[A-Za-z0-9_.-]+\.ogg$/.test(path)) throw new TelegramError("TELEGRAM_UNAVAILABLE");
+    try { return await this.fetcher(`https://api.telegram.org/file/bot${this.token}/${path}`, { redirect: "error", signal: AbortSignal.timeout(10000) }); }
+    catch { throw new TelegramError("TELEGRAM_UNAVAILABLE"); }
   }
 }

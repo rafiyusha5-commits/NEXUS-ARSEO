@@ -20,6 +20,23 @@ const FACT = (call: string, row: number, fields: string[], commentary: Array<{ k
 const NOTE = (text: string) => ({ facts: [], commentary: [{ kind: "explanation", text }], limitations: [] });
 
 describe("assistant run", () => {
+  it("reserves once for voice and charges transcription in the shared budget", async () => {
+    const provider = new ScriptedProvider([toolCall("c1", "get_help", { topic: "shipments" }), finalAnswer(FACT("c1", 0, ["help_text"]))]);
+    const d = deps(provider, { channel: "telegram", questionPreparation: { reserveUsdMicros: 20000, async prepare() { return { text: "Как открыть поставки?", costUsdMicros: 750, durationSeconds: 9 }; } } });
+    const result = await runAgent("Голосовой вопрос Telegram", d);
+    assert.equal(result.ok, true);
+    assert.equal(d.ledger.reservations.length, 1);
+    assert.equal(d.ledger.finished.length, 1);
+    assert.equal(d.ledger.finished[0].actualUsdMicros, 2500 * 2 + 250 * 8 + 750);
+    assert.ok(d.ledger.finished[0].tools.some(item => item.name === "speech_to_text" && item.params.duration_seconds === 9));
+  });
+  it("refunds failed voice recognition without calling the chat model", async () => {
+    const provider = new ScriptedProvider([]);
+    const d = deps(provider, { channel: "telegram", questionPreparation: { reserveUsdMicros: 20000, async prepare() { throw new Error("speech failed"); } } });
+    const result = await runAgent("Голосовой вопрос Telegram", d);
+    assert.equal(result.ok, false); assert.equal(d.ledger.finished[0].refund, true);
+    assert.equal(d.ledger.finished[0].actualUsdMicros, 20000);
+  });
   it("answers through tools, verifies facts, records a safe trace and charges the request", async () => {
     const provider = new ScriptedProvider([
       toolCall("c1", "find_shipments", { query: "NAR-2026", status: null, type: null, limit: 5 }),
