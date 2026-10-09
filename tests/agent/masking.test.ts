@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { maskDataText, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "../../src/lib/agent/masking.ts";
+import { maskDataText, maskFactText, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "../../src/lib/agent/masking.ts";
 
 describe("assistant masking", () => {
   it("masks identity documents, IIN, passports and phones in the question", () => {
@@ -85,6 +85,14 @@ describe("assistant masking", () => {
     assert.equal(maskSensitive(`/shipments/${id}`).text, `/shipments/${id}`);
     assert.deepEqual(prepareQuestion(`Что с ${id}?`), { ok: true, text: `Что с ${id}?`, masked: 0 });
     assert.equal(maskOutgoing(JSON.stringify({ shipment_id: id, query: "0456.78912" })), JSON.stringify({ shipment_id: id, query: "[скрыто]" }));
+  });
+
+  it("keeps Nexus identifiers readable in code-built facts while masking personal numbers and money", () => {
+    assert.equal(maskFactText("Поставка NAR-2026-0007 · автомобиль № 1"), "Поставка NAR-2026-0007 · автомобиль № 1");
+    assert.equal(maskFactText("Плановое прибытие: 05.10.2026"), "Плановое прибытие: 05.10.2026");
+    assert.doesNotMatch(maskFactText("Водитель ИИН 900101300123, тел. +7 701 555 44 33, номер 0456 78912"), /900101300123|555 44 33|78912/);
+    assert.doesNotMatch(maskFactText("Сумма: 15 000 EUR"), /15 000/);
+    assert.equal(maskDataText("Поставка NAR-2026-0007"), "[текст скрыт: возможны персональные данные]", "free text keeps the strict rule");
   });
 
   it("keeps the trace excerpt short", () => {

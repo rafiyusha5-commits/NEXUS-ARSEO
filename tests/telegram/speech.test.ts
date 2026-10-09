@@ -23,6 +23,21 @@ describe("Telegram speech", () => {
     }) as typeof fetch;
     assert.deepEqual(await transcribeVoice(ogg(9), "secret", new AbortController().signal, fetcher), { text: "Все о поставке 15.10", costUsdMicros: 225, durationSeconds: 9 });
   });
+  it("charges the speech reservation whenever the provider may have billed without reporting usage", async () => {
+    const cost = async (response: Response | Error) => {
+      const fetcher = (async () => { if (response instanceof Error) throw response; return response; }) as typeof fetch;
+      return transcribeVoice(ogg(9), "secret", new AbortController().signal, fetcher).then(() => -1, (error: { costUsdMicros: number }) => error.costUsdMicros);
+    };
+    assert.equal(await cost(new Error("timeout")), 20000, "lost connection: unknown, charged");
+    assert.equal(await cost(new Response("busy", { status: 503 })), 20000, "5xx: unknown, charged");
+    assert.equal(await cost(new Response("x".repeat(40_000))), 20000, "oversized answer after billing: charged, not released");
+    assert.equal(await cost(new Response("{broken")), 20000, "unreadable answer: charged");
+    assert.equal(await cost(Response.json({ error: "bad audio" }, { status: 400 })), 0, "a refused request is not billed");
+    assert.equal(await cost(Response.json({ text: "", usage: { input_tokens: 100, output_tokens: 0 } })), 125, "empty text with usage: the reported cost");
+    // Invalid audio is refused before anything is sent.
+    await assert.rejects(transcribeVoice(Buffer.from("not audio"), "secret", new AbortController().signal, (async () => { throw new Error("must not be called"); }) as typeof fetch), { costUsdMicros: 0 });
+  });
+
   it("never leaks provider keys in errors and bounds downloads", async () => {
     const fetcher = (async () => { throw new Error("secret token URL"); }) as typeof fetch;
     await assert.rejects(transcribeVoice(ogg(9), "secret", new AbortController().signal, fetcher), { message: "VOICE_PROVIDER", costUsdMicros: 20000 });

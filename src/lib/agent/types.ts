@@ -103,11 +103,18 @@ export interface AgentModelProvider {
 export class ProviderError extends Error {
   readonly code: string;
   readonly usage: { inputTokens: number; outputTokens: number };
-  constructor(code: string, usage: { inputTokens: number; outputTokens: number } = { inputTokens: 0, outputTokens: 0 }) {
+  /**
+   * False when the provider may have processed (and billed) the request but reported no usage:
+   * timeouts, lost connections, 5xx, unreadable bodies. The runner then charges a conservative
+   * estimate instead of silently treating the call as free.
+   */
+  readonly usageKnown: boolean;
+  constructor(code: string, usage: { inputTokens: number; outputTokens: number } = { inputTokens: 0, outputTokens: 0 }, usageKnown = true) {
     super(code);
     this.name = "ProviderError";
     this.code = code;
     this.usage = usage;
+    this.usageKnown = usageKnown;
   }
 }
 

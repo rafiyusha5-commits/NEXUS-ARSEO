@@ -40,7 +40,7 @@ describe("Telegram employee session and reply", () => {
   it("masks money, phones and identity data, labels commentary, and limits reply length", () => {
     const reply = telegramAnswer({ facts: [{ subject: "Поставка NAR-2026-0003", source: { tool: "get_shipment", row: 0 }, values: [{ label: "SKU", field: "sku_count", value: "8" }] }],
       commentary: [{ kind: "explanation", text: "045678912, ИИН 900101300123, цена 500 EUR" }], rejected: [], limitations: [], toolsUsed: [] }, 2, 20);
-    assert.match(reply, /SKU: 8/); assert.match(reply, /не проверено/); assert.doesNotMatch(reply, /045678912|900101300123|500 EUR/); assert.match(reply, /2 из 20/);
+    assert.match(reply, /SKU: 8/); assert.match(reply, /Поставка NAR-2026-0003/, "Nexus shipment numbers stay readable in facts"); assert.match(reply, /не проверено/); assert.doesNotMatch(reply, /045678912|900101300123|500 EUR/); assert.match(reply, /2 из 20/);
     assert.ok(telegramAnswer({ facts: [], commentary: [{ kind: "assumption", text: "a".repeat(8000) }], limitations: [], rejected: [], toolsUsed: [] }, 1, 20).length <= 3900);
   });
   it("requires explicit activation, Auth acknowledgement and a server worker secret", () => {

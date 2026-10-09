@@ -1,11 +1,18 @@
 // Server transport. Never expose upstream errors: their URL may contain the bot token.
+// TELEGRAM_UNAVAILABLE means the outcome is unknown (no answer, timeout, 5xx, unreadable answer):
+// a sendMessage may still have been delivered. TELEGRAM_REJECTED, _UNAUTHORIZED, _CONFLICT and
+// _RATE_LIMIT are definite refusals: nothing was done.
 export class TelegramError extends Error {
   readonly retryAfter: number;
-  readonly code: "TELEGRAM_UNAVAILABLE" | "TELEGRAM_UNAUTHORIZED" | "TELEGRAM_CONFLICT" | "TELEGRAM_RATE_LIMIT";
+  readonly code: "TELEGRAM_UNAVAILABLE" | "TELEGRAM_UNAUTHORIZED" | "TELEGRAM_CONFLICT" | "TELEGRAM_RATE_LIMIT" | "TELEGRAM_REJECTED";
   constructor(code: TelegramError["code"], retryAfter = 0) {
     super(code); this.code = code; this.retryAfter = retryAfter;
   }
 }
+
+export type TelegramMethod = "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction" | "getFile";
+/** The part of the client the message pipeline uses; tests substitute it. */
+export type TelegramBot = Pick<TelegramClient, "call" | "downloadVoice">;
 
 export class TelegramClient {
   private readonly token: string;
@@ -15,10 +22,11 @@ export class TelegramClient {
     this.token = token; this.fetcher = fetcher;
   }
 
-  async call(method: "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction" | "getFile", payload: Record<string, unknown> = {}): Promise<unknown> {
+  async call(method: TelegramMethod, payload: Record<string, unknown> = {}, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? (method === "getUpdates" ? 35000 : 12000));
     try {
       const response = await this.fetcher(`https://api.telegram.org/bot${this.token}/${method}`, {
-        method: "POST", redirect: "error", signal: AbortSignal.timeout(method === "getUpdates" ? 35000 : 12000),
+        method: "POST", redirect: "error", signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       if (response.status === 401) throw new TelegramError("TELEGRAM_UNAUTHORIZED");
@@ -31,6 +39,8 @@ export class TelegramClient {
         const seconds = Number(data.parameters?.retry_after);
         throw new TelegramError("TELEGRAM_RATE_LIMIT", Number.isFinite(seconds) ? Math.min(300, Math.max(1, seconds)) : 10);
       }
+      // A 4xx answer is a definite refusal (chat not found, bot blocked); 5xx leaves the outcome open.
+      if (response.status >= 400 && response.status < 500 && data.ok === false) throw new TelegramError("TELEGRAM_REJECTED");
       if (!response.ok || data.ok !== true) throw new TelegramError("TELEGRAM_UNAVAILABLE");
       return data.result;
     } catch (error) {
@@ -39,9 +49,10 @@ export class TelegramClient {
     }
   }
 
-  async downloadVoice(path: string): Promise<Response> {
+  async downloadVoice(path: string, signal?: AbortSignal): Promise<Response> {
     if (!/^voice\/[A-Za-z0-9_.-]+\.oga$|^voice\/[A-Za-z0-9_.-]+\.ogg$/.test(path)) throw new TelegramError("TELEGRAM_UNAVAILABLE");
-    try { return await this.fetcher(`https://api.telegram.org/file/bot${this.token}/${path}`, { redirect: "error", signal: AbortSignal.timeout(10000) }); }
+    const timeout = AbortSignal.timeout(10000);
+    try { return await this.fetcher(`https://api.telegram.org/file/bot${this.token}/${path}`, { redirect: "error", signal: signal ? AbortSignal.any([signal, timeout]) : timeout }); }
     catch { throw new TelegramError("TELEGRAM_UNAVAILABLE"); }
   }
 }

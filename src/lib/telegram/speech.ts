@@ -1,6 +1,7 @@
 import { QuestionPreparationError } from "../agent/runner.ts";
 export const SPEECH_RESERVE_MICROS = 20000;
 export const MAX_VOICE_BYTES = 1024 * 1024;
+export const TRANSCRIPTION_TIMEOUT_MS = 20_000;
 export type Voice = { fileId: string; duration: number; size: number };
 
 export function voiceInput(value: unknown): Voice | null {
@@ -61,21 +62,28 @@ export async function transcribeVoice(bytes: Uint8Array, apiKey: string, signal:
   const form = new FormData(); form.append("file", new Blob([new Uint8Array(bytes)], { type: "audio/ogg" }), "voice.ogg");
   form.append("model", "gpt-4o-mini-transcribe"); form.append("response_format", "json"); form.append("language", "ru");
   form.append("prompt", "Вопрос сотрудника о поставках, загрузке, документах и товарах Nexus ARSEO. Передавайте даты, номера и названия точно.");
-  let costUsdMicros = SPEECH_RESERVE_MICROS;
+  // Until the provider reports usage the cost is unknown and charged at the reservation: a sent
+  // audio file may have been billed even if the answer was lost.
+  let response: Response;
   try {
-    const response = await fetcher("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]), headers: { Authorization: `Bearer ${apiKey}` }, body: form,
+    response = await fetcher("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS)]), headers: { Authorization: `Bearer ${apiKey}` }, body: form,
     });
-    if (!response.ok) throw new QuestionPreparationError("VOICE_PROVIDER", response.status >= 400 && response.status < 500 ? 0 : costUsdMicros);
-    const bytes = await readBounded(response, 32000);
-    const result = JSON.parse(Buffer.from(bytes).toString("utf8")) as { text?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
-    const input = Number(result.usage?.input_tokens); const output = Number(result.usage?.output_tokens);
-    // Audio/text input $1.25/M and text output $5/M. Missing usage is charged conservatively.
-    if (Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) costUsdMicros = Math.ceil(input * 1.25 + output * 5);
-    if (typeof result.text !== "string" || !result.text.trim() || result.text.length > 2000) throw new QuestionPreparationError("VOICE_EMPTY", costUsdMicros);
-    return { text: result.text.trim(), costUsdMicros, durationSeconds };
-  } catch (error) {
-    if (error instanceof QuestionPreparationError) throw error;
-    throw new QuestionPreparationError("VOICE_PROVIDER", costUsdMicros);
+  } catch {
+    throw new QuestionPreparationError("VOICE_PROVIDER", SPEECH_RESERVE_MICROS);
   }
+  // A rejected request (4xx other than 408) is not processed; 408 and 5xx may have been.
+  if (!response.ok) throw new QuestionPreparationError("VOICE_PROVIDER", response.status >= 400 && response.status < 500 && response.status !== 408 ? 0 : SPEECH_RESERVE_MICROS);
+  let result: { text?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
+  try {
+    result = JSON.parse(Buffer.from(await readBounded(response, 32000)).toString("utf8"));
+  } catch {
+    throw new QuestionPreparationError("VOICE_PROVIDER", SPEECH_RESERVE_MICROS);
+  }
+  const input = Number(result?.usage?.input_tokens); const output = Number(result?.usage?.output_tokens);
+  // Audio/text input $1.25/M and text output $5/M. Missing usage is charged conservatively.
+  const costUsdMicros = Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0
+    ? Math.ceil(input * 1.25 + output * 5) : SPEECH_RESERVE_MICROS;
+  if (typeof result?.text !== "string" || !result.text.trim() || result.text.length > 2000) throw new QuestionPreparationError("VOICE_EMPTY", costUsdMicros);
+  return { text: result.text.trim(), costUsdMicros, durationSeconds };
 }

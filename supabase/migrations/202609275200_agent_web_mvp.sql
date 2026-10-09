@@ -171,7 +171,7 @@ begin
    raise exception 'AGENT_BAD_REQUEST' using errcode='22023';
   end if;
   if (e->>'name') not in ('find_shipments','get_shipment','get_shipment_vehicles','get_shipment_documents','get_document_extraction',
-       'list_delayed_shipments','get_stock_status','get_my_tasks','get_help','unknown')
+       'list_delayed_shipments','get_stock_status','get_my_tasks','get_help','speech_to_text','unknown')
      or (e->>'rows') !~ '^(100|[0-9]{1,2})$' or (e->>'ms') !~ '^(120000|1[01][0-9]{4}|[0-9]{1,5})$'
      or (e ? 'error' and (jsonb_typeof(e->'error')<>'string' or (e->>'error') not in
        ('TOOL_CALL_LIMIT','UNKNOWN_TOOL','INVALID_PARAMS','PERMISSION_DENIED','TOOL_TIMEOUT','TOOL_ERROR'))) then
@@ -181,9 +181,13 @@ begin
   for k,v in select * from jsonb_each(e->'params') loop
    if k in ('query','product_query') and jsonb_typeof(v)='string' then
     params:=params||jsonb_build_object(k,coalesce(private.agent_clean_text(v#>>'{}',60),''));
-   elsif k in ('status','type','filter','topic') and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[a-z_]{1,30}$' then
+   elsif k in ('status','type','filter','topic','date_kind') and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[a-z_]{1,30}$' then
     params:=params||jsonb_build_object(k,v);
    elsif k='warehouse_code' and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[A-Z_]{2,20}$' then
+    params:=params||jsonb_build_object(k,v);
+   elsif k='date' and jsonb_typeof(v)='string' and (v#>>'{}') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+    params:=params||jsonb_build_object(k,v);
+   elsif k='duration_seconds' and jsonb_typeof(v)='number' and (v#>>'{}') ~ '^([0-9]|[1-5][0-9]|60)(\.[0-9])?$' then
     params:=params||jsonb_build_object(k,v);
    elsif k='limit' and jsonb_typeof(v)='number' and (v#>>'{}') ~ '^([1-9]|1[0-9]|20)$' then
     params:=params||jsonb_build_object(k,v);
@@ -289,7 +293,8 @@ begin
  if p_status is null or p_status not in ('completed','failed','rejected') or (v_refund and p_status='completed')
     or (p_status='completed' and p_error_code is not null)
     or (p_error_code is not null and p_error_code not in ('AGENT_TIMEOUT','AGENT_PROVIDER_ERROR','AGENT_TOKEN_LIMIT',
-      'AGENT_STEP_LIMIT','AGENT_BAD_ANSWER','AGENT_INTERNAL_ERROR','AGENT_FORBIDDEN'))
+      'AGENT_STEP_LIMIT','AGENT_BAD_ANSWER','AGENT_INTERNAL_ERROR','AGENT_FORBIDDEN',
+      'AGENT_SPEECH_ERROR','QUESTION_EMPTY','QUESTION_TOO_LONG','QUESTION_UNSAFE'))
     or p_provider is null or p_provider !~ '^[a-z][a-z0-9_-]{0,39}$'
     or p_model is null or p_model !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$' or p_model ~ '[0-9]{7}'
     or least(coalesce(p_steps,0),coalesce(p_tool_calls,0),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0))<0

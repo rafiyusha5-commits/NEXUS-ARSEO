@@ -1,4 +1,7 @@
 // Local pilot: no public tunnel, webhook, or plaintext questions in logs/files.
+// Delivery: an update is acknowledged (offset) only after Nexus answered. A repeated delivery after a
+// restart, a 503 or a timeout is safe: Nexus claims each update_id once and never runs it twice.
+// The timeout (100 s) is above the route's own processing deadline (75 s, maxDuration 90 s).
 import fs from "node:fs";
 import { TelegramClient, TelegramError } from "../src/lib/telegram/client.ts";
 function envFile(path) {
@@ -32,7 +35,7 @@ while (!stopping) {
         voice: source.voice ? { file_id: source.voice.file_id, duration: source.voice.duration, file_size: source.voice.file_size } : undefined,
       } : undefined };
       const response = await fetch("http://127.0.0.1:3000/api/telegram/process", {
-        method: "POST", redirect: "error", signal: AbortSignal.timeout(90000),
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(100000),
         headers: { "Content-Type": "application/json", "x-nexus-telegram-worker": vars.TELEGRAM_WORKER_SECRET },
         body: JSON.stringify(input),
       });

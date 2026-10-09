@@ -25,6 +25,8 @@ export type RunnerDeps = {
   onStage?: (label: string) => void;
   now?: () => number;
   questionPreparation?: { reserveUsdMicros: number; prepare: (signal: AbortSignal) => Promise<{ text: string; costUsdMicros: number; durationSeconds: number }> };
+  /** Called once the run is reserved, e.g. to show the accounting run next to a Telegram update. */
+  onReserved?: (runId: string) => Promise<void> | void;
 };
 
 export class QuestionPreparationError extends Error {
@@ -141,6 +143,8 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   let toolCalls = 0;
   let formatRetries = 0;
   let preparationCost = 0;
+  // Calls whose result is unknown (timeout, lost connection) are charged at their worst case.
+  let unknownCost = 0;
 
   let finished = false;
   const finish = async (status: "completed" | "failed", errorCode: string | null, refund: boolean) => {
@@ -149,7 +153,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     try {
       await deps.ledger.finish(reservation, {
         status, errorCode, refund, provider: deps.provider.name, model: deps.provider.model, steps, toolCalls,
-        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing) + preparationCost,
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing) + preparationCost + unknownCost,
         // The database accepts at most 30 entries of a fixed shape (agent_clean_tools).
         tools: trace.slice(0, MAX_TRACE_ENTRIES).map((entry) => ({ ...entry, ms: Math.min(Math.max(Math.round(entry.ms), 0), 120_000) })),
       });
@@ -163,6 +167,12 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     return { ok: false, code, message: errorText(code), refunded: true };
   };
 
+  try {
+    await deps.onReserved?.(reservation.runId);
+  } catch {
+    // Display only; never blocks the run.
+  }
+
   // Anything unexpected after the reservation still closes the run: tokens are recorded and the
   // request is returned to the user.
   try {
@@ -171,7 +181,8 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       try {
         const prepared = await deps.questionPreparation.prepare(deadline);
         preparationCost = prepared.costUsdMicros;
-        trace.push({ name: "speech_to_text", params: { duration_seconds: prepared.durationSeconds }, rows: 0, truncated: false, ms: 0 });
+        // One decimal: the database accepts 0–60 seconds with at most one decimal place.
+        trace.push({ name: "speech_to_text", params: { duration_seconds: Math.min(60, Math.round(prepared.durationSeconds * 10) / 10) }, rows: 0, truncated: false, ms: 0 });
         question = prepareQuestion(prepared.text);
         if (!question.ok) return fail(question.code);
       } catch (error) {
@@ -206,12 +217,17 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
           signal: AbortSignal.any([deadline, AbortSignal.timeout(deps.limits.providerTimeoutMs)]),
         });
       } catch (error) {
-        if (error instanceof ProviderError) {
+        if (error instanceof ProviderError && error.usageKnown) {
           usage.inputTokens += error.usage.inputTokens;
           usage.outputTokens += error.usage.outputTokens;
           return fail(error.code === "AGENT_TIMEOUT" ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
         }
-        return fail(deadline.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
+        // The request may have been processed and billed without a usage report: charge the
+        // estimated input and the whole output allowance of this call. The request itself is
+        // returned to the employee; the money is not released.
+        unknownCost += Math.ceil(estimate * deps.pricing.inputUsdPerMTok + maxOutput * deps.pricing.outputUsdPerMTok);
+        const code = error instanceof ProviderError ? error.code : deadline.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR";
+        return fail(code === "AGENT_TIMEOUT" ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
       }
       usage.inputTokens += response.usage.inputTokens;
       usage.outputTokens += response.usage.outputTokens;

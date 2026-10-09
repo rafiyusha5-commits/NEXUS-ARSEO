@@ -157,3 +157,13 @@ export function traceExcerpt(maskedQuestion: string): string {
   const flat = maskedQuestion.replace(/\s+/g, " ").trim();
   return flat.length > 120 ? `${flat.slice(0, 119)}…` : flat;
 }
+
+/**
+ * Facts assembled by code for a chat reply (subject and values of a tool row, already masked by the
+ * tool). Personal numbers, secrets and money are masked again, but Nexus identifiers such as
+ * NAR-2026-0007 stay readable: maskDataText would withhold the whole line for their 8 digits.
+ */
+export function maskFactText(text: string, maxLength = 400): string {
+  const value = applyRules(maskOutgoing(text), [MONEY_RULE]).text.replace(/\s+/g, " ").trim();
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}

@@ -84,7 +84,7 @@ select 'authenticated', unnest(array[
 union all
 select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
   'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
-  'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status']);
+  'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress']);
 
 do $$
 declare

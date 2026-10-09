@@ -87,11 +87,14 @@ export class OpenAiProvider implements AgentModelProvider {
         method: "POST", redirect: "error", signal: request.signal,
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
-      if (!response.ok) throw new ProviderError(response.status === 408 || response.status === 504 ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
+      // A rejected request (4xx other than 408) is not processed; 408 and 5xx may have been.
+      const rejected = response.status >= 400 && response.status < 500 && response.status !== 408;
+      if (!response.ok) throw new ProviderError(response.status === 408 || response.status === 504 ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR", undefined, rejected);
       json = await responseBody(response);
     } catch (error) {
       if (error instanceof ProviderError) throw error;
-      throw new ProviderError(request.signal.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
+      // Sent but no readable answer: the provider may have billed it, usage is unknown.
+      throw new ProviderError(request.signal.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR", undefined, false);
     }
     // Output usage includes reasoning tokens, even when no final answer was produced.
     const usage = { inputTokens: counter(json.usage?.input_tokens), outputTokens: counter(json.usage?.output_tokens) };

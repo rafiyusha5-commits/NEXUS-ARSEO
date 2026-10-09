@@ -31,6 +31,20 @@ describe("Telegram boundary", () => {
     const unauthorised = (async () => new Response("secret " + token, { status: 401 })) as typeof fetch;
     await assert.rejects(new TelegramClient(token, unauthorised).call("getMe"), { message: "TELEGRAM_UNAUTHORIZED" });
   });
+  it("tells a definite refusal from an unknown outcome of sendMessage", async () => {
+    const token = "123456:" + "a".repeat(32);
+    const outcome = async (fetcher: typeof fetch) => new TelegramClient(token, fetcher).call("sendMessage", { chat_id: 1, text: "x" }).then(() => "ok", (error: { code: string }) => error.code);
+    assert.equal(await outcome((async () => Response.json({ ok: false, description: "Forbidden: bot was blocked" }, { status: 403 })) as typeof fetch), "TELEGRAM_REJECTED");
+    assert.equal(await outcome((async () => Response.json({ ok: false }, { status: 400 })) as typeof fetch), "TELEGRAM_REJECTED");
+    assert.equal(await outcome((async () => new Response("bad gateway", { status: 502 })) as typeof fetch), "TELEGRAM_UNAVAILABLE");
+    assert.equal(await outcome((async () => { throw new Error("timeout"); }) as typeof fetch), "TELEGRAM_UNAVAILABLE");
+    assert.equal(await outcome((async () => new Response("{broken", { status: 200 })) as typeof fetch), "TELEGRAM_UNAVAILABLE");
+    // A caller's deadline aborts the request.
+    const deadline = AbortSignal.abort();
+    assert.equal(await new TelegramClient(token, (async (_url, init) => { if (init?.signal?.aborted) throw new Error("aborted"); return Response.json({ ok: true, result: 1 }); }) as typeof fetch)
+      .call("getFile", { file_id: "x" }, { signal: deadline }).then(() => "ok", (error: { code: string }) => error.code), "TELEGRAM_UNAVAILABLE");
+  });
+
   it("uses fixed Bot API methods, handles rate limits and never enables model markup", async () => {
     const fetcher = (async (_url, options) => {
       assert.equal(options?.redirect, "error");

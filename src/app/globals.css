@@ -144,6 +144,7 @@ h1,h2,p { margin:0; } h1 { font-size:28px; letter-spacing:-.04em; } h2 { font-si
 .assistant-fact{border-left:4px solid #2f7d55}
 .assistant-assumption{border-left:4px solid #c9a227;background:#fffdf3}
 .assistant-unverified{border-left:4px solid #b54848;background:#fff7f7}
+.telegram-ok{background:#e7f4ec;color:#1f5f3c}.telegram-warning{background:#fff4d6;color:#7a5600}.telegram-error{background:#fde8e8;color:#8a2525}.telegram-progress{background:#e8eef9;color:#28457a}
 .assistant-values{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:8px 0}
 .assistant-values div{background:#f4f7f5;border-radius:8px;padding:8px 10px}
 .assistant-values dt{font-size:12px;color:#5b6b63}

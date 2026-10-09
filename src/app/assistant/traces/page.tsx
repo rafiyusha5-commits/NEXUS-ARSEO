@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
+import { TelegramUpdatesTable } from "@/components/assistant/telegram-updates";
 import { TraceTable, type TraceRun } from "@/components/assistant/trace-table";
+import { loadedAt, type TelegramRunRow, type TelegramUpdateRow } from "@/lib/telegram/update-state.ts";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions.ts";
 
@@ -18,6 +20,14 @@ export default async function AssistantTracesPage() {
       supabase.from("agent_budget_months").select("budget_month,spent_usd_micros,input_tokens,output_tokens").order("budget_month", { ascending: false }).limit(3),
     ])
     : [{ data: null, error: null }, { data: null, error: null }];
+  // Telegram messages that did not end with a delivered answer, for all employees (RLS: agent.view_traces).
+  const telegramResult = can["agent.view_traces"] ? await supabase.from("telegram_updates")
+    .select("update_id,status,stage,error_code,run_id,created_at,updated_at,finished_at,user:profiles!telegram_updates_user_id_fkey(full_name)")
+    .or("status.neq.completed,error_code.not.is.null").order("created_at", { ascending: false }).limit(50) : null;
+  const telegramUpdates = (telegramResult?.data ?? []) as unknown as TelegramUpdateRow[];
+  const telegramRunIds = telegramUpdates.map((row) => row.run_id).filter((id): id is string => !!id);
+  const telegramRuns = telegramRunIds.length ? await supabase.from("agent_runs").select("id,status,cost_status,request_refunded,actual_usd_micros").in("id", telegramRunIds) : null;
+  const now = loadedAt();
   const months = (budgetResult.data ?? []) as Array<{ budget_month: string; spent_usd_micros: number; input_tokens: number; output_tokens: number }>;
 
   return (
@@ -43,6 +53,12 @@ export default async function AssistantTracesPage() {
             <section className="panel admin-section">
               <div className="panel-heading"><div><p className="eyebrow">Последние 100</p><h2>Запросы</h2></div></div>
               <TraceTable runs={(runsResult.data ?? []) as unknown as TraceRun[]} showUser />
+            </section>
+            <section className="panel admin-section">
+              <div className="panel-heading"><div><p className="eyebrow">Telegram · последние 50</p><h2>Незавершённые и неподтверждённые сообщения</h2></div></div>
+              <p className="form-help">Прерванная обработка или неподтверждённая отправка не повторяется автоматически. Резерв прерванного запуска удерживается; спустя 10 минут следующее резервирование списывает его полностью как оценку, а позднее завершение сверяет с фактом.</p>
+              {telegramResult?.error ? <div className="setup-notice">Примените миграцию 202609275400_telegram_reliability.sql.</div>
+                : <TelegramUpdatesTable updates={telegramUpdates} runs={(telegramRuns?.data ?? []) as TelegramRunRow[]} now={now} showUser />}
             </section>
           </>
         )}

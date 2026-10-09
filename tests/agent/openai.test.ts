@@ -101,6 +101,26 @@ describe("OpenAI Responses provider (fake fetch, no network)", () => {
       (error: unknown) => error instanceof ProviderError && error.code === "AGENT_TIMEOUT");
   });
 
+  it("marks usage as unknown when the request may have been processed without a usage report", async () => {
+    const cases: Array<[Response | Error, boolean]> = [
+      [new Error("socket hang up"), false],
+      [new Response("busy", { status: 500 }), false],
+      [new Response("timeout", { status: 408 }), false],
+      [new Response("{not json", { status: 200 }), false],
+      [Response.json({ error: "bad request" }, { status: 400 }), true],
+      [Response.json({ error: "rate limit" }, { status: 429 }), true],
+      [Response.json({ status: "incomplete", output: [], usage: { input_tokens: 9, output_tokens: 3 } }), true],
+    ];
+    for (const [response, known] of cases) {
+      const { fetcher } = recorder(response);
+      await assert.rejects(new OpenAiProvider(OPTIONS, fetcher).complete(request()), (error: unknown) => {
+        assert.ok(error instanceof ProviderError);
+        assert.equal(error.usageKnown, known, String(response instanceof Response ? response.status : "network"));
+        return true;
+      });
+    }
+  });
+
   it("rejects oversized responses, malformed output and duplicate tool call ids", async () => {
     for (const response of [new Response("x".repeat(2 * 1024 * 1024 + 1)), completed([]), completed([null]),
       completed([{ type: "function_call", call_id: "c", name: "get_help", arguments: "{}" }, { type: "function_call", call_id: "c", name: "get_help", arguments: "{}" }])]) {

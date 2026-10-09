@@ -123,6 +123,8 @@ echo "re-applying document migrations (idempotency check)"
 # Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
+# Telegram reliability: replaces the status function of 5300 and the accounting allow-lists; idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -168,5 +170,19 @@ wait
 reserved=$(cat "$WORKDIR"/settle_reserve_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
 finished=$(cat "$WORKDIR"/settle_finish_*.out | grep -cE '^fin:ok$' || true)
 "${PSQL[@]}" -v ON_ERROR_STOP=1 -v finished="$finished" -v reserved="$reserved" -f "$ROOT/supabase/tests/agent_concurrency_settle_check.sql" >/dev/null
+
+echo "test: Telegram update claimed once under concurrency"
+# Two workers or a redelivery may hand the same update to Nexus at the same time: exactly one claim.
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role service_role; select 'claim:'||coalesce(public.telegram_claim_update(990001,880001),'none');" \
+    >"$WORKDIR/claim_$i.out" 2>&1 &
+done
+wait
+claimed=$(cat "$WORKDIR"/claim_*.out | grep -cE '^claim:[0-9a-f]{64}$' || true)
+refused=$(cat "$WORKDIR"/claim_*.out | grep -c '^claim:none$' || true)
+if [[ "$claimed" != "1" || "$refused" != "9" ]]; then
+  echo "Telegram update claimed $claimed times, refused $refused times; expected 1 and 9" >&2
+  exit 1
+fi
 
 echo "database tests passed"
