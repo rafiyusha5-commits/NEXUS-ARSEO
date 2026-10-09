@@ -16,13 +16,40 @@ import { telegramAnswer } from "./format.ts";
 import { privateMessage, shortMessage, startCode } from "./protocol.ts";
 import { MAX_VOICE_BYTES, SPEECH_RESERVE_MICROS, readBounded, voiceInput } from "./speech.ts";
 
-/** Whole processing of one message, below the route's maxDuration (90 s) and the worker's timeout. */
-export const TELEGRAM_DEADLINE_MS = 75_000;
-/** Kept free at the end for the access re-check and sendMessage. */
-export const SEND_RESERVE_MS = 15_000;
-/** A question is not started (and nothing reserved) with less time than this left for the run. */
-export const MIN_RUN_MS = 20_000;
-const SEND_TIMEOUT_MS = 10_000;
+/**
+ * Time plan of one message. One deadline covers everything from the claim to the last status write:
+ * no step (RPC, session close, sendMessage) starts or waits beyond it.
+ *
+ *   claim … session … run (≤ deadline − sendReserve) │ access check, close │ mark → send → final status
+ *                                                     └──── sendReserve ────┴──────── delivery ────────┘
+ */
+export type PipelineTiming = {
+  /** Whole processing, below the route's maxDuration (90 s) and the worker's timeout (100 s). */
+  deadlineMs: number;
+  /** Kept free after the run for the access re-check, the session close and delivery. */
+  sendReserveMs: number;
+  /** A question is not started (and nothing reserved) with less time than this left for the run. */
+  minRunMs: number;
+  /** Kept free for delivery: the delivery mark, sendMessage and the final status write. */
+  deliveryMs: number;
+  /** Upper bound of one sendMessage. */
+  sendTimeoutMs: number;
+  /** sendMessage is not started with less time than this; the message is then not sent at all. */
+  minSendMs: number;
+  /** Kept free after sendMessage for the final status write. */
+  finalWriteMs: number;
+  /** Upper bound of a display-only progress write. */
+  progressMs: number;
+  /** Upper bound of waiting for the session close (the signOut itself continues in the background). */
+  closeMs: number;
+};
+export const DEFAULT_TIMING: PipelineTiming = {
+  deadlineMs: 75_000, sendReserveMs: 20_000, minRunMs: 20_000, deliveryMs: 12_000,
+  sendTimeoutMs: 8_000, minSendMs: 2_000, finalWriteMs: 2_000, progressMs: 3_000, closeMs: 4_000,
+};
+export const TELEGRAM_DEADLINE_MS = DEFAULT_TIMING.deadlineMs;
+export const SEND_RESERVE_MS = DEFAULT_TIMING.sendReserveMs;
+export const MIN_RUN_MS = DEFAULT_TIMING.minRunMs;
 
 export type EmployeeSession = {
   permissions: (codes: readonly string[]) => Promise<ReadonlySet<string>>;
@@ -48,7 +75,9 @@ export type TelegramPipelineDeps = {
   /** null when the assistant is disabled. */
   agent: () => TelegramAgent | null;
   voiceEnabled: boolean;
+  /** Shortcut for timing.deadlineMs. */
   deadlineMs?: number;
+  timing?: Partial<PipelineTiming>;
   now?: () => number;
 };
 
@@ -93,45 +122,60 @@ async function within<T>(work: Promise<T>, ms: number, late?: (value: T) => void
 export async function processTelegramMessage(update: unknown, deps: TelegramPipelineDeps): Promise<void> {
   const message = privateMessage(update);
   if (!message) return;
-  // A failure here throws to the caller: nothing was claimed, so the worker may deliver it again.
-  const claim = await deps.rpc("telegram_claim_update", { p_update_id: message.updateId, p_chat_id: message.chatId });
+  const timing: PipelineTiming = { ...DEFAULT_TIMING, ...deps.timing, ...(deps.deadlineMs !== undefined ? { deadlineMs: deps.deadlineMs } : {}) };
+  const now = deps.now ?? Date.now;
+  // The clock starts before the claim: the deadline covers the whole chain.
+  const started = now();
+  const remaining = () => timing.deadlineMs - (now() - started);
+  const deadline = AbortSignal.timeout(Math.max(1, timing.deadlineMs));
+  /** Waits for a step only while `reserveMs` of the deadline stays free; never past the deadline. */
+  const bounded = <T>(work: () => Promise<T>, reserveMs: number, capMs = Infinity, late?: (value: T) => void): Promise<T> => {
+    const limit = Math.min(capMs, remaining() - reserveMs);
+    if (limit <= 0) return Promise.reject(new StepTimeout());
+    return within(work(), limit, late);
+  };
+
+  // A failure here throws to the caller: nothing ran, so the worker may deliver it again.
+  const claim = await bounded(() => deps.rpc("telegram_claim_update", { p_update_id: message.updateId, p_chat_id: message.chatId }), timing.sendReserveMs);
   // Already claimed by an earlier delivery, a restarted or a parallel worker: never run it again.
   if (typeof claim !== "string") return;
 
-  const now = deps.now ?? Date.now;
-  const started = now();
-  const budget = deps.deadlineMs ?? TELEGRAM_DEADLINE_MS;
-  const remaining = () => budget - (now() - started);
-  const deadline = AbortSignal.timeout(Math.max(1, budget));
   let userId: string | null = null;
-  // Display only: a lost progress write must never change what happens to the message.
-  const progress = (stage: Stage, extra: { runId?: string; error?: string } = {}) => deps.rpc("telegram_update_progress", {
+  // Display only: a slow or lost progress write never changes what happens or delays delivery.
+  const progress = (stage: Stage, extra: { runId?: string; error?: string } = {}, reserveMs = timing.sendReserveMs) => bounded(() => deps.rpc("telegram_update_progress", {
     p_update_id: message.updateId, p_token: claim, p_stage: stage, p_user_id: userId, p_run_id: extra.runId ?? null, p_error_code: extra.error ?? null,
-  }).catch(() => false);
-  const status = (value: "delivery_started" | "completed" | "failed" | "delivery_unknown") =>
-    deps.rpc("telegram_update_status", { p_update_id: message.updateId, p_token: claim, p_status: value });
+  }), reserveMs, timing.progressMs).catch(() => false);
+  const status = (value: "delivery_started" | "completed" | "failed" | "delivery_unknown", reserveMs: number) =>
+    bounded(() => deps.rpc("telegram_update_status", { p_update_id: message.updateId, p_token: claim, p_status: value }), reserveMs);
 
   let session: EmployeeSession | null = null;
   let closed = false;
+  // The signOut is always started; waiting for it is bounded so delivery keeps its time. A close that
+  // outlives the wait still completes in the background (its own request timeout applies).
   const closeSession = async () => {
     if (!session || closed) return;
     closed = true;
-    await within(session.close(), 5_000).catch(() => undefined);
+    const closing = session.close();
+    closing.catch(() => undefined);
+    await bounded(() => closing, timing.deliveryMs, timing.closeMs).catch(() => undefined);
   };
+  // Before delivery every step keeps the delivery window free; the access check also keeps the
+  // close window free.
+  const beforeDelivery = timing.deliveryMs + timing.closeMs;
   let reply: string;
   let errorCode: string | null = null;
   try {
     const code = message.text ? startCode(message.text) : null;
     if (code) {
-      const linked = await within(deps.rpc("telegram_request_link", { p_code: code, p_chat_id: message.chatId, p_name: message.displayName }), remaining() - SEND_RESERVE_MS);
+      const linked = await bounded(() => deps.rpc("telegram_request_link", { p_code: code, p_chat_id: message.chatId, p_name: message.displayName }), beforeDelivery);
       reply = linked === true ? TELEGRAM_TEXT.linkRequested : TELEGRAM_TEXT.linkInvalid;
     } else if (message.text === "/unlink") {
-      await within(deps.rpc("telegram_unlink_chat", { p_chat_id: message.chatId }), remaining() - SEND_RESERVE_MS);
+      await bounded(() => deps.rpc("telegram_unlink_chat", { p_chat_id: message.chatId }), beforeDelivery);
       reply = TELEGRAM_TEXT.unlinked;
     } else if (message.text === "/help" || message.text === "/start") {
       reply = TELEGRAM_TEXT.help;
     } else {
-      const employee = await within(deps.rpc("telegram_employee", { p_chat_id: message.chatId }), remaining() - SEND_RESERVE_MS);
+      const employee = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), timing.sendReserveMs);
       const voice = voiceInput(message.voice);
       if (typeof employee !== "string") reply = TELEGRAM_TEXT.notLinked;
       else if (message.voice && (!voice || !deps.voiceEnabled)) reply = TELEGRAM_TEXT.voiceRules;
@@ -139,28 +183,35 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
       else {
         userId = employee;
         await progress("session");
-        session = await within(deps.openSession(employee, deadline), remaining() - SEND_RESERVE_MS, (late) => { void late.close().catch(() => undefined); });
+        session = await bounded(() => deps.openSession(employee, deadline), timing.sendReserveMs, Infinity, (late) => { void late.close().catch(() => undefined); });
         if (message.text === "/limit") {
-          const usage = await within(session.usage(), remaining() - SEND_RESERVE_MS);
+          const usage = await bounded(() => session!.usage(), timing.sendReserveMs);
           reply = `Вопросы сегодня: ${usage.used} из ${usage.limit}. Лимит общий с веб-чатом Nexus.`;
         } else {
           const agent = deps.agent();
           if (!agent) reply = TELEGRAM_TEXT.disabled;
-          else if (remaining() - SEND_RESERVE_MS < MIN_RUN_MS) {
+          else if (remaining() - timing.sendReserveMs < timing.minRunMs) {
             // Not started: nothing reserved, nothing charged, the question is not counted.
             reply = TELEGRAM_TEXT.noTime;
             errorCode = "DEADLINE_EXCEEDED";
           } else {
             void deps.bot.call("sendChatAction", { chat_id: message.chatId, action: "typing" }, { timeoutMs: 3_000, signal: deadline }).catch(() => undefined);
-            const { answer, transcript } = await askAgent(agent, session, employee, message.text, voice, deps.bot, deadline, remaining() - SEND_RESERVE_MS, progress);
+            const runSession = session;
+            // The run has its own deadline (remaining − sendReserve). Waiting for it, including the
+            // closing ledger write, is bounded as well; a run that overruns finishes in the background.
+            const { answer, transcript } = await bounded(
+              () => askAgent(agent, runSession, employee, message.text, voice, deps.bot, deadline, remaining() - timing.sendReserveMs, (stage, extra) => progress(stage, extra)),
+              beforeDelivery,
+            );
             reply = shortMessage((transcript ? `Распознано: ${transcript}\n\n` : "") + answer.text);
             errorCode = answer.errorCode;
           }
         }
         // Access lost or chat relinked while the model was working: no business data leaves Nexus.
-        await progress("access_check");
-        const stillLinked = await within(deps.rpc("telegram_employee", { p_chat_id: message.chatId }), Math.max(remaining() - 5_000, 1_000));
-        const permissions = await within(session.permissions(["agent.use"]), Math.max(remaining() - 5_000, 1_000));
+        // A check that does not finish in time fails closed (catch below): no data is sent.
+        await progress("access_check", {}, beforeDelivery);
+        const stillLinked = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), beforeDelivery);
+        const permissions = await bounded(() => session!.permissions(["agent.use"]), beforeDelivery);
         if (stillLinked !== employee || !permissions.has("agent.use")) {
           reply = TELEGRAM_TEXT.withheld;
           errorCode = "ANSWER_WITHHELD";
@@ -172,25 +223,35 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     // repeated; the accounting run (if any) was already closed or is settled by its TTL.
     reply = TELEGRAM_TEXT.failed;
     errorCode = "PROCESSING_ERROR";
-  } finally {
-    await closeSession();
   }
+  await closeSession();
 
-  if (errorCode) await progress("sending", { error: errorCode });
-  // delivery_started is the point of no return: if it cannot be written, nothing is sent.
-  const marked = await status("delivery_started").catch(() => false);
+  if (errorCode) await progress("sending", { error: errorCode }, timing.deliveryMs);
+  // Delivery window. Not even the delivery mark is written without time to send after it.
+  if (remaining() < timing.minSendMs + timing.finalWriteMs) {
+    await status("failed", 0).catch(() => undefined);
+    return;
+  }
+  // delivery_started is the point of no return: if it cannot be written in time, nothing is sent.
+  const marked = await status("delivery_started", timing.minSendMs + timing.finalWriteMs).catch(() => false);
   if (marked !== true) {
-    await status("failed").catch(() => undefined);
+    await status("failed", 0).catch(() => undefined);
+    return;
+  }
+  const sendMs = Math.min(timing.sendTimeoutMs, remaining() - timing.finalWriteMs);
+  if (sendMs < timing.minSendMs) {
+    // Marked but too late to send: nothing was sent, which is a definite failure.
+    await status("failed", 0).catch(() => undefined);
     return;
   }
   try {
-    await deps.bot.call("sendMessage", { chat_id: message.chatId, text: reply, link_preview_options: { is_disabled: true } }, { timeoutMs: SEND_TIMEOUT_MS });
-    await status("completed").catch(() => undefined);
+    await deps.bot.call("sendMessage", { chat_id: message.chatId, text: reply, link_preview_options: { is_disabled: true } }, { timeoutMs: sendMs, signal: deadline });
+    await status("completed", 0).catch(() => undefined);
   } catch (error) {
     // A definite refusal delivered nothing; anything else may have been delivered. Never resend.
     const definite = error instanceof TelegramError && error.code !== "TELEGRAM_UNAVAILABLE";
-    await progress("sending", { error: definite ? error.code : "TELEGRAM_UNAVAILABLE" });
-    await status(definite ? "failed" : "delivery_unknown").catch(() => undefined);
+    await progress("sending", { error: definite ? error.code : "TELEGRAM_UNAVAILABLE" }, timing.finalWriteMs / 2);
+    await status(definite ? "failed" : "delivery_unknown", 0).catch(() => undefined);
   }
 }
 

@@ -19,6 +19,63 @@ function deps(provider: ScriptedProvider, overrides: Partial<RunnerDeps> = {}): 
 const FACT = (call: string, row: number, fields: string[], commentary: Array<{ kind: string; text: string }> = []) => ({ facts: [{ call, row, fields }], commentary, limitations: [] });
 const NOTE = (text: string) => ({ facts: [], commentary: [{ kind: "explanation", text }], limitations: [] });
 
+describe("assistant run: unknown model usage", () => {
+  const answer = (usage: { inputTokens: number; outputTokens: number }, usageMissing?: { input: boolean; output: boolean }) =>
+    ({ content: JSON.stringify(NOTE("Нет данных.")), toolCalls: [], usage, ...(usageMissing ? { usageMissing } : {}) });
+  const MAX_OUTPUT = Math.min(TEST_LIMITS.maxOutputTokensPerCall, TEST_LIMITS.maxOutputTokensTotal);
+
+  it("charges a successful answer without any usage report at its bound, not as free", async () => {
+    const d = deps(new ScriptedProvider([answer({ inputTokens: 0, outputTokens: 0 }, { input: true, output: true })]));
+    const outcome = await runAgent("Есть ли задержки?", d);
+    assert.ok(outcome.ok, "the answer itself is fine");
+    const finish = d.ledger.finished[0];
+    assert.equal(finish.status, "completed");
+    assert.deepEqual([finish.inputTokens, finish.outputTokens], [0, 0], "no invented token counts");
+    // Estimated input (at least the fixed 3000-token allowance for tools and schema) and the whole output allowance.
+    assert.ok(finish.actualUsdMicros >= 3_000 * TEST_PRICING.inputUsdPerMTok + MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok, String(finish.actualUsdMicros));
+  });
+
+  it("uses the counters that were reported and bounds only the missing one", async () => {
+    const d = deps(new ScriptedProvider([answer({ inputTokens: 1500, outputTokens: 0 }, { input: false, output: true })]));
+    await runAgent("Есть ли задержки?", d);
+    const finish = d.ledger.finished[0];
+    assert.deepEqual([finish.inputTokens, finish.outputTokens], [1500, 0]);
+    assert.equal(finish.actualUsdMicros, 1500 * TEST_PRICING.inputUsdPerMTok + MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok);
+
+    const output = deps(new ScriptedProvider([answer({ inputTokens: 0, outputTokens: 200 }, { input: true, output: false })]));
+    await runAgent("Есть ли задержки?", output);
+    const charged = output.ledger.finished[0];
+    assert.deepEqual([charged.inputTokens, charged.outputTokens], [0, 200]);
+    assert.ok(charged.actualUsdMicros >= 3_000 * TEST_PRICING.inputUsdPerMTok + 200 * TEST_PRICING.outputUsdPerMTok);
+    assert.ok(charged.actualUsdMicros < MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok + 200_000, "the output is not bounded again");
+  });
+
+  it("adds each call with unknown usage separately and keeps fully reported calls exact", async () => {
+    const exact = deps(new ScriptedProvider([answer({ inputTokens: 1500, outputTokens: 200 })]));
+    await runAgent("Есть ли задержки?", exact);
+    assert.equal(exact.ledger.finished[0].actualUsdMicros, 1500 * TEST_PRICING.inputUsdPerMTok + 200 * TEST_PRICING.outputUsdPerMTok);
+
+    const twice = deps(new ScriptedProvider([
+      { ...toolCall("c1", "find_shipments", { query: null, status: null, type: null, limit: null }), usage: { inputTokens: 1000, outputTokens: 0 }, usageMissing: { input: false, output: true } },
+      answer({ inputTokens: 1500, outputTokens: 0 }, { input: false, output: true }),
+    ]));
+    await runAgent("Есть ли задержки?", twice);
+    const finish = twice.ledger.finished[0];
+    const firstBound = 1000 * TEST_PRICING.inputUsdPerMTok + MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok;
+    assert.ok(finish.actualUsdMicros >= firstBound + 1500 * TEST_PRICING.inputUsdPerMTok, "both calls charged");
+  });
+
+  it("charges unknown counters of a failed call and still returns the question", async () => {
+    const d = deps(new ScriptedProvider([new ProviderError("AGENT_PROVIDER_ERROR", { inputTokens: 300, outputTokens: 0 }, { input: false, output: true })]));
+    const outcome = await runAgent("Есть ли задержки?", d);
+    assert.ok(!outcome.ok && outcome.refunded);
+    const finish = d.ledger.finished[0];
+    assert.equal(finish.refund, true);
+    assert.equal(finish.inputTokens, 300);
+    assert.equal(finish.actualUsdMicros, 300 * TEST_PRICING.inputUsdPerMTok + MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok);
+  });
+});
+
 describe("assistant run", () => {
   it("reserves once for voice and charges transcription in the shared budget", async () => {
     const provider = new ScriptedProvider([toolCall("c1", "get_help", { topic: "shipments" }), finalAnswer(FACT("c1", 0, ["help_text"]))]);

@@ -129,11 +129,46 @@ describe("OpenAI Responses provider (fake fetch, no network)", () => {
     }
   });
 
-  it("supports models without reasoning and does not generate invalid usage counters", async () => {
+  it("supports models without reasoning and never reads invalid usage counters as a reliable zero", async () => {
     const { calls, fetcher } = recorder(Response.json({ status: "completed", output: [finalOutput], usage: { input_tokens: "invalid", output_tokens: -1 } }));
     const result = await new OpenAiProvider({ apiKey: KEY, model: "gpt-4.1-mini", baseUrl: OPTIONS.baseUrl }, fetcher).complete(request());
     assert.ok(!("reasoning" in JSON.parse(String(calls[0].init.body))));
-    assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 });
+    assert.deepEqual(result.usage, { inputTokens: 0, outputTokens: 0 }, "placeholders only");
+    assert.deepEqual(result.usageMissing, { input: true, output: true }, "both counters are unknown, not zero");
+  });
+
+  it("reports a successful answer without usage, or with incomplete or invalid counters, as unknown usage", async () => {
+    const cases: Array<[unknown, { input: boolean; output: boolean } | undefined, { inputTokens: number; outputTokens: number }]> = [
+      [undefined, { input: true, output: true }, { inputTokens: 0, outputTokens: 0 }],
+      [null, { input: true, output: true }, { inputTokens: 0, outputTokens: 0 }],
+      [{}, { input: true, output: true }, { inputTokens: 0, outputTokens: 0 }],
+      [{ input_tokens: 120 }, { input: false, output: true }, { inputTokens: 120, outputTokens: 0 }],
+      [{ output_tokens: 7 }, { input: true, output: false }, { inputTokens: 0, outputTokens: 7 }],
+      [{ input_tokens: 1.5, output_tokens: 7 }, { input: true, output: false }, { inputTokens: 0, outputTokens: 7 }],
+      [{ input_tokens: "120", output_tokens: null }, { input: true, output: true }, { inputTokens: 0, outputTokens: 0 }],
+      [{ input_tokens: 2 ** 60, output_tokens: 7 }, { input: true, output: false }, { inputTokens: 0, outputTokens: 7 }],
+      [{ input_tokens: 0, output_tokens: 0 }, undefined, { inputTokens: 0, outputTokens: 0 }],
+      [{ input_tokens: 120, output_tokens: 7 }, undefined, { inputTokens: 120, outputTokens: 7 }],
+    ];
+    for (const [usage, missing, counters] of cases) {
+      const body: Record<string, unknown> = { status: "completed", output: [finalOutput] };
+      if (usage !== undefined) body.usage = usage;
+      const { fetcher } = recorder(Response.json(body));
+      const result = await new OpenAiProvider(OPTIONS, fetcher).complete(request());
+      assert.deepEqual(result.usageMissing, missing, JSON.stringify(usage));
+      assert.deepEqual(result.usage, counters, JSON.stringify(usage));
+    }
+  });
+
+  it("carries unknown counters on failures after a readable answer", async () => {
+    const { fetcher } = recorder(Response.json({ status: "incomplete", output: [], usage: { input_tokens: 300 } }));
+    await assert.rejects(new OpenAiProvider(OPTIONS, fetcher).complete(request()), (error: unknown) => {
+      assert.ok(error instanceof ProviderError);
+      assert.deepEqual(error.usage, { inputTokens: 300, outputTokens: 0 });
+      assert.deepEqual(error.usageMissing, { input: false, output: true });
+      assert.equal(error.usageKnown, false);
+      return true;
+    });
   });
 
   it("removes unsupported schema keywords while keeping server validation", () => {

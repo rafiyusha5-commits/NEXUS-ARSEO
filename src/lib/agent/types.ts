@@ -91,7 +91,14 @@ export type ModelResponse = {
   content: string | null;
   toolCalls: ModelToolCall[];
   usage: { inputTokens: number; outputTokens: number };
+  /**
+   * Counters the provider did not report validly (missing, negative, fractional, not a number).
+   * Their value in `usage` is 0 only as a placeholder: the runner charges them conservatively.
+   */
+  usageMissing?: UsageMissing;
 };
+
+export type UsageMissing = { input: boolean; output: boolean };
 
 /** Provider-neutral model interface; channels and business logic never talk to a vendor API. */
 export interface AgentModelProvider {
@@ -109,12 +116,15 @@ export class ProviderError extends Error {
    * estimate instead of silently treating the call as free.
    */
   readonly usageKnown: boolean;
-  constructor(code: string, usage: { inputTokens: number; outputTokens: number } = { inputTokens: 0, outputTokens: 0 }, usageKnown = true) {
+  /** Which counters are unknown; `usage` holds only the validly reported ones. */
+  readonly usageMissing: UsageMissing;
+  constructor(code: string, usage: { inputTokens: number; outputTokens: number } = { inputTokens: 0, outputTokens: 0 }, known: boolean | UsageMissing = true) {
     super(code);
     this.name = "ProviderError";
     this.code = code;
     this.usage = usage;
-    this.usageKnown = usageKnown;
+    this.usageMissing = typeof known === "boolean" ? { input: !known, output: !known } : known;
+    this.usageKnown = !this.usageMissing.input && !this.usageMissing.output;
   }
 }
 

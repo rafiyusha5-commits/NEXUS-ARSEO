@@ -1,6 +1,6 @@
 // Stateless Responses API. Only encrypted reasoning is retained within one run. Plaintext
 // messages and tool arguments are replayed from the runtime after its masking, never from raw output.
-import { ProviderError, type AgentModelProvider, type ModelMessage, type ModelRequest, type ModelResponse } from "../types.ts";
+import { ProviderError, type AgentModelProvider, type ModelMessage, type ModelRequest, type ModelResponse, type UsageMissing } from "../types.ts";
 import type { ReasoningEffort } from "../config.ts";
 
 const UNSUPPORTED = new Set(["minimum", "maximum", "maxLength", "maxItems", "pattern"]);
@@ -13,7 +13,18 @@ export function strictSchema(schema: unknown): unknown {
 type ReasoningItem = { type: "reasoning"; id: string; summary: []; encrypted_content: string };
 type ResponseBody = { status?: unknown; output?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-const counter = (value: unknown): number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+const validCounter = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+/**
+ * Billed usage of a response. A missing or invalid counter is never read as a reliable zero: it is
+ * reported as missing, and the runner charges the conservative bound for that counter instead.
+ */
+export function readUsage(value: unknown): { usage: { inputTokens: number; outputTokens: number }; missing: UsageMissing } {
+  const usage = record(value) ? value : {};
+  const input = validCounter(usage.input_tokens) ? usage.input_tokens : null;
+  const output = validCounter(usage.output_tokens) ? usage.output_tokens : null;
+  return { usage: { inputTokens: input ?? 0, outputTokens: output ?? 0 }, missing: { input: input === null, output: output === null } };
+}
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 async function responseBody(response: Response): Promise<ResponseBody> {
@@ -97,34 +108,35 @@ export class OpenAiProvider implements AgentModelProvider {
       throw new ProviderError(request.signal.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR", undefined, false);
     }
     // Output usage includes reasoning tokens, even when no final answer was produced.
-    const usage = { inputTokens: counter(json.usage?.input_tokens), outputTokens: counter(json.usage?.output_tokens) };
-    if (json.status !== "completed" || !Array.isArray(json.output)) throw new ProviderError("AGENT_PROVIDER_ERROR", usage);
+    const { usage, missing } = readUsage(json.usage);
+    const fail = (code: string) => new ProviderError(code, usage, { input: missing.input, output: missing.output });
+    if (json.status !== "completed" || !Array.isArray(json.output)) throw fail("AGENT_PROVIDER_ERROR");
     const toolCalls: ModelResponse["toolCalls"] = [];
     const texts: string[] = [];
     const reasoning: ReasoningItem[] = [];
     const ids = new Set<string>();
     for (const item of json.output) {
-      if (!record(item)) throw new ProviderError("AGENT_PROVIDER_ERROR", usage);
+      if (!record(item)) throw fail("AGENT_PROVIDER_ERROR");
       if (item.type === "reasoning") {
         if (typeof item.id === "string" && typeof item.encrypted_content === "string") reasoning.push({ type: "reasoning", id: item.id, summary: [], encrypted_content: item.encrypted_content });
       } else if (item.type === "function_call") {
         if (typeof item.call_id !== "string" || !/^[\w-]{1,128}$/.test(item.call_id) || ids.has(item.call_id)
           || typeof item.name !== "string" || !/^[\w-]{1,64}$/.test(item.name) || typeof item.arguments !== "string" || item.arguments.length > 8192
-          || toolCalls.length >= 16) throw new ProviderError("AGENT_PROVIDER_ERROR", usage);
+          || toolCalls.length >= 16) throw fail("AGENT_PROVIDER_ERROR");
         ids.add(item.call_id);
         toolCalls.push({ id: item.call_id, name: item.name, arguments: item.arguments });
       } else if (item.type === "message") {
-        if (!Array.isArray(item.content)) throw new ProviderError("AGENT_PROVIDER_ERROR", usage);
+        if (!Array.isArray(item.content)) throw fail("AGENT_PROVIDER_ERROR");
         for (const content of item.content) {
-          if (!record(content) || content.type === "refusal") throw new ProviderError("AGENT_BAD_ANSWER", usage);
+          if (!record(content) || content.type === "refusal") throw fail("AGENT_BAD_ANSWER");
           if (content.type === "output_text" && typeof content.text === "string") texts.push(content.text);
         }
       }
     }
     const content = texts.join("") || null;
-    if (!content && !toolCalls.length) throw new ProviderError("AGENT_BAD_ANSWER", usage);
+    if (!content && !toolCalls.length) throw fail("AGENT_BAD_ANSWER");
     this.reasoning.set(request.messages.length, reasoning);
     this.previousMessageCount = request.messages.length;
-    return { content, toolCalls, usage };
+    return { content, toolCalls, usage, ...(missing.input || missing.output ? { usageMissing: missing } : {}) };
   }
 }

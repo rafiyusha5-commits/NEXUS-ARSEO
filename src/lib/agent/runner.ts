@@ -9,7 +9,7 @@ import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
 import { channelAllowsTool } from "./channels.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
-  type ModelMessage, type Reservation, type ToolResult, type TraceEntry,
+  type ModelMessage, type Reservation, type ToolResult, type TraceEntry, type UsageMissing,
 } from "./types.ts";
 
 export type RunnerDeps = {
@@ -143,8 +143,14 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   let toolCalls = 0;
   let formatRetries = 0;
   let preparationCost = 0;
-  // Calls whose result is unknown (timeout, lost connection) are charged at their worst case.
+  // Calls whose result or usage is unknown (timeout, lost connection, missing or invalid counters)
+  // are charged at their worst case.
   let unknownCost = 0;
+  const recordUsage = (reported: { inputTokens: number; outputTokens: number }, missing: UsageMissing, estimatedInput: number, maxOutput: number) => {
+    if (!missing.input) usage.inputTokens += reported.inputTokens;
+    if (!missing.output) usage.outputTokens += reported.outputTokens;
+    unknownCost += Math.ceil((missing.input ? estimatedInput * deps.pricing.inputUsdPerMTok : 0) + (missing.output ? maxOutput * deps.pricing.outputUsdPerMTok : 0));
+  };
 
   let finished = false;
   const finish = async (status: "completed" | "failed", errorCode: string | null, refund: boolean) => {
@@ -217,20 +223,17 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
           signal: AbortSignal.any([deadline, AbortSignal.timeout(deps.limits.providerTimeoutMs)]),
         });
       } catch (error) {
-        if (error instanceof ProviderError && error.usageKnown) {
-          usage.inputTokens += error.usage.inputTokens;
-          usage.outputTokens += error.usage.outputTokens;
-          return fail(error.code === "AGENT_TIMEOUT" ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
-        }
-        // The request may have been processed and billed without a usage report: charge the
-        // estimated input and the whole output allowance of this call. The request itself is
+        // Reported counters are recorded; any counter the provider did not report validly (or the
+        // whole call, when it may have been processed without an answer) is charged at its bound:
+        // the estimated input and the whole output allowance of this call. The request itself is
         // returned to the employee; the money is not released.
-        unknownCost += Math.ceil(estimate * deps.pricing.inputUsdPerMTok + maxOutput * deps.pricing.outputUsdPerMTok);
-        const code = error instanceof ProviderError ? error.code : deadline.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR";
+        const known = error instanceof ProviderError;
+        recordUsage(known ? error.usage : { inputTokens: 0, outputTokens: 0 }, known ? error.usageMissing : { input: true, output: true }, estimate, maxOutput);
+        const code = known ? error.code : deadline.aborted ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR";
         return fail(code === "AGENT_TIMEOUT" ? "AGENT_TIMEOUT" : "AGENT_PROVIDER_ERROR");
       }
-      usage.inputTokens += response.usage.inputTokens;
-      usage.outputTokens += response.usage.outputTokens;
+      // A successful answer without a valid usage report is not free either.
+      recordUsage(response.usage, response.usageMissing ?? { input: false, output: false }, estimate, maxOutput);
 
       if (response.toolCalls.length) {
         // The model's own turn is sent back on the next step; mask it like any other outgoing text.
