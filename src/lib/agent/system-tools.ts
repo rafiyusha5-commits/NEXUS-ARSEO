@@ -26,9 +26,11 @@ function scalar(v: unknown): string | null {
 }
 function details(sectionKey: string, row: ShipmentRow, requested?: string): string {
  const section=SYSTEM_BY_KEY.get(sectionKey)!;
- const selected=requested ? requested.split(",") : [];
+ let selected=requested ? requested.split(",") : [];
  const allowed=new Set([...section.columns,...NUTRITION,"basis","contact_name","contact_phone","contact_email","public_code","currency_code"]);
- if (selected.some(key=>!allowed.has(key))) throw new Error("TOOL_ERROR");
+ // Unknown presentation fields must not make a valid, authorized database read fail.
+ // Fall back to the fixed safe projection; never select model-supplied columns.
+ if (selected.some(key=>!allowed.has(key))) selected=[];
  const lines: string[]=[];
  for (const key of section.columns) {
   if ((["phone","whatsapp_phone","email","driver_phone","driver_name"].includes(key) || (sectionKey === "contacts" && key === "full_name")) || (sectionKey === "identifiers" && key === "value")) continue;
@@ -63,7 +65,7 @@ function details(sectionKey: string, row: ShipmentRow, requested?: string): stri
 }
 const common = {
  section:{type:"enum" as const,values:SYSTEM_SECTIONS.map(section=>section.key),description:"Раздел Nexus; выбирай только доступный раздел"},
- fields:{type:"string" as const,maxLength:200,pattern:/^[a-z_]+(?:,[a-z_]+)*$/,optional:true,description:"Нужные поля через запятую: например protein_g,fat_g,carbohydrates_g. Без значения — полная разрешённая карточка"},
+ fields:{type:"string" as const,maxLength:200,pattern:/^[a-z_]+(?:,[a-z_]+)*$/,optional:true,description:"Необязательное сужение отображения: только известные поля, например nutrition_facts или protein_g,fat_g,carbohydrates_g. Если названия полей неизвестны, не передавай fields: вернётся полная разрешённая карточка"},
 };
 const description="Товары и КБЖУ: products; исходные поля: calculator; цены: product_prices,shipment_prices,inventory_costs,calculator_finance; контакты: contacts,transports; упаковка: packaging; календарь: calendar; контрагенты: counterparties; договоры: contracts,contract_terms; склад: batches,balances,movements; продажи: sales,sale_items; планы: forecasts,purchase_plans,programs и строки; финансы: expenses,cost_calculations,cost_items,exchange_rates; документы и листинг: documents,templates,listing_cards; стикеры: stickers,sticker_orders,marking; история: audit,sync_runs.";
 const scope={param:"section",sections:SYSTEM_SECTIONS};

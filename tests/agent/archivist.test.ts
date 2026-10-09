@@ -84,3 +84,14 @@ it("two system calls preserve both sets of server-generated facts",async()=>{
  const result=await runAgent("Оба товара",base(provider,["agent.use","products.view"],fakeData({async readSystem(input){return {rows:[{id:SHIPMENT_ID,internal_sku:input.query}],total:1};}})));
  assert.ok(result.ok);assert.equal(result.answer.facts.length,2);assert.match(result.answer.facts[0].subject,/A/);assert.match(result.answer.facts[1].subject,/B/);
 });
+
+it("unknown requested field names do not discard authorized nutrition or reveal undeclared data",async()=>{
+ const result=await TOOL_BY_NAME.get("search_system")!.run({userId:USER_ID,signal:new AbortController().signal,data:fakeData({async readSystem(){return {rows:[{id:SHIPMENT_ID,internal_sku:"153",name:{ru:"Печенье"},nutrition_facts:{basis:"100g",protein_g:5.1,fat_g:23,carbohydrates_g:64},driver_document:SECRET_VALUES.driverDocument,base_purchase_price:SECRET_VALUES.purchasePrice}],total:1};}})},{section:"products",query:"153",fields:"name,article,references"});
+ const text=JSON.stringify(result);assert.match(text,/Белки, г: 5,1/);assert.match(text,/Жиры, г: 23/);assert.match(text,/Углеводы, г: 64/);assert.ok(!text.includes(SECRET_VALUES.driverDocument));assert.ok(!text.includes(SECRET_VALUES.purchasePrice));assert.equal(result.rows[0].values.record_id,SHIPMENT_ID);
+});
+it("a unique catalogue match supplies the product UUID for reading nutrition and related packaging",async()=>{
+ const result=await TOOL_BY_NAME.get("find_products")!.run({userId:USER_ID,signal:new AbortController().signal,data:fakeData({async findProducts(){return {rows:[{id:SHIPMENT_ID,internal_sku:"153",name:{ru:"Печенье"}}],total:1};}})},{query:"153"});
+ assert.equal(result.rows[0].references?.product_id,SHIPMENT_ID);
+ const ambiguous=await TOOL_BY_NAME.get("find_products")!.run({userId:USER_ID,signal:new AbortController().signal,data:fakeData({async findProducts(){return {rows:[{id:SHIPMENT_ID,internal_sku:"153"},{id:USER_ID,internal_sku:"1530"}],total:2};}})},{query:"153"});
+ assert.equal(ambiguous.rows[0].references,undefined);
+});

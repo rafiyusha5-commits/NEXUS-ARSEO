@@ -452,10 +452,12 @@ const findProducts: AgentTool = {
     }
     const list = shown.map((row, index) => `${offset + index + 1}. ${maskDataText(str(row.internal_sku), 60) ?? "Без артикула"} — ${maskDataText(localized(row.name), 160) ?? "Без названия"}${row.brand ? ` · ${maskDataText(str(row.brand), 60)}` : ""}`).join("\n");
     const incomplete = !consistent || offset > 0 || total === null || total > shown.length || first.rows.length > limit;
-    return result([project("Каталог товаров Nexus", CATALOG_FIELDS, {
+    const catalogueRow = project("Каталог товаров Nexus", CATALOG_FIELDS, {
       product_list: list || "Товары по этому поиску в справочнике не найдены.", products_total: total,
       products_shown: shown.length, search_query: maskDataText(str(params.query), 60),
-    })], incomplete, total, [
+    });
+    if (shown.length === 1 && typeof shown[0].id === "string" && UUID.test(shown[0].id)) catalogueRow.references = { product_id: shown[0].id };
+    return result([catalogueRow], incomplete, total, [
       "Это справочник товаров: наличие на складе проверяется отдельно.",
       ...(!consistent ? ["Каталог изменился во время чтения: список может быть неполным."] : []),
       incomplete ? `Страница с позиции ${offset + 1}: показано ${shown.length} товаров; полный список откройте в справочнике товаров с тем же поиском.` : `Полный результат поиска: ${shown.length} товаров.`,
