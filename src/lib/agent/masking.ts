@@ -163,7 +163,7 @@ export function traceExcerpt(maskedQuestion: string): string {
  * tool). Personal numbers, secrets and money are masked again, but Nexus identifiers such as
  * NAR-2026-0007 stay readable: maskDataText would withhold the whole line for their 8 digits.
  */
-export function maskFactText(text: string, maxLength = 400): string {
-  const value = applyRules(maskOutgoing(text), [MONEY_RULE]).text.replace(/\s+/g, " ").trim();
+export function maskFactText(text: string, maxLength = 400, preserveLines = false): string {
+  const value = applyRules(maskOutgoing(text), [MONEY_RULE]).text.replace(preserveLines ? /[^\S\n]+/g : /\s+/g, " ").trim();
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }

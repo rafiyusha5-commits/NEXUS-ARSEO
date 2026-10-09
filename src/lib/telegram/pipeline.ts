@@ -13,7 +13,7 @@ import { maskDataText } from "../agent/masking.ts";
 import { QuestionPreparationError, runAgent } from "../agent/runner.ts";
 import type { AgentDataSource, AgentLedger, AgentModelProvider } from "../agent/types.ts";
 import { TelegramError, type TelegramBot } from "./client.ts";
-import { telegramAnswer } from "./format.ts";
+import { telegramDelivery } from "./format.ts";
 import { privateMessage, shortMessage, startCode } from "./protocol.ts";
 import { MAX_VOICE_BYTES, SPEECH_RESERVE_MICROS, readBounded, voiceInput } from "./speech.ts";
 
@@ -164,6 +164,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   // close window free.
   const beforeDelivery = timing.deliveryMs + timing.closeMs;
   let reply: string;
+  let document: string | undefined;
   let errorCode: string | null = null;
   try {
     const code = message.text ? startCode(message.text) : null;
@@ -209,6 +210,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
             );
             reply = shortMessage((transcript ? `Распознано: ${transcript}\n\n` : "") + answer.text);
             errorCode = answer.errorCode;
+            document = answer.document;
           }
         }
         // Access lost or chat relinked while the model was working: no business data leaves Nexus.
@@ -217,6 +219,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
         const stillLinked = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), beforeDelivery);
         const permissions = await bounded(() => session!.permissions(["agent.use"]), beforeDelivery);
         if (stillLinked !== employee || !permissions.has("agent.use")) {
+          document = undefined;
           reply = TELEGRAM_TEXT.withheld;
           errorCode = "ANSWER_WITHHELD";
         }
@@ -225,6 +228,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   } catch {
     // Any failure before delivery, including a timeout: a fixed text without data. Nothing paid is
     // repeated; the accounting run (if any) was already closed or is settled by its TTL.
+    document = undefined;
     reply = TELEGRAM_TEXT.failed;
     errorCode = "PROCESSING_ERROR";
   }
@@ -249,7 +253,10 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     return;
   }
   try {
-    await deps.bot.call("sendMessage", { chat_id: message.chatId, text: reply, link_preview_options: { is_disabled: true } }, { timeoutMs: sendMs, signal: deadline });
+    // Exactly one delivery attempt, with the same deadline and access checks for files and text.
+    await deps.bot.call(document ? "sendDocument" : "sendMessage", document
+      ? { chat_id: message.chatId, caption: shortMessage(reply, 1000), document: new Blob(["\uFEFF" + document], { type: "text/plain;charset=utf-8" }) }
+      : { chat_id: message.chatId, text: reply, link_preview_options: { is_disabled: true } }, { timeoutMs: sendMs, signal: deadline });
     await status("completed", 0).catch(() => undefined);
   } catch (error) {
     // A definite refusal delivered nothing; anything else may have been delivered. Never resend.
@@ -262,7 +269,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
 async function askAgent(
   agent: TelegramAgent, session: EmployeeSession, employee: string, chatKey: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
   deadline: AbortSignal, runMs: number, progress: (stage: Stage, extra?: { runId?: string; error?: string }) => Promise<unknown>,
-): Promise<{ answer: { text: string; errorCode: string | null }; transcript: string }> {
+): Promise<{ answer: { text: string; errorCode: string | null; document?: string }; transcript: string }> {
   let transcript = "";
   const preparation = voice ? {
     reserveUsdMicros: SPEECH_RESERVE_MICROS,
@@ -290,6 +297,6 @@ async function askAgent(
     limits: { ...agent.limits, runDeadlineMs: Math.max(1_000, Math.min(agent.limits.runDeadlineMs, runMs)) },
     onReserved: async (id) => { await progress(voice ? "speech" : "model", { runId: id }); },
   });
-  if (outcome.ok) return { answer: { text: telegramAnswer(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null }, transcript };
+  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null }, transcript };
   return { answer: { text: outcome.message, errorCode: /^[A-Z][A-Z_]{1,63}$/.test(outcome.code) ? outcome.code : "PROCESSING_ERROR" }, transcript };
 }

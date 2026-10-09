@@ -65,15 +65,17 @@ export async function transcribeVoice(bytes: Uint8Array, apiKey: string, signal:
   // Until the provider reports usage the cost is unknown and charged at the reservation: a sent
   // audio file may have been billed even if the answer was lost.
   let response: Response;
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS)]);
   try {
     response = await fetcher("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS)]), headers: { Authorization: `Bearer ${apiKey}` }, body: form,
+      method: "POST", redirect: "error", signal: requestSignal, headers: { Authorization: `Bearer ${apiKey}` }, body: form,
     });
   } catch {
-    throw new QuestionPreparationError("VOICE_PROVIDER", SPEECH_RESERVE_MICROS);
+    throw new QuestionPreparationError(requestSignal.aborted ? "VOICE_TIMEOUT" : "VOICE_PROVIDER", SPEECH_RESERVE_MICROS);
   }
   // A rejected request (4xx other than 408) is not processed; 408 and 5xx may have been.
-  if (!response.ok) throw new QuestionPreparationError("VOICE_PROVIDER", response.status >= 400 && response.status < 500 && response.status !== 408 ? 0 : SPEECH_RESERVE_MICROS);
+  if (!response.ok) console.warn("NEXUS_SPEECH_HTTP", response.status);
+  if (!response.ok) throw new QuestionPreparationError(response.status === 401 || response.status === 403 ? "VOICE_ACCESS" : response.status === 429 ? "VOICE_RATE_LIMIT" : "VOICE_PROVIDER", response.status >= 400 && response.status < 500 && response.status !== 408 ? 0 : SPEECH_RESERVE_MICROS);
   let result: { text?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
   try {
     result = JSON.parse(Buffer.from(await readBounded(response, 32000)).toString("utf8"));

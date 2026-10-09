@@ -201,7 +201,18 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       } catch (error) {
         preparationCost = error instanceof QuestionPreparationError ? error.costUsdMicros : deps.questionPreparation.reserveUsdMicros;
         await finish("failed", "AGENT_SPEECH_ERROR", true);
-        return { ok: false, code: "AGENT_SPEECH_ERROR", message: "Не удалось распознать голос. Попробуйте короткое сообщение или напишите вопрос текстом.", refunded: true };
+        const reason = error instanceof QuestionPreparationError ? error.message : "VOICE_UNKNOWN";
+        const messages: Record<string, string> = {
+          VOICE_DOWNLOAD: "Не удалось скачать голосовое сообщение из Telegram. Отправьте запись ещё раз.",
+          VOICE_FORMAT: "Формат голосового сообщения не удалось прочитать. Запишите новое голосовое прямо в Telegram.",
+          VOICE_DURATION: "Голосовое сообщение должно длиться не больше 60 секунд.",
+          VOICE_ACCESS: "Распознавание голоса недоступно: проверьте доступ ключа к аудио в настройках OpenAI.",
+          VOICE_RATE_LIMIT: "Сервис распознавания ограничил запросы. Попробуйте позже.",
+          VOICE_TIMEOUT: "Сервис распознавания не ответил вовремя. Отправьте голосовое ещё раз.",
+          VOICE_EMPTY: "В записи не удалось разобрать слова. Запишите вопрос ещё раз.",
+        };
+        console.warn("NEXUS_VOICE_FAILURE", reason in messages ? reason : "VOICE_PROVIDER");
+        return { ok: false, code: "AGENT_SPEECH_ERROR", message: messages[reason] ?? "Не удалось распознать голос. Попробуйте короткое сообщение или напишите вопрос текстом.", refunded: true };
       }
     }
     // Tools the user may call right now; the model never sees others, and each call is re-checked.

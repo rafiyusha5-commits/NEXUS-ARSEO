@@ -424,7 +424,7 @@ const CATALOG_FIELDS: ToolField[] = [
 ];
 const findProducts: AgentTool = {
   name: "find_products",
-  description: "Список товаров из справочника независимо от наличия на складе. Поиск по бренду (Merba), артикулу и названию. Для ассортимента и полного списка товаров используй этот инструмент, а не остатки. До 20 товаров на страницу; offset позволяет получить следующую страницу.",
+  description: "Список товаров из справочника независимо от наличия на складе. Поиск по бренду (Merba), артикулу и названию. Для ассортимента и полного списка товаров используй этот инструмент, а не остатки. Автоматически собирает список до 200 товаров страницами по 20; offset позволяет продолжить большой каталог.",
   permissions: ["products.view"],
   params: {
     query: { type: "string", maxLength: 60, pattern: SEARCH_TEXT, optional: true, description: "Бренд, артикул или название, например Merba" },
@@ -434,15 +434,29 @@ const findProducts: AgentTool = {
   fields: CATALOG_FIELDS, maxRows: 1, timeoutMs: DEFAULT_TIMEOUT_MS,
   async run(ctx, params) {
     const offset = Number(params.offset ?? 0), limit = Number(params.limit ?? 20);
-    const { rows, total } = await ctx.data.findProducts({ query: params.query as string | undefined, offset, limit }, ctx.signal);
-    const shown = rows.slice(0, limit);
+    const input = { query: params.query as string | undefined, offset, limit };
+    const first = await ctx.data.findProducts(input, ctx.signal);
+    const total = first.total;
+    const shown = first.rows.slice(0, limit);
+    let consistent = true;
+    // Bounded database pagination, independent of the model's ability to request more pages.
+    if (offset === 0 && limit === 20 && total !== null) {
+      while (shown.length < Math.min(total, 200) && shown.length % limit === 0) {
+        if (ctx.signal.aborted) throw new Error("TOOL_TIMEOUT");
+        const next = await ctx.data.findProducts({ ...input, offset: shown.length }, ctx.signal);
+        if (next.total !== total) consistent = false;
+        if (!next.rows.length) break;
+        shown.push(...next.rows.slice(0, Math.min(limit, 200 - shown.length)));
+      }
+    }
     const list = shown.map((row, index) => `${offset + index + 1}. ${maskDataText(str(row.internal_sku), 60) ?? "Без артикула"} — ${maskDataText(localized(row.name), 160) ?? "Без названия"}${row.brand ? ` · ${maskDataText(str(row.brand), 60)}` : ""}`).join("\n");
-    const incomplete = offset > 0 || total === null || total > shown.length || rows.length > limit;
+    const incomplete = !consistent || offset > 0 || total === null || total > shown.length || first.rows.length > limit;
     return result([project("Каталог товаров Nexus", CATALOG_FIELDS, {
       product_list: list || "Товары по этому поиску в справочнике не найдены.", products_total: total,
       products_shown: shown.length, search_query: maskDataText(str(params.query), 60),
     })], incomplete, total, [
       "Это справочник товаров: наличие на складе проверяется отдельно.",
+      ...(!consistent ? ["Каталог изменился во время чтения: список может быть неполным."] : []),
       incomplete ? `Страница с позиции ${offset + 1}: показано ${shown.length} товаров; полный список откройте в справочнике товаров с тем же поиском.` : `Полный результат поиска: ${shown.length} товаров.`,
     ]);
   },

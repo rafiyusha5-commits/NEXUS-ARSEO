@@ -78,6 +78,7 @@ export class FakeDatabase {
 export class FakeBot implements TelegramBot {
   readonly sent: string[] = [];
   readonly methods: string[] = [];
+  readonly documents: Blob[] = [];
   sendError: Error | null = null;
   downloadError = false;
   /** sendMessage that takes this long; it honours the caller's timeout and deadline like the real client. */
@@ -85,7 +86,7 @@ export class FakeBot implements TelegramBot {
   readonly sends: Array<{ at: number; timeoutMs: number }> = [];
   async call(method: string, payload: Record<string, unknown> = {}, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
     this.methods.push(method);
-    if (method === "sendMessage") {
+    if (method === "sendMessage" || method === "sendDocument") {
       this.sends.push({ at: Date.now(), timeoutMs: options.timeoutMs ?? Infinity });
       if (this.sendDelayMs) {
         const abort = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(options.timeoutMs ?? 12_000)]);
@@ -94,7 +95,8 @@ export class FakeBot implements TelegramBot {
           abort.addEventListener("abort", () => { clearTimeout(timer); reject(new TelegramError("TELEGRAM_UNAVAILABLE")); }, { once: true });
         });
       }
-      this.sent.push(String(payload.text));
+      if (method === "sendDocument") this.documents.push(payload.document as Blob);
+      this.sent.push(String(payload.text ?? payload.caption));
       if (this.sendError) throw this.sendError;
       return { message_id: 1 };
     }

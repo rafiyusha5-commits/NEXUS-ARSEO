@@ -10,7 +10,7 @@ export class TelegramError extends Error {
   }
 }
 
-export type TelegramMethod = "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction" | "getFile";
+export type TelegramMethod = "getMe" | "getUpdates" | "getWebhookInfo" | "sendMessage" | "sendChatAction" | "getFile" | "sendDocument";
 /** The part of the client the message pipeline uses; tests substitute it. */
 export type TelegramBot = Pick<TelegramClient, "call" | "downloadVoice">;
 
@@ -25,9 +25,18 @@ export class TelegramClient {
   async call(method: TelegramMethod, payload: Record<string, unknown> = {}, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
     const timeout = AbortSignal.timeout(options.timeoutMs ?? (method === "getUpdates" ? 35000 : 12000));
     try {
+      let form: FormData | undefined;
+      if (method === "sendDocument") {
+        if (!(payload.document instanceof Blob)) throw new TelegramError("TELEGRAM_REJECTED");
+        form = new FormData();
+        for (const [key, value] of Object.entries(payload)) {
+          if (key === "document") form.append(key, value as Blob, "nexus-answer.txt");
+          else if (typeof value === "string" || typeof value === "number") form.append(key, String(value));
+        }
+      }
       const response = await this.fetcher(`https://api.telegram.org/bot${this.token}/${method}`, {
         method: "POST", redirect: "error", signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        headers: form ? undefined : { "Content-Type": "application/json" }, body: form ?? JSON.stringify(payload),
       });
       if (response.status === 401) throw new TelegramError("TELEGRAM_UNAUTHORIZED");
       if (response.status === 409) throw new TelegramError("TELEGRAM_CONFLICT");
