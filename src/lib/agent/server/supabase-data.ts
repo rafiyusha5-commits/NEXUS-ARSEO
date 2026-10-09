@@ -1,4 +1,5 @@
 import "server-only";
+import { SYSTEM_BY_KEY, sectionAllowed } from "../system-registry.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentDataSource, ShipmentRow } from "../types.ts";
 
@@ -33,7 +34,98 @@ function searchTerm(value: string): string {
 }
 
 export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSource {
+  async function withCurrencies(rows: ShipmentRow[], signal: AbortSignal): Promise<ShipmentRow[]> {
+    const ids=[...new Set(rows.map(row=>row.currency_id??row.cost_currency_id).filter((id): id is string=>typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)))];
+    if(!ids.length) return rows;
+    const {data}=ensure(await supabase.from("currencies").select("id,code").in("id",ids).abortSignal(signal));
+    const codes=new Map((data as ShipmentRow[]).map(row=>[row.id,row.code]));
+    return rows.map(row=>({...row,currency_code:codes.get(row.currency_id??row.cost_currency_id)??null}));
+  }
   return {
+    async verifySystemAccess(records, signal) {
+      const grouped=new Map<string,Set<string>>();
+      for(const record of records){
+        const section=SYSTEM_BY_KEY.get(record.section); if(!section) return false;
+        if(section.rpc) continue; // RPC domains are additionally protected by their exact captured permissions.
+        const ids=grouped.get(section.key)??new Set<string>();record.ids.forEach(id=>ids.add(id));grouped.set(section.key,ids);
+      }
+      const checks=await Promise.all([...grouped].map(async([key,ids])=>{
+        const section=SYSTEM_BY_KEY.get(key)!;
+        if(!ids.size) return true;
+        const response=await supabase.from(section.table).select(section.idColumn).in(section.idColumn,[...ids]).abortSignal(signal);
+        if(response.error) return false;
+        const visible=new Set((response.data as unknown as ShipmentRow[]).map(row=>String(row[section.idColumn])));
+        return [...ids].every(id=>visible.has(id));
+      }));
+      return checks.every(Boolean);
+    },
+    async readSystem(input, signal) {
+      const section = SYSTEM_BY_KEY.get(input.section);
+      if (!section) throw new DataError();
+      const permissions = await supabase.rpc("my_permissions", { p_codes: [...section.permissions, ...section.anyPermissions, "prices.purchase.view"] }).abortSignal(signal);
+      if (permissions.error || !Array.isArray(permissions.data) || !sectionAllowed(section, new Set(permissions.data))) throw new DataError();
+      const grants = new Set(permissions.data);
+      const parentField = input.relatedBy ?? section.parent;
+      if (input.relatedBy && (!section.columns.includes(input.relatedBy) || !input.relatedBy.endsWith("_id"))) throw new DataError();
+      if (input.parentId && !parentField) throw new DataError();
+      if (section.rpc) {
+        if(input.relatedBy && input.relatedBy!==section.parent) throw new DataError();
+        const id=input.parentId??input.recordId;
+        if(section.rpc === "my_shipment_calendar") {
+          const from=input.date??new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Aqtobe"}).format(new Date());
+          const to=input.dateTo??from;
+          const next=new Date(Date.parse(to)+86400000).toISOString().slice(0,10);
+          if(to<from || Date.parse(next)-Date.parse(from)>370*86400000) throw new DataError();
+          const {data}=ensure(await supabase.rpc(section.rpc,{p_from:`${from}T00:00:00+05:00`,p_to:`${next}T00:00:00+05:00`}).abortSignal(signal));
+          const term=input.query?searchTerm(input.query).toLowerCase():"";
+          const rows=(data as ShipmentRow[]).filter(row=>(!input.parentId || row.shipment_id===input.parentId)&&(!input.status || row.event_status===input.status)&&(!term || `${row.title} ${row.shipment_number}`.toLowerCase().includes(term)));
+          return {rows:rows.slice(input.offset,input.offset+input.limit),total:rows.length};
+        }
+        if(!id) throw new DataError();
+        const args = section.rpc === "my_product_purchase_prices" ? {p_product_ids:[id]}
+          : section.rpc === "my_shipment_item_purchase_prices" ? {p_shipment_id:id}
+          : section.rpc === "my_inventory_batch_costs" ? {p_product_id:id} : null;
+        if(!args) throw new DataError();
+        const {data}=ensure(await supabase.rpc(section.rpc,args).abortSignal(signal));
+        const rows=(data as ShipmentRow[]).map(row=>section.key === "shipment_prices"?{...row,shipment_id:id}:row);
+        return {rows:await withCurrencies(rows.slice(input.offset,input.offset+input.limit),signal),total:rows.length};
+      }
+      let request = supabase.from(section.table).select(section.columns.join(","), { count: "exact" })
+        .order(section.date || section.idColumn, { ascending: !section.date }).range(input.offset, input.offset + input.limit - 1).abortSignal(signal);
+      if (input.recordId) request = request.eq(section.idColumn, input.recordId);
+      if (input.parentId) request = request.eq(parentField, input.parentId);
+      if (section.key === "notifications") request = request.eq("recipient_user_id", input.userId);
+      if (input.status) {
+        if (!section.columns.includes("status")) throw new DataError();
+        request = request.eq("status", input.status);
+      }
+      const term = input.query ? searchTerm(input.query) : "";
+      if (term) {
+        if (!section.search.length) throw new DataError();
+        request = request.or(section.search.map(field => `${field}.ilike.%${term}%`).join(","));
+      }
+      if (input.date && input.dateTo && input.date > input.dateTo) throw new DataError();
+      if (input.date || input.dateTo) {
+        if (!section.date) throw new DataError();
+        if (input.date) request = request.gte(section.date, section.date.endsWith("_at") ? `${input.date}T00:00:00+05:00` : input.date);
+        if (input.dateTo) {
+          const nextDate=new Date(Date.parse(input.dateTo) + 86400000).toISOString().slice(0, 10);
+          request = request.lt(section.date, section.date.endsWith("_at") ? `${nextDate}T00:00:00+05:00` : nextDate);
+        }
+      }
+      const { data, count } = ensure(await request);
+      let rows = data as unknown as ShipmentRow[];
+      if (section.key === "calculator" || section.key === "calculator_finance") {
+        const keys = [...new Set(rows.map(row => String(row.source_key)))];
+        const sources = ensure(await supabase.rpc("my_product_master_sources", { p_source_keys: keys }).abortSignal(signal)).data as ShipmentRow[];
+        const confidential = section.key === "calculator_finance" && grants.has("prices.purchase.view") && (input.parentId || input.recordId)
+          ? ensure(await supabase.rpc("my_product_master_confidential_data", { p_product_ids: [input.parentId ?? input.recordId] }).abortSignal(signal)).data as ShipmentRow[] : [];
+        rows = rows.map(row => ({ ...row, source_columns: sources.find(source => source.source_key === row.source_key)?.columns,
+          confidential_data: confidential.find(item => item.source_key === row.source_key)?.confidential_data }));
+      }
+      return { rows: await withCurrencies(rows, signal), total: count };
+    },
+
     async findShipments({ query, status, type, date, dateKind = "any", limit }, signal) {
       const load = async (kind: "ready" | "arrival" | "loading" | "any"): Promise<{ rows: ShipmentRow[]; total: number | null }> => {
       let request = supabase.from("shipments")

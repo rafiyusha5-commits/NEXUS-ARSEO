@@ -10,7 +10,7 @@ type Event =
   | { type: "error"; code: string; message: string; refunded: boolean };
 
 // Only server-built relative links to known Nexus pages are rendered.
-const SAFE_LINK = /^\/(shipments|documents)\/[0-9a-f-]{36}$|^\/tasks$|^\/products\?q=[^\s]*$/;
+const SAFE_LINK = /^\/(shipments|documents|products|counterparties|warehouses|sales|templates|listing-cards)\/[0-9a-f-]{36}$|^\/(tasks|routes|suppliers|notifications|calendar|inventory|inventory\/movements|stickers|forecasts|purchase-plans|commercial-programs|finance|integrations|audit|admin\/users|admin\/roles)$|^\/products\?q=[^\s]*$/;
 
 export function AssistantChat({ initialUsed, limit }: { initialUsed: number; limit: number }) {
   const [question, setQuestion] = useState("");
@@ -78,7 +78,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
           <textarea name="question" rows={3} maxLength={1000} value={question} onChange={(event) => setQuestion(event.target.value)}
             placeholder="Например: какие поставки задерживаются? Какие документы есть по поставке NAR-2026-0001?" disabled={busy} />
         </label>
-        <p className="form-help doc-form-full">Контекст последних вопросов сохраняется на 30 минут в этой беседе. Данные проверяются заново. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Закупочные цены и себестоимость ассистенту недоступны.</p>
+        <p className="form-help doc-form-full">Контекст последних вопросов сохраняется на 30 минут в этой беседе. Данные проверяются заново. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Финансовые данные доступны только по вашим правам.</p>
         <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button> <button type="button" disabled={busy} onClick={() => { conversation.current = null; setAnswer(null); setStages([]); setError(null); setQuestion(""); }}>Новая беседа</button></div>
       </form>
 

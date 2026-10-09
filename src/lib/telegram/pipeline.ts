@@ -165,6 +165,8 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   const beforeDelivery = timing.deliveryMs + timing.closeMs;
   let reply: string;
   let document: string | undefined;
+  let accessRequirements: { all: string[]; any: string[] }[] = [];
+  let accessRecords: {section:string;ids:string[]}[]=[];
   let errorCode: string | null = null;
   try {
     const code = message.text ? startCode(message.text) : null;
@@ -211,14 +213,17 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
             reply = shortMessage((transcript ? `Распознано: ${transcript}\n\n` : "") + answer.text);
             errorCode = answer.errorCode;
             document = answer.document;
+            accessRequirements = answer.accessRequirements ?? [];
+            accessRecords = answer.accessRecords ?? [];
           }
         }
         // Access lost or chat relinked while the model was working: no business data leaves Nexus.
         // A check that does not finish in time fails closed (catch below): no data is sent.
         await progress("access_check", {}, beforeDelivery);
         const stillLinked = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), beforeDelivery);
-        const permissions = await bounded(() => session!.permissions(["agent.use"]), beforeDelivery);
-        if (stillLinked !== employee || !permissions.has("agent.use")) {
+        const permissions = await bounded(() => session!.permissions(["agent.use", ...accessRequirements.flatMap(group => [...group.all,...group.any])]), beforeDelivery);
+        const recordsVisible = !accessRecords.length || await bounded(()=>session!.data.verifySystemAccess(accessRecords,deadline),beforeDelivery);
+        if (!recordsVisible || stillLinked !== employee || !permissions.has("agent.use") || accessRequirements.some(group => !group.all.every(code => permissions.has(code)) || (group.any.length && !group.any.some(code => permissions.has(code))))) {
           document = undefined;
           reply = TELEGRAM_TEXT.withheld;
           errorCode = "ANSWER_WITHHELD";
@@ -269,7 +274,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
 async function askAgent(
   agent: TelegramAgent, session: EmployeeSession, employee: string, chatKey: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
   deadline: AbortSignal, runMs: number, progress: (stage: Stage, extra?: { runId?: string; error?: string }) => Promise<unknown>,
-): Promise<{ answer: { text: string; errorCode: string | null; document?: string }; transcript: string }> {
+): Promise<{ answer: { text: string; errorCode: string | null; document?: string; accessRequirements?: { all: string[]; any: string[] }[]; accessRecords?: {section:string;ids:string[]}[] }; transcript: string }> {
   let transcript = "";
   const preparation = voice ? {
     reserveUsdMicros: SPEECH_RESERVE_MICROS,
@@ -297,6 +302,6 @@ async function askAgent(
     limits: { ...agent.limits, runDeadlineMs: Math.max(1_000, Math.min(agent.limits.runDeadlineMs, runMs)) },
     onReserved: async (id) => { await progress(voice ? "speech" : "model", { runId: id }); },
   });
-  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null }, transcript };
+  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null, accessRequirements: outcome.answer.accessRequirements, accessRecords: outcome.answer.accessRecords }, transcript };
   return { answer: { text: outcome.message, errorCode: /^[A-Z][A-Z_]{1,63}$/.test(outcome.code) ? outcome.code : "PROCESSING_ERROR" }, transcript };
 }

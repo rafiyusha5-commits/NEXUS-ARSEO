@@ -24,6 +24,8 @@ export const SECRET_VALUES = {
 
 export function fakeData(overrides: Partial<AgentDataSource> = {}): AgentDataSource {
   return {
+    async verifySystemAccess() { return true; },
+    async readSystem() { return { rows: [], total: 0 }; },
     async findShipments() {
       return {
         rows: [{

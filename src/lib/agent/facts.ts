@@ -2,6 +2,7 @@
 // and fields of that row. The statement shown as verified is assembled here, by code, from the row's
 // subject (built by the tool from the data) and the selected values. Anything the model writes in its
 // own words is commentary and is always shown separately as unverified.
+import { SYSTEM_BY_KEY } from "./system-registry.ts";
 import { maskSensitive } from "./masking.ts";
 import { AGENT_TIME_ZONE } from "./time.ts";
 import type { AgentAnswer, AgentTool, Commentary, FactValue, ToolField, ToolResult, VerifiedFact } from "./types.ts";
@@ -44,7 +45,7 @@ export const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export type CallRecord = { tool: AgentTool; result: ToolResult };
+export type CallRecord = { tool: AgentTool; result: ToolResult; access?: { all: string[]; any: string[] }; records?: { section: string; ids: string[] } };
 
 type RawFact = { call: string; row: number; fields: string[] };
 type RawCommentary = { kind: "assumption" | "explanation"; text: string };
@@ -98,8 +99,15 @@ function cleanText(text: string): string {
   return maskSensitive(text.replace(URL, (_m, linkText?: string) => linkText ?? "").replace(/\s+/g, " ").trim()).text;
 }
 
-function link(entity: { type: string; id: string } | undefined): string | undefined {
+function link(entity: { type: string; id: string; section?: string } | undefined): string | undefined {
   if (!entity) return undefined;
+  if (entity.type === "system") {
+    const section=SYSTEM_BY_KEY.get(entity.section??"");
+    if (!section) return undefined;
+    if (section.key === "products" || section.key === "product_prices" || section.key === "calculator" || section.key === "calculator_finance") return `/products/${entity.id}`;
+    if (["counterparties","warehouses","shipments","sales","documents","templates","listing_cards"].includes(section.key)) return `${section.path}/${entity.id}`;
+    return section.path || undefined;
+  }
   if (entity.type === "shipment") return `/shipments/${entity.id}`;
   if (entity.type === "document") return `/documents/${entity.id}`;
   if (entity.type === "task") return "/tasks";
@@ -121,7 +129,7 @@ function buildFact(raw: RawFact, index: number, calls: ReadonlyMap<string, CallR
     rejected.push(`${position}: ссылка на запрос, которого не было.`);
     return null;
   }
-  const fields = [...new Set(raw.fields)];
+  const fields = [...new Set([...raw.fields, ...(raw.fields.includes("record_details") ? call.tool.fields.filter(field => (field.kind === "protected" || field.kind === "financial") && call.result.rows[raw.row]?.values[field.key] != null).map(field => field.key) : [])])];
   const aggregate = fields.filter((field) => field === "$count" || field === "$total");
   if (aggregate.length) {
     if (aggregate.length !== fields.length) rejected.push(`${position}: количество записей нельзя смешивать с полями записи.`);
@@ -153,7 +161,7 @@ function buildFact(raw: RawFact, index: number, calls: ReadonlyMap<string, CallR
       rejected.push(`${position}: у объекта «${row.subject}» нет значения «${field.label}».`);
       continue;
     }
-    values.push({ field: key, label: field.label, value: formatValue(field, value) });
+    values.push({ field: key, label: field.label, value: formatValue(field, value), ...(field.kind === "protected" || field.kind === "financial" ? { kind: field.kind } : {}) });
   }
   if (!values.length) return null;
   const href = link(row.entity);
@@ -178,6 +186,17 @@ export function verifyAnswer(raw: RawAnswer, calls: ReadonlyMap<string, CallReco
       complete.link = { label: "Справочник товаров", href: `/products?q=${encodeURIComponent(String(call.result.rows[0]?.values.search_query ?? ""))}` };
       facts.push(complete);
     }
+  }
+  // A requested system page is rendered completely by code, rather than depending on how many
+  // of its records the model selected (its JSON schema has a smaller fact limit).
+  for(let index=facts.length-1;index>=0;index--) if(["search_system","get_system_record"].includes(facts[index].source.tool) && facts[index].source.row>=0) facts.splice(index,1);
+  for (const [id, call] of calls) if (["search_system", "get_system_record"].includes(call.tool.name)) {
+    const countOnly=raw.facts.some(fact=>fact.call===id && fact.fields.every(field=>field==="$count"||field==="$total"));
+    if (countOnly) continue;
+    call.result.rows.forEach((_,row)=>{
+      const fact=buildFact({call:id,row,fields:["record_details"]},facts.length,calls,rejected);
+      if(fact) facts.push(fact);
+    });
   }
   // Free text is never verified: masked, stripped of links and shown apart from the facts.
   const commentary: Commentary[] = raw.commentary

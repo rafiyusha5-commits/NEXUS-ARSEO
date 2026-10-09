@@ -65,3 +65,14 @@ it("short catalogue replies retain newlines and their final product", () => {
   assert.equal(delivery.document, undefined);
   assert.match(delivery.text, /\n20\. Товар 20/);
 });
+
+it("revoking a financial permission immediately before delivery suppresses both the file and text",async()=>{
+ const h=harness(new ScriptedProvider([toolCall("price","get_system_record",{section:"product_prices",record_id:"11111111-1111-4111-8111-111111111111"}),finalAnswer({facts:[{call:"price",row:0,fields:["record_details"]}],commentary:[],limitations:[]})]));
+ h.granted.add("products.view");h.granted.add("prices.purchase.view");
+ const open=h.deps.openSession;
+ h.deps.openSession=async(...args)=>({...await open(...args),data:fakeData({async readSystem(){return {rows:[{product_id:"11111111-1111-4111-8111-111111111111",base_purchase_price:77.66}],total:1};}})});
+ const rpc=h.deps.rpc;let checks=0;
+ h.deps.rpc=async(name,args)=>{if(name==="telegram_employee" && ++checks===2) h.granted.delete("prices.purchase.view");return rpc(name,args);};
+ await processTelegramMessage(update(904,{text:"Цена"}),h.deps);
+ assert.equal(h.bot.documents.length,0);assert.doesNotMatch(h.bot.sent.join(),/77[,.]66/);assert.equal(h.db.updates.get(904)?.error,"ANSWER_WITHHELD");
+});

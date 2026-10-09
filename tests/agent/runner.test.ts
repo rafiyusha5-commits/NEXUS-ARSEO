@@ -97,7 +97,8 @@ describe("assistant run: token limits count unknown usage at its bound", () => {
   });
 
   it("counts an unknown input at its estimate against the total input limit", async () => {
-    const limits = { ...TEST_LIMITS, maxInputTokensTotal: 8_000 };
+    // The expanded tool schemas are part of each request estimate; keep enough room for one call.
+    const limits = { ...TEST_LIMITS, maxInputTokensTotal: 20_000 };
     const inputUnknown = new ScriptedProvider(["c1", "c2", "c3", "c4"].map((id) => call(id, { inputTokens: 0, outputTokens: 50 }, { input: true, output: false })));
     const d = deps(inputUnknown, { limits });
     const outcome = await runAgent("Справка по документам", d);
@@ -315,7 +316,7 @@ describe("assistant run", () => {
     const provider = new ScriptedProvider([finalAnswer(NOTE("Нет данных."))]);
     await runAgent("Остатки?", deps(provider, { permissions: permissionsOf(["agent.use", "shipments.view"]) }));
     const offered = provider.requests[0].tools.map((tool) => tool.name).sort();
-    assert.deepEqual(offered, ["find_shipments", "get_help", "get_shipment", "get_shipment_vehicles", "list_delayed_shipments"]);
+    assert.deepEqual(offered, ["find_shipments", "get_help", "get_shipment", "get_shipment_vehicles", "get_system_record", "list_delayed_shipments", "search_system"]);
   });
 
   it("refuses without agent.use and does not reserve", async () => {

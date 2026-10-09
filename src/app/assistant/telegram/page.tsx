@@ -31,7 +31,7 @@ export default async function TelegramPage({ searchParams }: { searchParams: Pro
     {query.success && <p className="setup-notice">{query.success === "confirmed" ? "Telegram подключён. Теперь можно задавать вопросы боту." : "Telegram отключён."}</p>}
     {!can["agent.use"] ? <p className="login-error">Нет права пользоваться ассистентом.</p> : !config ? <p className="setup-notice">Telegram ещё не настроен на сервере Nexus.</p> : result?.error ? <p className="setup-notice">Примените миграцию 202609275300_agent_telegram.sql.</p> : <>
       <section className="panel admin-section"><h2>{link?.chat_id ? "Telegram подключён" : "Подключить личный чат"}</h2>
-        <p>Бот: @{config.username}. Ответы только по вашим правам. Лимит вопросов и бюджет общие с веб-чатом. Закупочные цены, себестоимость и данные водителей не передаются. Каждый вопрос обрабатывается отдельно.</p>
+        <p>Бот: @{config.username}. Ответы только по вашим правам. Лимит вопросов и бюджет общие с веб-чатом. Финансовые ответы доступны только с соответствующими правами. Номера удостоверений, паспортные данные и секреты не передаются. Контекст последних четырёх вопросов действует 30 минут; /new начинает новую беседу.</p>
         <p>При локальном запуске бот работает, пока компьютер и Nexus включены. Поддерживаются текстовые и голосовые вопросы до 60 секунд. Голос распознаёт OpenAI; файл в Nexus не сохраняется, расход входит в общий бюджет.</p>
         {link?.chat_id && <><p>Подключён чат: {link.display_name || "без имени"} · ID {link.chat_id}</p><form action={unlinkTelegram}><button className="ghost" type="submit">Отключить Telegram</button></form></>}
         <TelegramLink />

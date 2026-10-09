@@ -6,7 +6,7 @@ const safe = (text: string) => maskDataText(text, 3900) ?? "";
 function fullTelegramAnswer(answer: AgentAnswer, used: number, limit: number): string {
   const parts: string[] = [];
   // Facts are built by code from masked tool rows; free model text keeps the strict data rule.
-  for (const fact of answer.facts) parts.push(["Факт · данные Nexus", maskFactText(fact.subject), ...fact.values.map(value => maskFactText(`${value.label}: ${value.value}`, value.field === "product_list" ? value.value.length + value.label.length + 10 : 400, value.field === "product_list"))].join("\n"));
+  for (const fact of answer.facts) parts.push(["Факт · данные Nexus", maskFactText(fact.subject), ...fact.values.map(value => value.kind === "protected" || value.kind === "financial" ? `${value.label}: ${value.value}` : maskFactText(`${value.label}: ${value.value}`, ["product_list", "record_details"].includes(value.field) ? value.value.length + value.label.length + 10 : 400, ["product_list", "record_details"].includes(value.field)))].join("\n"));
   for (const item of answer.commentary) parts.push(`${item.kind === "assumption" ? "Предположение" : "Пояснение · не проверено"}\n${safe(item.text)}`);
   if (answer.limitations.length) parts.push("Ограничения\n" + answer.limitations.map(safe).join("\n"));
   if (!parts.length) parts.push("Подтверждённых данных для ответа нет. Уточните вопрос.");

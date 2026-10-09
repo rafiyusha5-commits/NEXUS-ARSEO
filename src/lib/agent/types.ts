@@ -2,21 +2,22 @@
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-export type FieldKind = "id" | "text" | "date" | "datetime" | "number" | "status" | "count";
+export type FieldKind = "id" | "text" | "date" | "datetime" | "number" | "status" | "count" | "protected" | "financial";
 
 /** One output field of a tool: only listed fields ever leave the server. */
 export type ToolField = { key: string; label: string; kind: FieldKind };
 
 /** A row reference the server can turn into a link; never a URL from the model. */
-export type EntityRef = { type: "shipment" | "document" | "task"; id: string };
+export type EntityRef = { type: "shipment" | "document" | "task" | "system"; id: string; section?: string };
 
 /**
  * One result row. `subject` names the object the row describes (shipment, vehicle, document…); it is
  * built by the tool from the data, so a verified statement never takes its object from the model.
  */
-export type ToolRow = { subject: string; values: Record<string, string | number | null>; entity?: EntityRef };
+export type ToolRow = { subject: string; values: Record<string, string | number | null>; entity?: EntityRef; references?: Record<string, string> };
 
 export type ToolResult = {
+  requiredPermissions?: string[];
   rows: ToolRow[];
   /** True when the tool stopped at its row limit: the answer must not claim completeness. */
   truncated: boolean;
@@ -45,6 +46,7 @@ export type AgentTool = {
   /** Every permission must be held at call time; checked by the server, not by the model. */
   permissions: readonly string[];
   params: Record<string, ParamSchema>;
+  scope?: { param: string; sections: readonly { key: string; permissions: readonly string[]; anyPermissions: readonly string[] }[] };
   fields: readonly ToolField[];
   maxRows: number;
   timeoutMs: number;
@@ -58,6 +60,9 @@ export type ShipmentRow = Record<string, unknown>;
  * the columns the tools need; tools project the result through their allow-lists again.
  */
 export interface AgentDataSource {
+  verifySystemAccess(records: { section: string; ids: string[] }[], signal: AbortSignal): Promise<boolean>;
+  readSystem(input: { section: string; userId: string; recordId?: string; query?: string; status?: string; date?: string; dateTo?: string; parentId?: string; relatedBy?: string; offset: number; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
+
   findShipments(input: { query?: string; status?: string; type?: string; date?: string; dateKind?: "ready" | "arrival" | "loading" | "any"; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
   getShipment(id: string, signal: AbortSignal): Promise<ShipmentRow | null>;
   getShipmentStages(id: string, signal: AbortSignal): Promise<ShipmentRow[]>;
@@ -164,7 +169,7 @@ export interface AgentLedger {
   finish(reservation: Reservation, input: FinishInput): Promise<void>;
 }
 
-export type FactValue = { label: string; value: string; field: string };
+export type FactValue = { label: string; value: string; field: string; kind?: "protected" | "financial" };
 
 /** A statement assembled by code from one object of one tool result; never written by the model. */
 export type VerifiedFact = {
@@ -178,6 +183,8 @@ export type VerifiedFact = {
 export type Commentary = { kind: "assumption" | "explanation"; text: string };
 
 export type AgentAnswer = {
+  accessRequirements?: { all: string[]; any: string[] }[];
+  accessRecords?: { section: string; ids: string[] }[];
   facts: VerifiedFact[];
   commentary: Commentary[];
   /** Model selections the server refused (missing row, unknown field, empty value). */

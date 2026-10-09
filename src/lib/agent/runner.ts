@@ -66,7 +66,7 @@ const LEDGER_CODES = new Set(["AGENT_FORBIDDEN", "AGENT_DAILY_LIMIT", "AGENT_MON
 const TOOL_STAGE: Record<string, string> = {
   find_shipments: "Ищу поставки", get_shipment: "Читаю карточку поставки", get_shipment_vehicles: "Читаю автомобили поставки",
   get_shipment_documents: "Читаю документы поставки", get_document_extraction: "Читаю результаты распознавания",
-  find_products: "Ищу товары в справочнике", list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
+  search_system: "Ищу информацию в Nexus", get_system_record: "Читаю подробную карточку", find_products: "Ищу товары в справочнике", list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
 };
 const MAX_TOOL_CONTENT = 12_000;
 const MAX_TRACE_ENTRIES = 30;
@@ -94,8 +94,10 @@ export function toolContent(callId: string, tool: AgentTool, result: ToolResult)
     row: index,
     subject: maskOutgoing(row.subject),
     // Record identifier for follow-up tools (get_shipment and others); never shown to the user as text.
-    ...(row.entity && row.entity.type !== "task" ? { [`${row.entity.type}_id`]: row.entity.id } : {}),
-    ...Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, typeof value === "string" ? maskOutgoing(value) : value])),
+    ...(row.references ? { references: row.references } : {}),
+    ...(row.entity?.type === "system" ? { section: row.entity.section, record_id: row.entity.id } : {}),
+    ...(row.entity && row.entity.type !== "task" && row.entity.type !== "system" ? { [`${row.entity.type}_id`]: row.entity.id } : {}),
+    ...Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, tool.fields.some(field => field.key === key && field.kind === "protected") ? "[доступно сотруднику; скрыто для модели]" : typeof value === "string" ? maskOutgoing(value) : value])),
   }));
   let payload = JSON.stringify({ call: callId, tool: tool.name, truncated: result.truncated, total: result.total, notes: result.notes, rows });
   while (payload.length > MAX_TOOL_CONTENT && rows.length) {
@@ -105,11 +107,11 @@ export function toolContent(callId: string, tool: AgentTool, result: ToolResult)
   return payload;
 }
 
-function estimateTokens(messages: ModelMessage[]): number {
+function estimateTokens(messages: ModelMessage[], definitions?: unknown): number {
   const chars = messages.reduce((sum, message) => sum + (("content" in message && message.content) ? message.content.length : 0)
     + (message.role === "assistant" ? (message.toolCalls ?? []).reduce((acc, call) => acc + call.arguments.length + call.name.length, 0) : 0), 0);
   // Cyrillic is about two characters per token; add room for tool definitions and the schema.
-  return Math.ceil(chars / 2) + 3_000;
+  return Math.ceil(chars / 2) + (definitions ? Math.max(3000, Math.ceil(JSON.stringify(definitions).length / 2) + 1000) : 3000);
 }
 
 function safeParams(params: Record<string, string | number>): Record<string, string | number> {
@@ -216,9 +218,14 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       }
     }
     // Tools the user may call right now; the model never sees others, and each call is re-checked.
-    const toolGrants = await deps.permissions([...new Set(AGENT_TOOLS.flatMap((tool) => tool.permissions))]);
-    const visibleTools = AGENT_TOOLS.filter((tool) => channelAllowsTool(deps.channel, tool.name) && tool.permissions.every((code) => toolGrants.has(code)));
-    const toolSpecs = visibleTools.map((tool) => ({ name: tool.name, description: tool.description, parameters: toJsonSchema(tool.params) }));
+    const toolGrants = await deps.permissions([...new Set(AGENT_TOOLS.flatMap((tool) => [...tool.permissions, ...(tool.scope?.sections.flatMap(section => [...section.permissions, ...section.anyPermissions]) ?? [])]))]);
+    const visibleTools = AGENT_TOOLS.filter((tool) => channelAllowsTool(deps.channel, tool.name) && tool.permissions.every((code) => toolGrants.has(code)) && (!tool.scope || tool.scope.sections.some(section => section.permissions.every(code => toolGrants.has(code)) && (!section.anyPermissions.length || section.anyPermissions.some(code => toolGrants.has(code))))));
+    const toolSpecs = visibleTools.map((tool) => {
+      const params = { ...tool.params };
+      if (tool.scope) params[tool.scope.param] = { type: "enum", description: tool.params[tool.scope.param].description,
+        values: tool.scope.sections.filter(section => section.permissions.every(code => toolGrants.has(code)) && (!section.anyPermissions.length || section.anyPermissions.some(code => toolGrants.has(code)))).map(section => section.key) };
+      return { name: tool.name, description: tool.description, parameters: toJsonSchema(params) };
+    });
 
     const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
     const previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
@@ -230,7 +237,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
 
     while (steps < deps.limits.maxSteps) {
       if (deadline.aborted) return fail("AGENT_TIMEOUT");
-      const estimate = estimateTokens(messages);
+      const estimate = estimateTokens(messages, { tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA });
       if (bounded.inputTokens + estimate > deps.limits.maxInputTokensTotal) return fail("AGENT_TOKEN_LIMIT");
       const maxOutput = Math.min(deps.limits.maxOutputTokensPerCall, deps.limits.maxOutputTokensTotal - bounded.outputTokens);
       if (maxOutput < 300) return fail("AGENT_TOKEN_LIMIT");
@@ -284,8 +291,11 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
             continue;
           }
           // Permission check at call time, independent of what the model was offered.
-          const current = await deps.permissions([...tool.permissions, "agent.use"]);
-          if (!current.has("agent.use") || !tool.permissions.every((code) => current.has(code))) {
+          const section = tool.scope?.sections.find(item => item.key === parsed.value[tool.scope!.param]);
+          const required = [...tool.permissions, ...(section?.permissions ?? [])];
+          const alternatives = section?.anyPermissions ?? [];
+          const current = await deps.permissions([...required, ...alternatives, "agent.use"]);
+          if (!current.has("agent.use") || !required.every(code => current.has(code)) || (tool.scope && !section) || (alternatives.length && !alternatives.some(code => current.has(code)))) {
             reply(JSON.stringify({ call: call.id, error: "PERMISSION_DENIED", message: "У сотрудника нет прав на эти данные." }));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: 0, truncated: false, ms: 0, error: "PERMISSION_DENIED" });
             continue;
@@ -294,12 +304,17 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
           const toolStarted = now();
           try {
             const result = await withTimeout(tool.timeoutMs, deadline, (signal) => tool.run({ userId: deps.userId, data: deps.data, signal }, parsed.value));
+            const extra=result.requiredPermissions??[];
+            if(extra.length) {
+              const extraGrants=await deps.permissions(extra);
+              if(!extra.every(code=>extraGrants.has(code))) throw new Error("PERMISSION_DENIED");
+            }
             const bounded = { ...result, rows: result.rows.slice(0, tool.maxRows) };
-            calls.set(call.id, { tool, result: bounded });
+            calls.set(call.id, { tool, result: bounded, access: { all: [...required,...extra,...alternatives.filter(code=>current.has(code))], any: [] }, ...(tool.scope ? { records:{section:String(parsed.value.section),ids:bounded.rows.map(row=>String(row.values.record_id??"")).filter(Boolean)} } : {}) });
             reply(toolContent(call.id, tool, bounded));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: bounded.rows.length, truncated: bounded.truncated, ms: now() - toolStarted });
           } catch (error) {
-            const code = error instanceof Error && error.message === "TOOL_TIMEOUT" ? "TOOL_TIMEOUT" : "TOOL_ERROR";
+            const code = error instanceof Error && error.message === "TOOL_TIMEOUT" ? "TOOL_TIMEOUT" : error instanceof Error && error.message === "PERMISSION_DENIED" ? "PERMISSION_DENIED" : "TOOL_ERROR";
             reply(JSON.stringify({ call: call.id, error: code, message: "Данные получить не удалось." }));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: 0, truncated: false, ms: now() - toolStarted, error: code });
           }
@@ -319,6 +334,13 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
         return fail("AGENT_BAD_ANSWER");
       }
       const answer = verifyAnswer(raw, calls);
+      const requirements = [...calls.values()].flatMap(call => call.access ? [call.access] : []);
+      const finalGrants = await deps.permissions(["agent.use", ...requirements.flatMap(group => [...group.all,...group.any])]);
+      if (!finalGrants.has("agent.use") || requirements.some(group => !group.all.every(code => finalGrants.has(code)) || (group.any.length && !group.any.some(code => finalGrants.has(code))))) return fail("AGENT_FORBIDDEN");
+      const records=[...calls.values()].flatMap(call=>call.records?[call.records]:[]);
+      if(records.length && !await deps.data.verifySystemAccess(records,deadline)) return fail("AGENT_FORBIDDEN");
+      answer.accessRequirements = requirements;
+      answer.accessRecords = records;
       await finish("completed", null, false);
       if (contextKey) conversationMemory.append(contextKey, question.text,
         JSON.stringify(trace.filter(entry => !entry.error && entry.name !== "speech_to_text").map(entry => ({ tool: entry.name, params: entry.params }))), now());
