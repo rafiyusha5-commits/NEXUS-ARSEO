@@ -144,12 +144,16 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
   let formatRetries = 0;
   let preparationCost = 0;
   // Calls whose result or usage is unknown (timeout, lost connection, missing or invalid counters)
-  // are charged at their worst case.
-  let unknownCost = 0;
+  // are charged and limited at their worst case.
+  // `usage` holds only tokens the provider reported; it is what the trace records. `bounded` adds
+  // the conservative estimate of every unknown counter and drives both the run's token limits and
+  // the money charged, so an answer without usage can neither escape the limits nor be free.
+  const bounded = { inputTokens: 0, outputTokens: 0 };
   const recordUsage = (reported: { inputTokens: number; outputTokens: number }, missing: UsageMissing, estimatedInput: number, maxOutput: number) => {
     if (!missing.input) usage.inputTokens += reported.inputTokens;
     if (!missing.output) usage.outputTokens += reported.outputTokens;
-    unknownCost += Math.ceil((missing.input ? estimatedInput * deps.pricing.inputUsdPerMTok : 0) + (missing.output ? maxOutput * deps.pricing.outputUsdPerMTok : 0));
+    bounded.inputTokens += missing.input ? estimatedInput : reported.inputTokens;
+    bounded.outputTokens += missing.output ? maxOutput : reported.outputTokens;
   };
 
   let finished = false;
@@ -159,7 +163,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     try {
       await deps.ledger.finish(reservation, {
         status, errorCode, refund, provider: deps.provider.name, model: deps.provider.model, steps, toolCalls,
-        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(usage, deps.pricing) + preparationCost + unknownCost,
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, actualUsdMicros: actualCostMicros(bounded, deps.pricing) + preparationCost,
         // The database accepts at most 30 entries of a fixed shape (agent_clean_tools).
         tools: trace.slice(0, MAX_TRACE_ENTRIES).map((entry) => ({ ...entry, ms: Math.min(Math.max(Math.round(entry.ms), 0), 120_000) })),
       });
@@ -210,8 +214,8 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     while (steps < deps.limits.maxSteps) {
       if (deadline.aborted) return fail("AGENT_TIMEOUT");
       const estimate = estimateTokens(messages);
-      if (usage.inputTokens + estimate > deps.limits.maxInputTokensTotal) return fail("AGENT_TOKEN_LIMIT");
-      const maxOutput = Math.min(deps.limits.maxOutputTokensPerCall, deps.limits.maxOutputTokensTotal - usage.outputTokens);
+      if (bounded.inputTokens + estimate > deps.limits.maxInputTokensTotal) return fail("AGENT_TOKEN_LIMIT");
+      const maxOutput = Math.min(deps.limits.maxOutputTokensPerCall, deps.limits.maxOutputTokensTotal - bounded.outputTokens);
       if (maxOutput < 300) return fail("AGENT_TOKEN_LIMIT");
 
       steps += 1;

@@ -1,7 +1,8 @@
+import { reserveCostMicros } from "../../src/lib/agent/config.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { runAgent, type RunnerDeps } from "../../src/lib/agent/runner.ts";
-import { ProviderError } from "../../src/lib/agent/types.ts";
+import { ProviderError, type ModelRequest } from "../../src/lib/agent/types.ts";
 import {
   ALL_PERMISSIONS, FakeLedger, SECRET_VALUES, SHIPMENT_ID, ScriptedProvider, TEST_LIMITS, TEST_PRICING, USER_ID,
   fakeData, finalAnswer, permissionsOf, toolCall,
@@ -73,6 +74,85 @@ describe("assistant run: unknown model usage", () => {
     assert.equal(finish.refund, true);
     assert.equal(finish.inputTokens, 300);
     assert.equal(finish.actualUsdMicros, 300 * TEST_PRICING.inputUsdPerMTok + MAX_OUTPUT * TEST_PRICING.outputUsdPerMTok);
+  });
+});
+
+describe("assistant run: token limits count unknown usage at its bound", () => {
+  const NO_USAGE = { input: true, output: true };
+  const call = (id: string, usage: { inputTokens: number; outputTokens: number }, usageMissing?: { input: boolean; output: boolean }) =>
+    ({ ...toolCall(id, "get_help", { topic: "documents" }), usage, ...(usageMissing ? { usageMissing } : {}) });
+  const unknown = (id: string) => call(id, { inputTokens: 0, outputTokens: 0 }, NO_USAGE);
+
+  it("reproduction: four answers without usage cannot pass a total output limit of 1000", async () => {
+    const limits = { ...TEST_LIMITS, maxOutputTokensTotal: 1000, maxOutputTokensPerCall: 1000 };
+    const provider = new ScriptedProvider([unknown("c1"), unknown("c2"), unknown("c3"), unknown("c4")]);
+    const d = deps(provider, { limits });
+    const outcome = await runAgent("Справка по документам", d);
+    assert.equal(provider.requests.length, 1, "the second call is blocked: the first may have used the whole output limit");
+    assert.ok(!outcome.ok && outcome.code === "AGENT_TOKEN_LIMIT");
+    const finish = d.ledger.finished[0];
+    assert.deepEqual([finish.inputTokens, finish.outputTokens], [0, 0], "estimates are not recorded as reported tokens");
+    assert.ok(finish.actualUsdMicros >= 1000 * TEST_PRICING.outputUsdPerMTok, "the unknown call is charged");
+    assert.ok(finish.actualUsdMicros <= reserveCostMicros(limits, TEST_PRICING), "within the reservation");
+  });
+
+  it("counts an unknown input at its estimate against the total input limit", async () => {
+    const limits = { ...TEST_LIMITS, maxInputTokensTotal: 8_000 };
+    const inputUnknown = new ScriptedProvider(["c1", "c2", "c3", "c4"].map((id) => call(id, { inputTokens: 0, outputTokens: 50 }, { input: true, output: false })));
+    const d = deps(inputUnknown, { limits });
+    const outcome = await runAgent("Справка по документам", d);
+    assert.ok(!outcome.ok && outcome.code === "AGENT_TOKEN_LIMIT");
+    assert.ok(inputUnknown.requests.length < 4, `stopped by the input limit after ${inputUnknown.requests.length} calls`);
+    assert.deepEqual([d.ledger.finished[0].inputTokens, d.ledger.finished[0].outputTokens], [0, 50 * inputUnknown.requests.length]);
+    assert.ok(d.ledger.finished[0].actualUsdMicros <= reserveCostMicros(limits, TEST_PRICING));
+
+    // The same conversation with small reported inputs is not blocked: the limit reacts to the unknown.
+    const reported = new ScriptedProvider([...["c1", "c2", "c3", "c4"].map((id) => call(id, { inputTokens: 100, outputTokens: 50 })), finalAnswer(NOTE("Готово."), { inputTokens: 100, outputTokens: 50 })]);
+    const control = deps(reported, { limits });
+    assert.ok((await runAgent("Справка по документам", control)).ok);
+    assert.equal(reported.requests.length, 5);
+  });
+
+  it("mixes reported and unknown outputs: each unknown one takes the whole allowance of its call", async () => {
+    const limits = { ...TEST_LIMITS, maxOutputTokensTotal: 2_500, maxOutputTokensPerCall: 1_000 };
+    const provider = new ScriptedProvider([
+      call("c1", { inputTokens: 100, outputTokens: 0 }, { input: false, output: true }),
+      call("c2", { inputTokens: 100, outputTokens: 50 }),
+      call("c3", { inputTokens: 100, outputTokens: 0 }, { input: false, output: true }),
+      call("c4", { inputTokens: 100, outputTokens: 0 }, { input: false, output: true }),
+      finalAnswer(NOTE("Готово.")),
+    ]);
+    const d = deps(provider, { limits });
+    const outcome = await runAgent("Справка по документам", d);
+    // 1000 (unknown) + 50 + 1000 (unknown) leaves 450 for the fourth call; after it nothing is left.
+    assert.deepEqual(provider.requests.map((request) => request.maxOutputTokens), [1000, 1000, 1000, 450]);
+    assert.ok(!outcome.ok && outcome.code === "AGENT_TOKEN_LIMIT");
+    const finish = d.ledger.finished[0];
+    assert.deepEqual([finish.inputTokens, finish.outputTokens], [400, 50], "only reported tokens are recorded");
+    assert.equal(finish.actualUsdMicros, 400 * TEST_PRICING.inputUsdPerMTok + 2_500 * TEST_PRICING.outputUsdPerMTok);
+    assert.ok(finish.actualUsdMicros <= reserveCostMicros(limits, TEST_PRICING));
+  });
+
+  it("keeps the charge within the reservation for any mix of missing counters", async () => {
+    const flags = [{ input: false, output: false }, { input: true, output: false }, { input: false, output: true }, NO_USAGE];
+    for (let seed = 0; seed < 64; seed += 1) {
+      // Each call's reported output respects its max_output_tokens, as the provider does.
+      const charged: number[] = [];
+      const script = Array.from({ length: 8 }, (_, i) => (request: ModelRequest) => {
+        const missing = flags[(seed >> ((i % 3) * 2)) % 4 === 0 ? (seed + i) % 4 : (seed * 7 + i) % 4];
+        const output = Math.min(700 + i, request.maxOutputTokens);
+        charged.push(missing.output ? request.maxOutputTokens : output);
+        return call(`c${i}`, { inputTokens: missing.input ? 0 : 900 + i, outputTokens: missing.output ? 0 : output }, missing);
+      });
+      const provider = new ScriptedProvider([...script, finalAnswer(NOTE("Готово."))]);
+      const d = deps(provider, { limits: TEST_LIMITS });
+      await runAgent("Справка по документам", d);
+      const finish = d.ledger.finished[0];
+      assert.ok(finish.actualUsdMicros <= reserveCostMicros(TEST_LIMITS, TEST_PRICING), `seed ${seed}: ${finish.actualUsdMicros}`);
+      // Reported outputs plus the whole allowance of every call with an unknown output stay within the limit.
+      const bounded = charged.reduce((sum, value) => sum + value, 0);
+      assert.ok(bounded <= TEST_LIMITS.maxOutputTokensTotal, `seed ${seed}: bounded output ${bounded}`);
+    }
   });
 });
 
