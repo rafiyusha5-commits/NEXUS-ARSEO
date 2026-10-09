@@ -87,6 +87,9 @@ export function fakeData(overrides: Partial<AgentDataSource> = {}): AgentDataSou
     async listDelayedShipments() {
       return { shipments: [{ id: SHIPMENT_ID, shipment_number: "NAR-2026-0007", status: "in_transit", planned_arrival_date: "2026-10-01" }], shipmentTotal: 3, vehicles: [], vehicleTotal: 0 };
     },
+    async findProducts() {
+      return { rows: [{ internal_sku: "MB-001", name: { ru: "Печенье Merba" }, brand: "Merba", unit_price: SECRET_VALUES.purchasePrice }], total: 1 };
+    },
     async getStock() {
       return { rows: [
         { internal_sku: "FZ-001", product_name: { ru: "Конфеты" }, warehouse_code: "AKT", uom: "box", quantity_on_hand: 10, quantity_reserved: 4, quantity_available: 6, expiry_date: "2026-12-01", shelf_life_state: "warning", unit_landed_cost: SECRET_VALUES.purchasePrice },

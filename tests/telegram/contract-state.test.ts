@@ -5,6 +5,7 @@ import { AGENT_TOOLS } from "../../src/lib/agent/tools.ts";
 import { STALE_AFTER_MS, telegramUpdateState, type TelegramUpdateRow } from "../../src/lib/telegram/update-state.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/202609275400_telegram_reliability.sql", import.meta.url), "utf8");
+const catalog = readFileSync(new URL("../../supabase/migrations/202609275500_agent_catalog.sql", import.meta.url), "utf8");
 const original = readFileSync(new URL("../../supabase/migrations/202609275200_agent_web_mvp.sql", import.meta.url), "utf8");
 const runner = readFileSync(new URL("../../src/lib/agent/runner.ts", import.meta.url), "utf8");
 
@@ -19,7 +20,7 @@ describe("accounting contract between the runner and agent_finish_run", () => {
   // refused by the database, so those runs never closed and the TTL charged the whole reservation.
   for (const [file, sql] of [["5400", migration], ["5200", original]] as const) {
     it(`accepts every trace entry, parameter and error code the runner produces (${file})`, () => {
-      const tools = section(sql, "create or replace function private.agent_clean_tools");
+      const tools = section(catalog, "create or replace function private.agent_clean_tools");
       for (const tool of AGENT_TOOLS) {
         assert.ok(tools.includes(`'${tool.name}'`), `tool ${tool.name}`);
         for (const key of Object.keys(tool.params)) assert.ok(new RegExp(`'${key}'`).test(tools), `param ${tool.name}.${key}`);

@@ -10,7 +10,7 @@ type Event =
   | { type: "error"; code: string; message: string; refunded: boolean };
 
 // Only server-built relative links to known Nexus pages are rendered.
-const SAFE_LINK = /^\/(shipments|documents)\/[0-9a-f-]{36}$|^\/tasks$/;
+const SAFE_LINK = /^\/(shipments|documents)\/[0-9a-f-]{36}$|^\/tasks$|^\/products\?q=[^\s]*$/;
 
 export function AssistantChat({ initialUsed, limit }: { initialUsed: number; limit: number }) {
   const [question, setQuestion] = useState("");
@@ -20,6 +20,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
   const [busy, setBusy] = useState(false);
   const [used, setUsed] = useState(initialUsed);
   const asked = useRef("");
+  const conversation = useRef<string | null>(null);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,7 +34,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: asked.current }),
+        body: JSON.stringify({ question: asked.current, conversationId: conversation.current ?? (conversation.current = crypto.randomUUID()) }),
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => null) as { error?: string } | null;
@@ -77,8 +78,8 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
           <textarea name="question" rows={3} maxLength={1000} value={question} onChange={(event) => setQuestion(event.target.value)}
             placeholder="Например: какие поставки задерживаются? Какие документы есть по поставке NAR-2026-0001?" disabled={busy} />
         </label>
-        <p className="form-help doc-form-full">Каждый вопрос обрабатывается отдельно. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Закупочные цены и себестоимость ассистенту недоступны.</p>
-        <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button></div>
+        <p className="form-help doc-form-full">Контекст последних вопросов сохраняется на 30 минут в этой беседе. Данные проверяются заново. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Закупочные цены и себестоимость ассистенту недоступны.</p>
+        <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button> <button type="button" disabled={busy} onClick={() => { conversation.current = null; setAnswer(null); setStages([]); setError(null); setQuestion(""); }}>Новая беседа</button></div>
       </form>
 
       {(busy || stages.length > 0) && !answer && (
@@ -98,7 +99,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
               <span className="doc-badge">Факт · сформирован из данных Nexus</span>
               <p><strong>{fact.subject}</strong></p>
               <dl className="assistant-values">
-                {fact.values.map((value) => <div key={value.field}><dt>{value.label}</dt><dd>{value.value}</dd></div>)}
+                {fact.values.map((value) => <div key={value.field}><dt>{value.label}</dt><dd style={{ whiteSpace: "pre-wrap" }}>{value.value}</dd></div>)}
               </dl>
               <small>источник: {fact.source.tool}{fact.source.row >= 0 ? `, запись ${fact.source.row + 1}` : ""}</small>
               {fact.link && SAFE_LINK.test(fact.link.href) && <Link className="text-button" href={fact.link.href}>Открыть: {fact.link.label}</Link>}

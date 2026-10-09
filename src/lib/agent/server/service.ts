@@ -21,13 +21,14 @@ export function sessionPermissions(supabase: SupabaseClient) {
  * (cookies) and `userId` the user it verified; business data, permissions and tools use only that
  * session. The server key is used for the two accounting RPCs and nothing else.
  */
-export async function runWebAssistant(supabase: SupabaseClient, userId: string, question: unknown, onStage: (label: string) => void): Promise<RunOutcome> {
+export async function runWebAssistant(supabase: SupabaseClient, userId: string, question: unknown, onStage: (label: string) => void, conversationId?: string): Promise<RunOutcome> {
   const config = loadAgentConfig();
   if (!config.enabled) return { ok: false, code: "AGENT_DISABLED", message: "Ассистент выключен.", refunded: false };
   const serverClient = createAdminClient();
   if (!serverClient) return { ok: false, code: "AGENT_DISABLED", message: "Ассистент выключен.", refunded: false };
   return runAgent(question, {
     channel: "web",
+    conversationKey: conversationId,
     userId,
     provider: new OpenAiProvider({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl, reasoningEffort: config.reasoningEffort }),
     ledger: createSupabaseLedger(serverClient),

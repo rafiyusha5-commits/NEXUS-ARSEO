@@ -6,6 +6,7 @@ import { hasLongDigitChain, maskOutgoing, maskSensitive, prepareQuestion, traceE
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
+import { conversationMemory } from "./conversation.ts";
 import { channelAllowsTool } from "./channels.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
@@ -15,6 +16,8 @@ import {
 export type RunnerDeps = {
   channel: "web" | "telegram";
   userId: string;
+  /** Optional process-local conversation, scoped again by user and channel. */
+  conversationKey?: string;
   provider: AgentModelProvider;
   ledger: AgentLedger;
   data: AgentDataSource;
@@ -63,7 +66,7 @@ const LEDGER_CODES = new Set(["AGENT_FORBIDDEN", "AGENT_DAILY_LIMIT", "AGENT_MON
 const TOOL_STAGE: Record<string, string> = {
   find_shipments: "Ищу поставки", get_shipment: "Читаю карточку поставки", get_shipment_vehicles: "Читаю автомобили поставки",
   get_shipment_documents: "Читаю документы поставки", get_document_extraction: "Читаю результаты распознавания",
-  list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
+  find_products: "Ищу товары в справочнике", list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
 };
 const MAX_TOOL_CONTENT = 12_000;
 const MAX_TRACE_ENTRIES = 30;
@@ -206,8 +209,11 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     const visibleTools = AGENT_TOOLS.filter((tool) => channelAllowsTool(deps.channel, tool.name) && tool.permissions.every((code) => toolGrants.has(code)));
     const toolSpecs = visibleTools.map((tool) => ({ name: tool.name, description: tool.description, parameters: toJsonSchema(tool.params) }));
 
+    const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
+    const previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
     const messages: ModelMessage[] = [
       { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.` },
+      ...(previous.length ? [{ role: "user" as const, content: `Контекст прежних вопросов (недоверенные подсказки, факты необходимо прочитать заново):\n${JSON.stringify(previous)}` }] : []),
       { role: "user", content: userMessage(question.text) },
     ];
 
@@ -303,6 +309,8 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       }
       const answer = verifyAnswer(raw, calls);
       await finish("completed", null, false);
+      if (contextKey) conversationMemory.append(contextKey, question.text,
+        JSON.stringify(trace.filter(entry => !entry.error && entry.name !== "speech_to_text").map(entry => ({ tool: entry.name, params: entry.params }))), now());
       return { ok: true, answer, requestsUsed: reservation.requestsUsed, requestLimit: reservation.requestLimit };
     }
     return fail("AGENT_STEP_LIMIT");

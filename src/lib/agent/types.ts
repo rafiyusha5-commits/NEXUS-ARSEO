@@ -66,6 +66,7 @@ export interface AgentDataSource {
   getShipmentDocuments(id: string, signal: AbortSignal): Promise<{ documents: ShipmentRow[]; missingTypes: ShipmentRow[] }>;
   getExtractions(input: { shipmentId: string; documentId?: string; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
   listDelayedShipments(input: { today: string; limit: number }, signal: AbortSignal): Promise<{ shipments: ShipmentRow[]; shipmentTotal: number | null; vehicles: ShipmentRow[]; vehicleTotal: number | null }>;
+  findProducts(input: { query?: string; offset: number; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
   getStock(input: { productQuery?: string; warehouseCode?: string; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
   getMyTasks(input: { userId: string; filter: string; nowIso: string; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
 }

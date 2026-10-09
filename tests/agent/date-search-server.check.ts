@@ -24,3 +24,13 @@ await source.findShipments({ query: "NAR", date: "2026-10-15", dateKind: "any", 
 assert.ok(urls.some(url => url.searchParams.get("or")?.includes("and(or(shipment_number.ilike.%NAR%")), "text and date predicates must both remain active");
 assert.ok(urls.every(url => !url.searchParams.get("select")?.includes("driver") && !url.searchParams.get("select")?.includes("price")));
 console.log("Date search server checks passed");
+
+urls.length = 0;
+await source.findProducts({ query: "Merba", offset: 20, limit: 20 }, new AbortController().signal);
+assert.ok(urls.every(url => url.pathname.endsWith("/products")));
+const catalogUrl = urls[0];
+assert.ok(catalogUrl.searchParams.get("or")?.includes("brand.ilike.%Merba%"));
+assert.ok(catalogUrl.searchParams.get("or")?.includes("name->>kk.ilike.%Merba%"));
+assert.equal(catalogUrl.searchParams.get("offset"), "20");
+assert.equal(catalogUrl.searchParams.get("limit"), "20");
+assert.equal(catalogUrl.searchParams.get("select"), "id,internal_sku,name,brand,category");

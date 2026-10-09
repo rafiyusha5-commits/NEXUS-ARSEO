@@ -28,14 +28,18 @@ export async function POST(request: Request) {
   if (!(await sessionPermissions(supabase)(["agent.use"])).has("agent.use")) return json({ ok: false, error: "Нет права пользоваться ассистентом" }, 403);
 
   let question: unknown;
+  let conversationId: string | undefined;
   try {
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) return json({ ok: false, error: "Вопрос слишком длинный" }, 413);
     const body = JSON.parse(raw) as unknown;
-    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => key !== "question")) {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => key !== "question" && key !== "conversationId")) {
       return json({ ok: false, error: "Неверный формат запроса" }, 400);
     }
-    question = (body as { question?: unknown }).question;
+    const input = body as { question?: unknown; conversationId?: unknown };
+    if (input.conversationId !== undefined && (typeof input.conversationId !== "string" || !/^[0-9a-f-]{36}$/i.test(input.conversationId))) return json({ ok: false, error: "Неверная беседа" }, 400);
+    conversationId = input.conversationId as string | undefined;
+    question = input.question;
   } catch {
     return json({ ok: false, error: "Неверный формат запроса" }, 400);
   }
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (event: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        const outcome = await runWebAssistant(supabase, user.id, question, (label) => send({ type: "stage", label }));
+        const outcome = await runWebAssistant(supabase, user.id, question, (label) => send({ type: "stage", label }), conversationId);
         if (outcome.ok) send({ type: "result", answer: outcome.answer, requestsUsed: outcome.requestsUsed, requestLimit: outcome.requestLimit });
         else send({ type: "error", code: outcome.code, message: outcome.message, refunded: outcome.refunded });
       } catch {

@@ -205,6 +205,7 @@ describe("assistant run", () => {
         { id: "g", name: "find_shipments", arguments: JSON.stringify({ query: null, status: null, type: null, limit: null }) },
         { id: "h", name: "list_delayed_shipments", arguments: JSON.stringify({ limit: null }) },
         { id: "i", name: "get_help", arguments: JSON.stringify({ topic: "documents" }) },
+        { id: "j", name: "find_products", arguments: JSON.stringify({ query: "Merba", offset: 0, limit: 20 }) },
       ], usage: { inputTokens: 100, outputTokens: 10 } },
       finalAnswer(NOTE("Данные получены.")),
     ]);
@@ -216,7 +217,7 @@ describe("assistant run", () => {
     assert.ok(!seen.includes("900101300123"), "IIN from the question reached the model");
     const trace = JSON.stringify(d.ledger.reservations) + JSON.stringify(d.ledger.finished);
     for (const value of [...Object.values(SECRET_VALUES), "900101300123"]) assert.ok(!trace.includes(value), `${value} reached the trace`);
-    assert.equal(d.ledger.finished[0].tools.length, 9, "all nine tools were exercised");
+    assert.equal(d.ledger.finished[0].tools.length, 10, "all ten tools were exercised");
     assert.ok(d.ledger.finished[0].tools.every((entry) => !entry.error), "every tool ran");
   });
 

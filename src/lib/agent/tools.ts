@@ -416,6 +416,38 @@ const listDelayedShipments: AgentTool = {
   },
 };
 
+const CATALOG_FIELDS: ToolField[] = [
+  { key: "product_list", label: "Товары из справочника", kind: "text" },
+  { key: "products_total", label: "Всего найдено товаров", kind: "count" },
+  { key: "products_shown", label: "Показано товаров", kind: "count" },
+  { key: "search_query", label: "Поиск", kind: "text" },
+];
+const findProducts: AgentTool = {
+  name: "find_products",
+  description: "Список товаров из справочника независимо от наличия на складе. Поиск по бренду (Merba), артикулу и названию. Для ассортимента и полного списка товаров используй этот инструмент, а не остатки. До 20 товаров на страницу; offset позволяет получить следующую страницу.",
+  permissions: ["products.view"],
+  params: {
+    query: { type: "string", maxLength: 60, pattern: SEARCH_TEXT, optional: true, description: "Бренд, артикул или название, например Merba" },
+    offset: { type: "integer", min: 0, max: 10000, optional: true, description: "Начало страницы, по умолчанию 0" },
+    limit: limitParam("по умолчанию 20"),
+  },
+  fields: CATALOG_FIELDS, maxRows: 1, timeoutMs: DEFAULT_TIMEOUT_MS,
+  async run(ctx, params) {
+    const offset = Number(params.offset ?? 0), limit = Number(params.limit ?? 20);
+    const { rows, total } = await ctx.data.findProducts({ query: params.query as string | undefined, offset, limit }, ctx.signal);
+    const shown = rows.slice(0, limit);
+    const list = shown.map((row, index) => `${offset + index + 1}. ${maskDataText(str(row.internal_sku), 60) ?? "Без артикула"} — ${maskDataText(localized(row.name), 160) ?? "Без названия"}${row.brand ? ` · ${maskDataText(str(row.brand), 60)}` : ""}`).join("\n");
+    const incomplete = offset > 0 || total === null || total > shown.length || rows.length > limit;
+    return result([project("Каталог товаров Nexus", CATALOG_FIELDS, {
+      product_list: list || "Товары по этому поиску в справочнике не найдены.", products_total: total,
+      products_shown: shown.length, search_query: maskDataText(str(params.query), 60),
+    })], incomplete, total, [
+      "Это справочник товаров: наличие на складе проверяется отдельно.",
+      incomplete ? `Страница с позиции ${offset + 1}: показано ${shown.length} товаров; полный список откройте в справочнике товаров с тем же поиском.` : `Полный результат поиска: ${shown.length} товаров.`,
+    ]);
+  },
+};
+
 const STOCK_FIELDS: ToolField[] = [
   { key: "internal_sku", label: "Артикул", kind: "id" },
   { key: "product_name", label: "Товар", kind: "text" },
@@ -539,7 +571,7 @@ const getHelp: AgentTool = {
 
 export const AGENT_TOOLS: readonly AgentTool[] = [
   findShipments, getShipment, getShipmentVehicles, getShipmentDocuments, getDocumentExtraction,
-  listDelayedShipments, getStockStatus, getMyTasks, getHelp,
+  listDelayedShipments, findProducts, getStockStatus, getMyTasks, getHelp,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, AgentTool> = new Map(AGENT_TOOLS.map((tool) => [tool.name, tool]));

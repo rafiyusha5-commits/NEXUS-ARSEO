@@ -168,6 +168,17 @@ export function verifyAnswer(raw: RawAnswer, calls: ReadonlyMap<string, CallReco
     const fact = buildFact(item, index, calls, rejected);
     if (fact) facts.push(fact);
   });
+  // Catalogue pages are assembled by code; never let a model omit part of the requested list.
+  if ([...calls.values()].some(call => call.tool.name === "find_products")) {
+    for (let i = facts.length - 1; i >= 0; i--) if (facts[i].source.tool === "find_products") facts.splice(i, 1);
+  }
+  for (const [id, call] of calls) if (call.tool.name === "find_products") {
+    const complete = buildFact({ call: id, row: 0, fields: ["product_list", "products_total", "products_shown"] }, facts.length, calls, rejected);
+    if (complete) {
+      complete.link = { label: "Справочник товаров", href: `/products?q=${encodeURIComponent(String(call.result.rows[0]?.values.search_query ?? ""))}` };
+      facts.push(complete);
+    }
+  }
   // Free text is never verified: masked, stripped of links and shown apart from the facts.
   const commentary: Commentary[] = raw.commentary
     .map((item) => ({ kind: item.kind, text: cleanText(item.text) }))
@@ -176,7 +187,7 @@ export function verifyAnswer(raw: RawAnswer, calls: ReadonlyMap<string, CallReco
   const limitations = raw.limitations.map(cleanText).filter((item) => item && !/\d/.test(item));
   for (const [, call] of calls) {
     for (const note of call.result.notes) if (!limitations.includes(note)) limitations.push(note);
-    if (call.result.truncated) {
+    if (call.result.truncated && call.tool.name !== "find_products") {
       const note = `${toolTitle(call.tool)}: показаны не все записи (${call.result.rows.length}${call.result.total !== null ? ` из ${call.result.total}` : ""}).`;
       if (!limitations.includes(note)) limitations.push(note);
     }

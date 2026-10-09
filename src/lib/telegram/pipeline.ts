@@ -7,6 +7,7 @@
 // - Nothing is retried automatically. When the result is unknown the state says so in Nexus.
 // - Business data reaches the chat only if the employee still has access right before sending.
 // - The temporary employee session is always closed (scope "local"), also after a timeout.
+import { conversationMemory } from "../agent/conversation.ts";
 import type { AgentLimits } from "../agent/config.ts";
 import { maskDataText } from "../agent/masking.ts";
 import { QuestionPreparationError, runAgent } from "../agent/runner.ts";
@@ -87,10 +88,10 @@ export const TELEGRAM_TEXT = {
   linkRequested: "Запрос привязки получен. Вернитесь в Nexus → Ассистент → Telegram, обновите страницу и подтвердите этот чат.",
   linkInvalid: "Ссылка недействительна или истекла. Создайте новую ссылку в Nexus.",
   unlinked: "Telegram отключён от Nexus.",
-  help: "Nexus ARSEO. Для доступа откройте Nexus → Ассистент → Telegram и привяжите этот личный чат. После подтверждения задавайте вопросы текстом или голосом до 60 секунд. /limit — остаток вопросов, /unlink — отключить чат. Файлы пока не поддерживаются.",
+  help: "Nexus ARSEO. Для доступа откройте Nexus → Ассистент → Telegram и привяжите этот личный чат. После подтверждения задавайте вопросы текстом или голосом до 60 секунд. /new — новая беседа, /limit — остаток вопросов, /unlink — отключить чат. Файлы пока не поддерживаются.",
   notLinked: "Этот чат не привязан или доступ отозван. Подключите Telegram в Nexus → Ассистент → Telegram.",
   voiceRules: "Для голосового вопроса отправьте запись до 60 секунд и до 1 МБ. Если голос выключен в Nexus, напишите текстом.",
-  unsupported: "Задайте вопрос текстом или голосом до 60 секунд. Доступные команды: /help, /limit, /unlink. Файлы пока не поддерживаются.",
+  unsupported: "Задайте вопрос текстом или голосом до 60 секунд. Доступные команды: /help, /limit, /new, /unlink. Файлы пока не поддерживаются.",
   disabled: "Ассистент выключен в Nexus.",
   noTime: "Сообщение обработать не успели. Вопрос не засчитан, отправьте его ещё раз.",
   withheld: "Доступ к ассистенту отозван или привязка изменена. Ответ не отправлен.",
@@ -179,12 +180,15 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
       const voice = voiceInput(message.voice);
       if (typeof employee !== "string") reply = TELEGRAM_TEXT.notLinked;
       else if (message.voice && (!voice || !deps.voiceEnabled)) reply = TELEGRAM_TEXT.voiceRules;
-      else if ((!message.text && !message.voice) || (message.text?.startsWith("/") && message.text !== "/limit")) reply = TELEGRAM_TEXT.unsupported;
+      else if ((!message.text && !message.voice) || (message.text?.startsWith("/") && message.text !== "/limit" && message.text !== "/new")) reply = TELEGRAM_TEXT.unsupported;
       else {
         userId = employee;
         await progress("session");
         session = await bounded(() => deps.openSession(employee, deadline), timing.sendReserveMs, Infinity, (late) => { void late.close().catch(() => undefined); });
-        if (message.text === "/limit") {
+        if (message.text === "/new") {
+          conversationMemory.clear(JSON.stringify([employee, "telegram", String(message.chatId)]));
+          reply = "Начата новая беседа. Задайте вопрос текстом или голосом.";
+        } else if (message.text === "/limit") {
           const usage = await bounded(() => session!.usage(), timing.sendReserveMs);
           reply = `Вопросы сегодня: ${usage.used} из ${usage.limit}. Лимит общий с веб-чатом Nexus.`;
         } else {
@@ -200,7 +204,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
             // The run has its own deadline (remaining − sendReserve). Waiting for it, including the
             // closing ledger write, is bounded as well; a run that overruns finishes in the background.
             const { answer, transcript } = await bounded(
-              () => askAgent(agent, runSession, employee, message.text, voice, deps.bot, deadline, remaining() - timing.sendReserveMs, (stage, extra) => progress(stage, extra)),
+              () => askAgent(agent, runSession, employee, String(message.chatId), message.text, voice, deps.bot, deadline, remaining() - timing.sendReserveMs, (stage, extra) => progress(stage, extra)),
               beforeDelivery,
             );
             reply = shortMessage((transcript ? `Распознано: ${transcript}\n\n` : "") + answer.text);
@@ -256,7 +260,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
 }
 
 async function askAgent(
-  agent: TelegramAgent, session: EmployeeSession, employee: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
+  agent: TelegramAgent, session: EmployeeSession, employee: string, chatKey: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
   deadline: AbortSignal, runMs: number, progress: (stage: Stage, extra?: { runId?: string; error?: string }) => Promise<unknown>,
 ): Promise<{ answer: { text: string; errorCode: string | null }; transcript: string }> {
   let transcript = "";
@@ -280,7 +284,7 @@ async function askAgent(
     },
   } : undefined;
   const outcome = await runAgent(voice ? "Голосовой вопрос Telegram" : text, {
-    channel: "telegram", userId: employee, provider: agent.provider, ledger: agent.ledger, data: session.data,
+    channel: "telegram", userId: employee, conversationKey: chatKey, provider: agent.provider, ledger: agent.ledger, data: session.data,
     permissions: session.permissions, pricing: agent.pricing, questionPreparation: preparation,
     // The run must end in time for the access re-check and delivery.
     limits: { ...agent.limits, runDeadlineMs: Math.max(1_000, Math.min(agent.limits.runDeadlineMs, runMs)) },

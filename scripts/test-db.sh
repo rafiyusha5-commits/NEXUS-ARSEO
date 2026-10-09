@@ -125,6 +125,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
 # Telegram reliability: replaces the status function of 5300 and the accounting allow-lists; idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275500_agent_catalog.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

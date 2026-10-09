@@ -171,6 +171,16 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
       };
     },
 
+    async findProducts({ query, offset, limit }, signal) {
+      let request = supabase.from("products")
+        .select("id,internal_sku,name,brand,category", { count: "exact" })
+        .order("internal_sku").order("id").range(offset, offset + limit - 1).abortSignal(signal);
+      const term = query ? searchTerm(query) : "";
+      if (term) request = request.or(`internal_sku.ilike.%${term}%,brand.ilike.%${term}%,name->>ru.ilike.%${term}%,name->>en.ilike.%${term}%,name->>kk.ilike.%${term}%`);
+      const { data, count } = ensure(await request);
+      return { rows: data as ShipmentRow[], total: count };
+    },
+
     async getStock({ productQuery, warehouseCode, limit }, signal) {
       let request = supabase.from("inventory_fifo_status")
         .select("internal_sku,product_name,brand,warehouse_code,uom,quantity_on_hand,quantity_reserved,quantity_available,expiry_date,shelf_life_state")
