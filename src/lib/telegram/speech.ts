@@ -16,7 +16,7 @@ export function voiceInput(value: unknown): Voice | null {
 // Verify actual Ogg/Opus duration, not just Telegram's declared duration. No conversion or disk IO.
 export function opusDuration(bytes: Uint8Array): number {
   const buffer = Buffer.from(bytes);
-  let offset = 0; let serial: number | null = null; let granule = BigInt(0); let preSkip = 0; let ended = false;
+  let offset = 0; let serial: number | null = null; let granule = BigInt(0); let preSkip = 0; let ended = false; let incompletePacket = false;
   while (offset < buffer.length) {
     if (offset + 27 > buffer.length || buffer.toString("ascii", offset, offset + 4) !== "OggS" || buffer[offset + 4] !== 0) throw new QuestionPreparationError("VOICE_FORMAT");
     const pageSerial = buffer.readUInt32LE(offset + 14);
@@ -25,6 +25,7 @@ export function opusDuration(bytes: Uint8Array): number {
     const segments = buffer[offset + 26];
     const body = offset + 27 + segments;
     if (body > buffer.length) throw new QuestionPreparationError("VOICE_FORMAT");
+    incompletePacket = segments > 0 && buffer[body - 1] === 255;
     let bodyLength = 0;
     for (let i = 0; i < segments; i++) bodyLength += buffer[offset + 27 + i];
     if (body + bodyLength > buffer.length) throw new QuestionPreparationError("VOICE_FORMAT");
@@ -38,8 +39,14 @@ export function opusDuration(bytes: Uint8Array): number {
     offset = body + bodyLength;
     if (ended && offset !== buffer.length) throw new QuestionPreparationError("VOICE_FORMAT");
   }
+  if (incompletePacket) throw new QuestionPreparationError("VOICE_FORMAT");
   const seconds = Number(granule - BigInt(preSkip)) / 48000;
-  if (!ended || seconds <= 0 || seconds > 60) throw new QuestionPreparationError("VOICE_DURATION");
+  // Telegram recordings may have complete Ogg pages without the final EOS flag.
+  // Duration still comes from Opus granules at 48 kHz; never trust the metadata alone.
+  if (seconds <= 0 || seconds > 60) {
+    console.warn("NEXUS_VOICE_DURATION_CHECK", { seconds, ended });
+    throw new QuestionPreparationError("VOICE_DURATION");
+  }
   return seconds;
 }
 

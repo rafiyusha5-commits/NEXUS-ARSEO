@@ -15,6 +15,17 @@ describe("Telegram speech", () => {
     assert.equal(opusDuration(ogg(9)), 9); assert.throws(() => opusDuration(ogg(61))); assert.throws(() => opusDuration(Buffer.from("not audio")));
     assert.throws(() => opusDuration(Buffer.concat([ogg(1), ogg(1)])));
   });
+  it("accepts complete short Telegram pages without EOS while retaining the duration and truncation checks", () => {
+    const open = Buffer.from(ogg(4)); open[47 + 5] = 0;
+    assert.equal(opusDuration(open), 4);
+    const partial = Buffer.concat([open.subarray(0, 75), Buffer.alloc(255)]); partial[74] = 255;
+    assert.throws(() => opusDuration(partial), { message: "VOICE_FORMAT" });
+    assert.throws(() => opusDuration(open.subarray(0, open.length - 1)));
+    const long = Buffer.from(ogg(61)); long[47 + 5] = 0;
+    assert.throws(() => opusDuration(long), { message: "VOICE_DURATION" });
+    const empty = Buffer.from(ogg(0)); empty[47 + 5] = 0;
+    assert.throws(() => opusDuration(empty), { message: "VOICE_DURATION" });
+  });
   it("transcribes Ogg in memory and includes returned token usage in money accounting", async () => {
     const fetcher = (async (url, options) => {
       assert.equal(url, "https://api.openai.com/v1/audio/transcriptions"); assert.equal(options?.redirect, "error");
