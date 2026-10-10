@@ -23,8 +23,10 @@ function factText(fact: VerifiedFact, otherFacts: boolean): string {
     : maskFactText(["product_list", "record_details"].includes(value.field) ? value.value : `${value.label}: ${value.value}`,
       ["product_list", "record_details"].includes(value.field) ? value.value.length + value.label.length + 10 : 400,
       ["product_list", "record_details"].includes(value.field)));
+  const detailLines = new Set(lines[fact.values.findIndex(value=>value.field === "record_details")]?.split("\n") ?? []);
+  const conciseLines = lines.filter((line,index)=>fact.values[index].field === "record_details" || !detailLines.has(line));
   const subject = ["Каталог товаров Nexus", "Артикулы поставщика и штрихкоды", "Упаковка: веса, размеры и количество"].includes(fact.subject) ? "" : maskFactText(fact.subject);
-  return [subject, ...lines].filter(Boolean).join("\n");
+  return [subject, ...conciseLines].filter(Boolean).join("\n");
 }
 function quotaNote(used: number, limit: number): string {
   return used >= limit - 2 ? `Осталось вопросов сегодня: ${Math.max(0, limit - used)}. Лимит общий с веб-чатом.` : "";

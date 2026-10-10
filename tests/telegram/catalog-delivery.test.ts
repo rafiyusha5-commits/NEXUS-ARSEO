@@ -87,3 +87,7 @@ it("compact replies retain meaningful warnings and notify only near the daily li
  const answer={facts:[{subject:"Паллета",source:{tool:"search_system",row:0},values:[{field:"units_per_parent",label:"Количество штук",value:"1 152"}]}],commentary:[],limitations:["Показаны не все записи.","Валюта не определена."],rejected:[],toolsUsed:[]};
  const reply=telegramDelivery(answer,18,20).text;assert.match(reply,/Показаны не все записи/);assert.match(reply,/Валюта не определена/);assert.match(reply,/Осталось вопросов сегодня: 2/);
 });
+it("a filled purchase price is not repeated when both the value and its currency detail are selected",()=>{
+ const reply=telegramDelivery({facts:[{subject:"Закупочная цена товара",source:{tool:"get_system_record",row:0},values:[{field:"base_purchase_price",label:"Закупочная цена",value:"0,99",kind:"financial"},{field:"record_details",label:"Данные Nexus",value:"Закупочная цена: 0,99\nВалюта: EUR"}]}],commentary:[],limitations:[],rejected:[],toolsUsed:[]},1,20).text;
+ assert.equal((reply.match(/0,99/g)??[]).length,1);assert.match(reply,/Валюта: EUR/);
+});
