@@ -11,6 +11,9 @@ create table if not exists private.calculator_purchase_links (
  price numeric(14,4) not null,currency_id uuid not null references public.currencies(id),
  price_uom text not null,source_row integer not null,updated_at timestamptz not null default now()
 );
+-- No client policies: only the guarded SECURITY DEFINER functions can access these tables.
+alter table private.calculator_purchase_settings enable row level security;
+alter table private.calculator_purchase_links enable row level security;
 revoke all on private.calculator_purchase_settings,private.calculator_purchase_links from public,anon,authenticated,service_role;
 
 create or replace function private.calculator_purchase_projection(p_source jsonb,p_currency_id uuid,p_uom text,p_apply boolean)

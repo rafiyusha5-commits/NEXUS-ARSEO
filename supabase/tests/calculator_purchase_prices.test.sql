@@ -58,6 +58,8 @@ select tests.calc_expect_error($q$select public.sync_calculator_purchase_prices(
 select tests.calc_expect_error($q$select public.sync_calculator_purchase_prices('EUR',false,'forged')$q$,'Нет прав');
 reset role;
 do $$begin
+ assert (select relrowsecurity from pg_class where oid='private.calculator_purchase_settings'::regclass),'settings have RLS';
+ assert (select relrowsecurity from pg_class where oid='private.calculator_purchase_links'::regclass),'price tracking has RLS';
  assert not has_table_privilege('authenticated','private.calculator_purchase_settings','select,insert,update'),'mapping cannot be bypassed directly';
  assert not has_table_privilege('authenticated','private.calculator_purchase_links','select,insert,update'),'protected price tracking is private';
  assert not has_function_privilege('anon','public.sync_calculator_purchase_prices(text,boolean,text)','execute'),'anonymous calls denied';
