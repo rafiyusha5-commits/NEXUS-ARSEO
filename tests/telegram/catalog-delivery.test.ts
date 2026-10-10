@@ -76,3 +76,14 @@ it("revoking a financial permission immediately before delivery suppresses both 
  await processTelegramMessage(update(904,{text:"Цена"}),h.deps);
  assert.equal(h.bot.documents.length,0);assert.doesNotMatch(h.bot.sent.join(),/77[,.]66/);assert.equal(h.db.updates.get(904)?.error,"ANSWER_WITHHELD");
 });
+
+it("compact barcode reply keeps the product and both codes without routine metadata",()=>{
+ const answer={facts:[{subject:"Артикулы поставщика и штрихкоды",source:{tool:"search_system",row:0},values:[{field:"record_details",label:"Данные Nexus",value:"Тип артикула/штрихкода: unit_barcode\nОсновной: Да"},{field:"public_code",label:"Артикул / штрихкод",value:"6416453017207",kind:"protected" as const}]},{subject:"Артикулы поставщика и штрихкоды",source:{tool:"search_system",row:1},values:[{field:"record_details",label:"Данные Nexus",value:"Тип артикула/штрихкода: box_barcode\npackaging_uom: box\nОсновной: Нет"},{field:"public_code",label:"Артикул / штрихкод",value:"6416453417205",kind:"protected" as const}]},{subject:"Каталог товаров Nexus",source:{tool:"find_products",row:0},values:[{field:"product_list",label:"Товары",value:"1. 401720 — Шоколад Geisha 100 г"},{field:"products_shown",label:"Показано товаров",value:"1"},{field:"products_total",label:"Всего найдено товаров",value:"1"}]}],commentary:[],limitations:["Источник: Артикулы поставщика и штрихкоды. Данные прочитаны с текущими правами сотрудника.","Это справочник товаров: наличие на складе проверяется отдельно.","Полный результат поиска: 1 товаров."],rejected:[],toolsUsed:[]};
+ const reply=telegramDelivery(answer,10,20).text;
+ assert.equal(reply,"401720 - Шоколад Geisha 100 г\n\nШтрихкод единицы: 6416453017207\n\nШтрихкод короба: 6416453417205");
+ assert.doesNotMatch(reply,/Факт|Источник|Основной|packaging_uom|Ограничения|Вопросы сегодня/);
+});
+it("compact replies retain meaningful warnings and notify only near the daily limit",()=>{
+ const answer={facts:[{subject:"Паллета",source:{tool:"search_system",row:0},values:[{field:"units_per_parent",label:"Количество штук",value:"1 152"}]}],commentary:[],limitations:["Показаны не все записи.","Валюта не определена."],rejected:[],toolsUsed:[]};
+ const reply=telegramDelivery(answer,18,20).text;assert.match(reply,/Показаны не все записи/);assert.match(reply,/Валюта не определена/);assert.match(reply,/Осталось вопросов сегодня: 2/);
+});
