@@ -30,7 +30,11 @@ function calculatorPurchase(row: ShipmentRow): Record<string,string|number|null>
  if(matches.length!==1) return {};
  const raw=object(row.confidential_data)[String(matches[0].key)];
  if(raw===null||raw===undefined||raw==="" || !["number","string"].includes(typeof raw) || !Number.isFinite(Number(raw)) || Number(raw)<0) return {};
- return {base_purchase_price:Number(raw),price_source:"Сохранённый мастер-калькулятор",currency_code:"Не указана в источнике"};
+ const currencyColumn=columns.filter(column=>column.field_ru === "Валюта закупа" && column.block === "Информация о закупе");
+ const data={...object(row.catalog_data),...object(row.sales_data),...object(row.confidential_data)};
+ const currencyRaw=currencyColumn.length === 1 ? String(data[String(currencyColumn[0].key)]??"").trim().toUpperCase() : "";
+ const currency=currencyRaw === "€" || currencyRaw === "ЕВРО" ? "EUR" : currencyRaw;
+ return {base_purchase_price:Number(raw),price_source:"Сохранённый мастер-калькулятор",currency_code:["EUR","USD","KZT","RUB","GBP","CHF","CNY","UZS","KGS"].includes(currency)?currency:"Не указана или не распознана в источнике"};
 }function details(sectionKey: string, row: ShipmentRow, requested?: string): string {
  const section=SYSTEM_BY_KEY.get(sectionKey)!;
  let selected=requested ? requested.split(",") : [];

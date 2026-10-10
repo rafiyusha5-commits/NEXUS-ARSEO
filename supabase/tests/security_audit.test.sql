@@ -72,7 +72,7 @@ select 'authenticated', unnest(array[
   'public.create_inventory_operation_document', 'public.add_inventory_operation_line', 'public.remove_inventory_operation_line',
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',
   'public.my_agent_usage', 'public.create_my_telegram_code', 'public.confirm_my_telegram_link', 'public.unlink_my_telegram',
-  'public.create_shipment_item', 'public.my_product_purchase_prices',
+  'public.sync_calculator_purchase_prices', 'public.create_shipment_item', 'public.my_product_purchase_prices',
   'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
   'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',

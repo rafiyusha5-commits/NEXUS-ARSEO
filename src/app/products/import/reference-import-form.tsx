@@ -82,6 +82,7 @@ function ReportView({ report }: { report: ImportReport }) {
   }, [report, filter]);
   return (
     <>
+      {report.purchasePrices && <p>Закупочные цены: {report.purchasePrices.applied ? "перенесено" : "к переносу"} {report.purchasePrices.summary.update}, совпадает {report.purchasePrices.summary.unchanged}, требуют проверки {report.purchasePrices.summary.skipped}.</p>}
       <div className="ri-summary">
         {IMPORT_STATUSES.map((status) => (
           <span className={`doc-badge ri-${status}`} key={status}>{statusLabel[status]}: {report.summary[status]}</span>
