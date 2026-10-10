@@ -15,7 +15,7 @@ const LABELS: Record<string, string> = {
 };
 const NUTRITION = ["energy_kcal","energy_kj","protein_g","fat_g","saturated_fat_g","carbohydrates_g","sugars_g","fiber_g","salt_g"];
 const MONEY_FIELDS=["base_purchase_price","unit_price","price","target_unit_price","amount","goods_total","expenses_total","landed_total","goods_amount","allocated_expenses","landed_amount","unit_landed_cost"];
-const FIELDS: ToolField[] = [...MONEY_FIELDS.map(key=>({key,label:LABELS[key],kind:"financial" as const})),{key:"contact_name",label:"Контакт",kind:"protected"},{key:"contact_phone",label:"Телефон",kind:"protected"},{key:"contact_email",label:"Email",kind:"protected"},{key:"public_code",label:"Артикул / штрихкод",kind:"protected"},{ key:"record_id",label:"Идентификатор записи",kind:"id" },{key:"record_details",label:"Данные Nexus",kind:"text"}];
+const FIELDS: ToolField[] = [{key:"units_per_parent",label:"Количество штук",kind:"number"},{key:"uom",label:"Уровень упаковки",kind:"text"},...MONEY_FIELDS.map(key=>({key,label:LABELS[key],kind:"financial" as const})),{key:"contact_name",label:"Контакт",kind:"protected"},{key:"contact_phone",label:"Телефон",kind:"protected"},{key:"contact_email",label:"Email",kind:"protected"},{key:"public_code",label:"Артикул / штрихкод",kind:"protected"},{ key:"record_id",label:"Идентификатор записи",kind:"id" },{key:"record_details",label:"Данные Nexus",kind:"text"}];
 function object(v: unknown): Record<string, unknown> { return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string,unknown> : {}; }
 function scalar(v: unknown): string | null {
  if (typeof v === "number") return Number.isFinite(v) ? new Intl.NumberFormat("ru-RU",{maximumFractionDigits:6}).format(v) : null;
@@ -109,7 +109,7 @@ function systemRow(key:string,source:ShipmentRow,fields?:string):ToolRow {
  const id=String(row[section.idColumn]??"");
  const references=Object.fromEntries(Object.entries(row).filter(([field,value])=>section.columns.includes(field)&&field.endsWith("_id")&&typeof value==="string"&&UUID.test(value)).map(([field,value])=>[field,String(value)]));
  const name=scalar(row.internal_sku??row.shipment_number??row.sale_number??row.number??row.name??row.title??row.legal_name??row.batch_number);
- return {subject:`${section.title}${name?` · ${name}`:""}`.slice(0,200),values:{record_id:id,record_details:details(key,row,fields), ...protectedValues(key,row), ...Object.fromEntries(MONEY_FIELDS.filter(field=>section.columns.includes(field) && row[field]!==null && row[field]!==undefined && Number.isFinite(Number(row[field]))).map(field=>[field,Number(row[field])]))},
+ return {subject:`${section.title}${name?` · ${name}`:""}`.slice(0,200),values:{record_id:id,record_details:details(key,row,fields), ...(key === "packaging" ? {units_per_parent: typeof row.units_per_parent === "number" ? row.units_per_parent : Number.isFinite(Number(row.units_per_parent)) ? Number(row.units_per_parent) : null,uom: typeof row.uom === "string" ? ({piece:"Штука",box:"Короб",pallet:"Паллета",truck:"Машина"}[row.uom] ?? row.uom) : null} : {}), ...protectedValues(key,row), ...Object.fromEntries(MONEY_FIELDS.filter(field=>section.columns.includes(field) && row[field]!==null && row[field]!==undefined && Number.isFinite(Number(row[field]))).map(field=>[field,Number(row[field])]))},
  ...(UUID.test(id)?{entity:{type:"system" as const,id,section:key}}:{}),references};
 }
 const recordScope={param:"section",sections:SYSTEM_SECTIONS.filter(section=>!["calendar","shipment_prices","inventory_costs"].includes(section.key))};

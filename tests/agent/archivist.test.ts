@@ -95,3 +95,8 @@ it("a unique catalogue match supplies the product UUID for reading nutrition and
  const ambiguous=await TOOL_BY_NAME.get("find_products")!.run({userId:USER_ID,signal:new AbortController().signal,data:fakeData({async findProducts(){return {rows:[{id:SHIPMENT_ID,internal_sku:"153"},{id:USER_ID,internal_sku:"1530"}],total:2};}})},{query:"153"});
  assert.equal(ambiguous.rows[0].references,undefined);
 });
+it("a pallet quantity answer excludes intermediate product cards and other packaging rows",async()=>{
+ const provider=new ScriptedProvider([toolCall("p","search_system",{section:"products",query:"178"}),toolCall("pk","search_system",{section:"packaging",parent_id:SHIPMENT_ID}),finalAnswer({facts:[{call:"pk",row:1,fields:["units_per_parent","uom"]}],commentary:[],limitations:[]})]);
+ const result=await runAgent("Сколько штук на паллете артикула 178",base(provider,["agent.use","products.view"],fakeData({async readSystem(input){return input.section==="products"?{rows:[{id:SHIPMENT_ID,internal_sku:"178",composition:"НЕ НУЖНЫЙ СОСТАВ"}],total:1}:{rows:[{id:USER_ID,product_id:SHIPMENT_ID,uom:"box",units_per_parent:18},{id:SHIPMENT_ID,product_id:SHIPMENT_ID,uom:"pallet",units_per_parent:1152}],total:2};}})));
+ assert.ok(result.ok);assert.equal(result.answer.facts.length,1);const text=telegramDelivery(result.answer,1,20).text;assert.match(text,/1[ \u00a0]152/);assert.match(text,/Паллета/);assert.doesNotMatch(text,/НЕ НУЖНЫЙ СОСТАВ|Короб/);
+});

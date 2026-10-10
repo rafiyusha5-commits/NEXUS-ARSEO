@@ -100,6 +100,11 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
         request = request.eq("status", input.status);
       }
       const term = input.query ? searchTerm(input.query) : "";
+      if (term && section.key === "products" && input.offset === 0 && !input.recordId && !input.parentId && !input.status && !input.date && !input.dateTo) {
+        const exact = ensure(await supabase.from("products").select(section.columns.join(","), { count: "exact" })
+          .eq("internal_sku", term).limit(input.limit).abortSignal(signal));
+        if (exact.data.length) return { rows: exact.data as unknown as ShipmentRow[], total: exact.count };
+      }
       if (term) {
         if (!section.search.length) throw new DataError();
         request = request.or(section.search.map(field => `${field}.ilike.%${term}%`).join(","));
@@ -264,6 +269,12 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
     },
 
     async findProducts({ query, offset, limit }, signal) {
+      const exactTerm = query ? searchTerm(query) : "";
+      if (exactTerm && offset === 0) {
+        const exact = ensure(await supabase.from("products").select("id,internal_sku,name,brand,category", { count: "exact" })
+          .eq("internal_sku", exactTerm).limit(limit).abortSignal(signal));
+        if (exact.data.length) return { rows: exact.data as unknown as ShipmentRow[], total: exact.count };
+      }
       let request = supabase.from("products")
         .select("id,internal_sku,name,brand,category", { count: "exact" })
         .order("internal_sku").order("id").range(offset, offset + limit - 1).abortSignal(signal);
