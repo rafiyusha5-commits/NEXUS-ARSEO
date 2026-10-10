@@ -4,6 +4,7 @@ import {createSupabaseAgentData} from "../../src/lib/agent/server/supabase-data.
 const id="11111111-1111-4111-8111-111111111111";const urls:URL[]=[];let grants=["products.view","prices.purchase.view","agent.use","tasks.view"];
 const fetcher=(async(url:string|URL|Request,init?:RequestInit)=>{
  const u=new URL(String(url));urls.push(u);
+ if(u.searchParams.get("internal_sku") === "eq.403-747") return Response.json([], {headers:{"Content-Range":"*/0"}});
  if(u.pathname.endsWith("/my_permissions"))return Response.json(grants);
  if(u.pathname.endsWith("/my_product_purchase_prices")){assert.deepEqual(JSON.parse(String(init?.body)),{p_product_ids:[id]});return Response.json([{product_id:id,base_purchase_price:7}]);}
  return Response.json([{id,nutrition_facts:{basis:"100g",protein_g:6.5}}],{headers:{"Content-Range":"0-0/1"}});
@@ -22,3 +23,8 @@ console.log("Archivist server checks passed");
 urls.length=0;
 assert.equal(await data.verifySystemAccess([{section:"products",ids:[id]}],signal),true);
 assert.ok(urls.some(u=>u.searchParams.get("select")==="id" && u.searchParams.get("id")?.startsWith("in.(")));
+
+grants=["agent.use","products.view"];urls.length=0;
+const normalized=await data.readSystem({section:"products",userId:id,query:"403-747",offset:0,limit:20},signal);
+assert.equal(normalized.rows.length,1);assert.ok(urls.some(u=>u.searchParams.get("internal_sku")==="eq.403-747"));assert.ok(urls.some(u=>u.searchParams.get("internal_sku")==="eq.403747"));assert.ok(urls.every(u=>!u.searchParams.has("or")));
+urls.length=0;await data.findProducts({query:"403-747",offset:0,limit:20},signal);assert.ok(urls.some(u=>u.searchParams.get("internal_sku")==="eq.403747"));
