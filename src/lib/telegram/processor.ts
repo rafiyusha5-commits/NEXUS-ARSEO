@@ -45,6 +45,7 @@ export async function processTelegramUpdate(update: unknown, bot: TelegramClient
   await processTelegramMessage(update, {
     rpc,
     bot,
+    botUsername: process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, ""),
     voiceEnabled: process.env.TELEGRAM_VOICE_ENABLED === "true" && process.env.TELEGRAM_VOICE_ACKNOWLEDGED === "true",
     async openSession(userId, deadline) {
       if (deadline.aborted) throw new TelegramUnavailable();

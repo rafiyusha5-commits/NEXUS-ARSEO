@@ -8,7 +8,7 @@ export type FieldKind = "id" | "text" | "date" | "datetime" | "number" | "status
 export type ToolField = { key: string; label: string; kind: FieldKind };
 
 /** A row reference the server can turn into a link; never a URL from the model. */
-export type EntityRef = { type: "shipment" | "document" | "task" | "system"; id: string; section?: string };
+export type EntityRef = { type: "shipment" | "document" | "task" | "system" | "drive"; id: string; section?: string };
 
 /**
  * One result row. `subject` names the object the row describes (shipment, vehicle, document…); it is
@@ -60,6 +60,8 @@ export type ShipmentRow = Record<string, unknown>;
  * the columns the tools need; tools project the result through their allow-lists again.
  */
 export interface AgentDataSource {
+  findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean }>;
+  downloadDriveFile?(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }>;
   verifySystemAccess(records: { section: string; ids: string[] }[], signal: AbortSignal): Promise<boolean>;
   readSystem(input: { section: string; userId: string; recordId?: string; query?: string; status?: string; date?: string; dateTo?: string; parentId?: string; relatedBy?: string; offset: number; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
 

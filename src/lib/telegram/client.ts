@@ -30,7 +30,8 @@ export class TelegramClient {
         if (!(payload.document instanceof Blob)) throw new TelegramError("TELEGRAM_REJECTED");
         form = new FormData();
         for (const [key, value] of Object.entries(payload)) {
-          if (key === "document") form.append(key, value as Blob, "nexus-answer.txt");
+          if (key === "filename") continue;
+          if (key === "document") form.append(key, value as Blob, typeof payload.filename === "string" ? payload.filename.replace(/[\x00-\x1f\x7f/\\"<>:|?*]/g, "_").slice(0, 160) : "nexus-answer.txt");
           else if (typeof value === "string" || typeof value === "number") form.append(key, String(value));
         }
       }

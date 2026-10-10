@@ -101,6 +101,7 @@ function cleanText(text: string): string {
 
 function link(entity: { type: string; id: string; section?: string } | undefined): string | undefined {
   if (!entity) return undefined;
+  if (entity.type === "drive" && /^[A-Za-z0-9_-]{10,120}$/.test(entity.id)) return `/assistant/archive/${entity.id}`;
   if (entity.type === "system") {
     const section=SYSTEM_BY_KEY.get(entity.section??"");
     if (!section) return undefined;

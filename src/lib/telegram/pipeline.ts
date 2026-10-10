@@ -8,6 +8,7 @@
 // - Business data reaches the chat only if the employee still has access right before sending.
 // - The temporary employee session is always closed (scope "local"), also after a timeout.
 import { conversationMemory } from "../agent/conversation.ts";
+import { DRIVE_ID, DRIVE_PERMISSIONS } from "../google/drive-readonly.ts";
 import type { AgentLimits } from "../agent/config.ts";
 import { maskDataText } from "../agent/masking.ts";
 import { QuestionPreparationError, runAgent } from "../agent/runner.ts";
@@ -68,6 +69,7 @@ export type TelegramAgent = {
 };
 
 export type TelegramPipelineDeps = {
+  botUsername?: string;
   /** Service RPCs telegram_* only (server key); never business data. */
   rpc: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   bot: TelegramBot;
@@ -165,11 +167,14 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   const beforeDelivery = timing.deliveryMs + timing.closeMs;
   let reply: string;
   let document: string | undefined;
+  let driveFile: { blob: Blob; filename: string } | undefined;
+  let replyMarkup: unknown;
   let accessRequirements: { all: string[]; any: string[] }[] = [];
   let accessRecords: {section:string;ids:string[]}[]=[];
   let errorCode: string | null = null;
   try {
-    const code = message.text ? startCode(message.text) : null;
+    // File deep links also fit the link-code alphabet; never consume them as account bindings.
+    const code = message.text && !/^\/start drive_/.test(message.text) ? startCode(message.text) : null;
     if (code) {
       const linked = await bounded(() => deps.rpc("telegram_request_link", { p_code: code, p_chat_id: message.chatId, p_name: message.displayName }), beforeDelivery);
       reply = linked === true ? TELEGRAM_TEXT.linkRequested : TELEGRAM_TEXT.linkInvalid;
@@ -183,12 +188,18 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
       const voice = voiceInput(message.voice);
       if (typeof employee !== "string") reply = TELEGRAM_TEXT.notLinked;
       else if (message.voice && (!voice || !deps.voiceEnabled)) reply = TELEGRAM_TEXT.voiceRules;
-      else if ((!message.text && !message.voice) || (message.text?.startsWith("/") && message.text !== "/limit" && message.text !== "/new")) reply = TELEGRAM_TEXT.unsupported;
+      else if ((!message.text && !message.voice) || (message.text?.startsWith("/") && message.text !== "/limit" && message.text !== "/new" && !/^\/(?:start drive_|file )[A-Za-z0-9_-]{10,120}$/.test(message.text))) reply = TELEGRAM_TEXT.unsupported;
       else {
         userId = employee;
         await progress("session");
         session = await bounded(() => deps.openSession(employee, deadline), timing.sendReserveMs, Infinity, (late) => { void late.close().catch(() => undefined); });
-        if (message.text === "/new") {
+        const requestedFile = message.text?.match(/^\/(?:start drive_|file )([A-Za-z0-9_-]{10,120})$/)?.[1];
+        if (requestedFile && DRIVE_ID.test(requestedFile)) {
+          accessRequirements = [{ all: [...DRIVE_PERMISSIONS], any: [] }];
+          const grants = await bounded(() => session!.permissions(["agent.use", ...DRIVE_PERMISSIONS]), beforeDelivery);
+          if (!["agent.use", ...DRIVE_PERMISSIONS].every(code => grants.has(code)) || !session.data.downloadDriveFile) { reply = TELEGRAM_TEXT.withheld; }
+          else { driveFile = await bounded(() => session!.data.downloadDriveFile!(requestedFile, deadline), beforeDelivery); accessRecords = [{ section: "drive", ids: [requestedFile] }]; reply = driveFile.filename; }
+        } else if (message.text === "/new") {
           conversationMemory.clear(JSON.stringify([employee, "telegram", String(message.chatId)]));
           reply = "Начата новая беседа. Задайте вопрос текстом или голосом.";
         } else if (message.text === "/limit") {
@@ -215,6 +226,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
             document = answer.document;
             accessRequirements = answer.accessRequirements ?? [];
             accessRecords = answer.accessRecords ?? [];
+            if (answer.driveFiles?.length && deps.botUsername && /^[A-Za-z0-9_]{5,32}$/.test(deps.botUsername)) replyMarkup = { inline_keyboard: answer.driveFiles.filter(file => file.id.length <= 58).map(file => [{ text: `Получить: ${file.name.slice(0, 45)}`, url: `https://t.me/${deps.botUsername}?start=drive_${file.id}` }]) };
           }
         }
         // Access lost or chat relinked while the model was working: no business data leaves Nexus.
@@ -225,6 +237,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
         const recordsVisible = !accessRecords.length || await bounded(()=>session!.data.verifySystemAccess(accessRecords,deadline),beforeDelivery);
         if (!recordsVisible || stillLinked !== employee || !permissions.has("agent.use") || accessRequirements.some(group => !group.all.every(code => permissions.has(code)) || (group.any.length && !group.any.some(code => permissions.has(code))))) {
           document = undefined;
+          driveFile = undefined; replyMarkup = undefined;
           reply = TELEGRAM_TEXT.withheld;
           errorCode = "ANSWER_WITHHELD";
         }
@@ -234,6 +247,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     // Any failure before delivery, including a timeout: a fixed text without data. Nothing paid is
     // repeated; the accounting run (if any) was already closed or is settled by its TTL.
     document = undefined;
+    driveFile = undefined; replyMarkup = undefined;
     reply = TELEGRAM_TEXT.failed;
     errorCode = "PROCESSING_ERROR";
   }
@@ -259,9 +273,11 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   }
   try {
     // Exactly one delivery attempt, with the same deadline and access checks for files and text.
-    await deps.bot.call(document ? "sendDocument" : "sendMessage", document
+    await deps.bot.call(driveFile || document ? "sendDocument" : "sendMessage", driveFile
+      ? { chat_id: message.chatId, caption: driveFile.filename, document: driveFile.blob, filename: driveFile.filename }
+      : document
       ? { chat_id: message.chatId, caption: shortMessage(reply, 1000), document: new Blob(["\uFEFF" + document], { type: "text/plain;charset=utf-8" }) }
-      : { chat_id: message.chatId, text: reply, link_preview_options: { is_disabled: true } }, { timeoutMs: sendMs, signal: deadline });
+      : { chat_id: message.chatId, text: reply, reply_markup: replyMarkup, link_preview_options: { is_disabled: true } }, { timeoutMs: sendMs, signal: deadline });
     await status("completed", 0).catch(() => undefined);
   } catch (error) {
     // A definite refusal delivered nothing; anything else may have been delivered. Never resend.
@@ -274,7 +290,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
 async function askAgent(
   agent: TelegramAgent, session: EmployeeSession, employee: string, chatKey: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
   deadline: AbortSignal, runMs: number, progress: (stage: Stage, extra?: { runId?: string; error?: string }) => Promise<unknown>,
-): Promise<{ answer: { text: string; errorCode: string | null; document?: string; accessRequirements?: { all: string[]; any: string[] }[]; accessRecords?: {section:string;ids:string[]}[] }; transcript: string }> {
+): Promise<{ answer: { text: string; errorCode: string | null; document?: string; driveFiles?: {id:string;name:string}[]; accessRequirements?: { all: string[]; any: string[] }[]; accessRecords?: {section:string;ids:string[]}[] }; transcript: string }> {
   let transcript = "";
   const preparation = voice ? {
     reserveUsdMicros: SPEECH_RESERVE_MICROS,
@@ -302,6 +318,6 @@ async function askAgent(
     limits: { ...agent.limits, runDeadlineMs: Math.max(1_000, Math.min(agent.limits.runDeadlineMs, runMs)) },
     onReserved: async (id) => { await progress(voice ? "speech" : "model", { runId: id }); },
   });
-  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null, accessRequirements: outcome.answer.accessRequirements, accessRecords: outcome.answer.accessRecords }, transcript };
+  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null, driveFiles: outcome.answer.facts.filter(fact=>fact.source.tool === "find_drive_documents").flatMap(fact=>{ const id=fact.link?.href.match(/^\/assistant\/archive\/([A-Za-z0-9_-]{10,120})$/)?.[1]; return id ? [{id,name:fact.subject}] : []; }), accessRequirements: outcome.answer.accessRequirements, accessRecords: outcome.answer.accessRecords }, transcript };
   return { answer: { text: outcome.message, errorCode: /^[A-Z][A-Z_]{1,63}$/.test(outcome.code) ? outcome.code : "PROCESSING_ERROR" }, transcript };
 }

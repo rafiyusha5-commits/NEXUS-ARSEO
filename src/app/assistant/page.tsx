@@ -12,7 +12,7 @@ const RUN_COLUMNS = "id,status,channel,question_excerpt,error_code,tools,steps,t
 
 export default async function AssistantPage() {
   const { profile, roles, supabase, user } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.use", "agent.view_traces"] as const);
+  const can = await loadPermissions(supabase, ["agent.use", "agent.view_traces", "documents.drive.view"] as const);
   const config = loadAgentConfig();
 
   const [usageResult, runsResult] = can["agent.use"]
@@ -30,7 +30,7 @@ export default async function AssistantPage() {
       <section className="workspace admin-workspace">
         <header className="topbar">
           <div><p className="eyebrow">Главная</p><h1>Ассистент</h1></div>
-          <div className="topbar-actions">{can["agent.use"] && <Link className="ghost button-link" href="/assistant/telegram">Telegram</Link>}{can["agent.view_traces"] && <Link className="ghost button-link" href="/assistant/traces">Трассы сотрудников</Link>}</div>
+          <div className="topbar-actions">{can["documents.drive.view"] && <Link className="ghost button-link" href="/assistant/archive">Архив Google Drive</Link>}{can["agent.use"] && <Link className="ghost button-link" href="/assistant/telegram">Telegram</Link>}{can["agent.view_traces"] && <Link className="ghost button-link" href="/assistant/traces">Трассы сотрудников</Link>}</div>
         </header>
 
         {!can["agent.use"] && <div className="login-error admin-message">У вас нет права пользоваться ассистентом (agent.use).</div>}

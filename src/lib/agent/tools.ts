@@ -2,6 +2,7 @@
 // row limit and timeout. Rows are projected through the field allow-list and masked here, so a data
 // source that returns more columns still cannot leak them. There are no write tools.
 import { SYSTEM_TOOLS } from "./system-tools.ts";
+import { DRIVE_TOOLS } from "./drive-tools.ts";
 import { HELP_TEXT, HELP_TOPICS, type HelpTopic } from "./help.ts";
 import {
   documentStatusLabel, extractionStatusLabel, label, shelfLifeLabel, shipmentStatusLabel, shipmentTypeLabel,
@@ -588,7 +589,7 @@ const getHelp: AgentTool = {
 
 export const AGENT_TOOLS: readonly AgentTool[] = [
   findShipments, getShipment, getShipmentVehicles, getShipmentDocuments, getDocumentExtraction,
-  listDelayedShipments, findProducts, getStockStatus, getMyTasks, getHelp, ...SYSTEM_TOOLS,
+  listDelayedShipments, findProducts, getStockStatus, getMyTasks, getHelp, ...SYSTEM_TOOLS, ...DRIVE_TOOLS,
 ];
 
 export const TOOL_BY_NAME: ReadonlyMap<string, AgentTool> = new Map(AGENT_TOOLS.map((tool) => [tool.name, tool]));

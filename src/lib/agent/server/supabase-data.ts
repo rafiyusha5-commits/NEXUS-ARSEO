@@ -1,4 +1,6 @@
 import "server-only";
+import { driveArchive } from "../../google/drive-server.ts";
+import { DRIVE_PERMISSIONS } from "../../google/drive-readonly.ts";
 import { SYSTEM_BY_KEY, sectionAllowed } from "../system-registry.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentDataSource, ShipmentRow } from "../types.ts";
@@ -34,6 +36,11 @@ function searchTerm(value: string): string {
 }
 
 export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSource {
+  async function requireDrive(signal: AbortSignal) {
+    signal.throwIfAborted();
+    const { data, error } = await supabase.rpc("my_permissions", { p_codes: [...DRIVE_PERMISSIONS, "agent.use"] });
+    if (error || !Array.isArray(data) || ![...DRIVE_PERMISSIONS, "agent.use"].every(code => data.includes(code))) throw new DataError();
+  }
   async function withCurrencies(rows: ShipmentRow[], signal: AbortSignal): Promise<ShipmentRow[]> {
     const ids=[...new Set(rows.map(row=>row.currency_id??row.cost_currency_id).filter((id): id is string=>typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)))];
     if(!ids.length) return rows;
@@ -42,9 +49,12 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
     return rows.map(row=>({...row,currency_code:codes.get(row.currency_id??row.cost_currency_id)??null}));
   }
   return {
+    async findDriveDocuments(query, offset, signal) { await requireDrive(signal); return driveArchive.search(query, signal, offset); },
+    async downloadDriveFile(id, signal) { await requireDrive(signal); return driveArchive.download(id, signal); },
     async verifySystemAccess(records, signal) {
       const grouped=new Map<string,Set<string>>();
       for(const record of records){
+        if (record.section === "drive") { try { await requireDrive(signal); for (const id of record.ids) await driveArchive.file(id, signal); } catch { return false; } continue; }
         const section=SYSTEM_BY_KEY.get(record.section); if(!section) return false;
         if(section.rpc) continue; // RPC domains are additionally protected by their exact captured permissions.
         const ids=grouped.get(section.key)??new Set<string>();record.ids.forEach(id=>ids.add(id));grouped.set(section.key,ids);

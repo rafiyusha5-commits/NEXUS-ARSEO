@@ -18,7 +18,7 @@ describe("assistant tools", () => {
   it("declare permissions, limits, timeouts and only declared fields", async () => {
     for (const tool of AGENT_TOOLS) {
       assert.ok(tool.maxRows > 0 && tool.maxRows <= 40, tool.name);
-      assert.ok(tool.timeoutMs > 0 && tool.timeoutMs <= 10_000, tool.name);
+      assert.ok(tool.timeoutMs > 0 && tool.timeoutMs <= (tool.name === "find_drive_documents" ? 30_000 : 10_000), tool.name);
       assert.ok(tool.fields.length > 0, tool.name);
     }
     assert.deepEqual(TOOL_BY_NAME.get("get_shipment_documents")!.permissions, ["shipments.view", "documents.view"]);

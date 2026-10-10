@@ -10,7 +10,7 @@ type Event =
   | { type: "error"; code: string; message: string; refunded: boolean };
 
 // Only server-built relative links to known Nexus pages are rendered.
-const SAFE_LINK = /^\/(shipments|documents|products|counterparties|warehouses|sales|templates|listing-cards)\/[0-9a-f-]{36}$|^\/(tasks|routes|suppliers|notifications|calendar|inventory|inventory\/movements|stickers|forecasts|purchase-plans|commercial-programs|finance|integrations|audit|admin\/users|admin\/roles)$|^\/products\?q=[^\s]*$/;
+const SAFE_LINK = /^\/assistant\/archive\/[A-Za-z0-9_-]{10,120}$|^\/(shipments|documents|products|counterparties|warehouses|sales|templates|listing-cards)\/[0-9a-f-]{36}$|^\/(tasks|routes|suppliers|notifications|calendar|inventory|inventory\/movements|stickers|forecasts|purchase-plans|commercial-programs|finance|integrations|audit|admin\/users|admin\/roles)$|^\/products\?q=[^\s]*$/;
 
 export function AssistantChat({ initialUsed, limit }: { initialUsed: number; limit: number }) {
   const [question, setQuestion] = useState("");

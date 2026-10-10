@@ -5,7 +5,7 @@ import { AGENT_TOOLS } from "../../src/lib/agent/tools.ts";
 import { STALE_AFTER_MS, telegramUpdateState, type TelegramUpdateRow } from "../../src/lib/telegram/update-state.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/202609275400_telegram_reliability.sql", import.meta.url), "utf8");
-const catalog = readFileSync(new URL("../../supabase/migrations/202609275600_agent_archivist.sql", import.meta.url), "utf8");
+const catalog = readFileSync(new URL("../../supabase/migrations/202609275800_agent_drive_archive.sql", import.meta.url), "utf8");
 const original = readFileSync(new URL("../../supabase/migrations/202609275200_agent_web_mvp.sql", import.meta.url), "utf8");
 const runner = readFileSync(new URL("../../src/lib/agent/runner.ts", import.meta.url), "utf8");
 
