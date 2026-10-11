@@ -81,7 +81,7 @@ begin
   if r.status not in ('scanning','extracting') then return jsonb_build_object('status',r.status,'runId',r.id);end if;
   if s.lease_until>now() then return jsonb_build_object('status','busy');end if;
   if r.status='scanning' and jsonb_array_length(s.frontier)=0 then
-   update public.drive_catalog_files set present=(seen_run=r.id);
+   update public.drive_catalog_files set present=(seen_run=r.id) where root_id='1VRUVM95YlgH4hyzILnC56mq_2Dpw5adm';
    update public.drive_catalog_runs set status='extracting',files=(select count(*) from public.drive_catalog_files where present),
     readable=(select count(*) from public.drive_catalog_files where present and content_status='readable'),
     unreadable=(select count(*) from public.drive_catalog_files where present and content_status not in ('pending','readable')) where id=r.id;
