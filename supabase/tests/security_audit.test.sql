@@ -48,7 +48,7 @@ select 'authenticated', unnest(array[
   'public.create_listing_card_version', 'public.create_sale_guarantee_letter', 'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
   'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',
   'public.confirm_customer_order', 'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
-  'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
+  'public.search_drive_catalog', 'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
   'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
   'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
   'public.reserve_customer_order_item_fefo', 'public.reserve_customer_order_item_override', 'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
@@ -83,7 +83,7 @@ select 'authenticated', unnest(array[
   'private.document_matches_counterparty', 'private.document_is_external_safe'])
 union all
 select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
-  'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
+  'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
   'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress']);
 
 do $$

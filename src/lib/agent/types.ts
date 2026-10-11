@@ -62,7 +62,8 @@ export type ShipmentRow = Record<string, unknown>;
 export interface AgentDataSource {
   findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean }>;
   downloadDriveFile?(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }>;
-  verifySystemAccess(records: { section: string; ids: string[] }[], signal: AbortSignal): Promise<boolean>;
+  getDriveDocument?(id:string,signal:AbortSignal):Promise<{file:import("../google/drive-readonly.ts").DriveFile;text:string|null;truncated:boolean}|null>;
+  verifySystemAccess(records: { section: string; ids: string[]; versions?: Record<string,string> }[], signal: AbortSignal): Promise<boolean>;
   readSystem(input: { section: string; userId: string; recordId?: string; query?: string; status?: string; date?: string; dateTo?: string; parentId?: string; relatedBy?: string; offset: number; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
 
   findShipments(input: { query?: string; status?: string; type?: string; date?: string; dateKind?: "ready" | "arrival" | "loading" | "any"; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
@@ -186,7 +187,7 @@ export type Commentary = { kind: "assumption" | "explanation"; text: string };
 
 export type AgentAnswer = {
   accessRequirements?: { all: string[]; any: string[] }[];
-  accessRecords?: { section: string; ids: string[] }[];
+  accessRecords?: { section: string; ids: string[]; versions?: Record<string,string> }[];
   facts: VerifiedFact[];
   commentary: Commentary[];
   /** Model selections the server refused (missing row, unknown field, empty value). */

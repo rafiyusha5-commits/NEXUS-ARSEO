@@ -6,7 +6,8 @@ export const DRIVE_ID = /^[A-Za-z0-9_-]{10,120}$/;
 const FOLDER = "application/vnd.google-apps.folder";
 const SHORTCUT = "application/vnd.google-apps.shortcut";
 const MAX_BYTES = 15 * 1024 * 1024;
-export type DriveFile = { id: string; name: string; mimeType: string; path: string; size?: string; parents?: string[] };
+export type DriveFile = { id: string; name: string; mimeType: string; path: string; size?: string; parents?: string[]; modifiedTime?: string; ancestors?: string[]; indexedAt?: string; contentStatus?: string };
+export type DriveFolder = { id: string; path: string; depth: number; ancestors: string[]; page?: string };
 export class DriveReadError extends Error { constructor() { super("DRIVE_READ_UNAVAILABLE"); } }
 export function safeFilename(name: string) { return name.replace(/[\x00-\x1f\x7f/\\"<>:|?*]/g, "_").slice(0, 160) || "document"; }
 export function driveTerms(query: string): string[] {
@@ -38,9 +39,39 @@ export class DriveReadonly {
   }
   private async metadata(id: string, signal: AbortSignal): Promise<DriveFile> {
     if (!DRIVE_ID.test(id)) throw new DriveReadError();
-    const data = await this.json(`files/${id}?supportsAllDrives=true&fields=id,name,mimeType,size,parents,trashed`, signal);
+    const data = await this.json(`files/${id}?supportsAllDrives=true&fields=id,name,mimeType,size,parents,trashed,modifiedTime`, signal);
     if (data.trashed === true || data.id !== id || typeof data.name !== "string" || typeof data.mimeType !== "string") throw new DriveReadError();
     return { ...data, path: "" } as DriveFile;
+  }
+  /** References come only from the server-side catalog discovered below the approved root. */
+  async catalogReference(id: string, ancestors: string[], signal: AbortSignal): Promise<DriveFile> {
+    if (!DRIVE_ID.test(id) || ancestors.length > 16 || (id !== DRIVE_ROOT && ancestors.at(-1) !== DRIVE_ROOT) || !ancestors.every(parent => DRIVE_ID.test(parent)) || new Set([id,...ancestors]).size !== ancestors.length + 1) throw new DriveReadError();
+    const chain = [id,...ancestors]; let file: DriveFile | undefined;
+    for (let index = chain.length - 1; index >= 0; index--) {
+      const current = await this.metadata(chain[index], signal);
+      if (index < chain.length - 1 && (current.parents?.length !== 1 || current.parents[0] !== chain[index + 1])) throw new DriveReadError();
+      if (index > 0 || id === DRIVE_ROOT) { if (current.mimeType !== FOLDER) throw new DriveReadError(); this.knownFolders.add(current.id); }
+      else file = current;
+    }
+    if (id === DRIVE_ROOT) return this.metadata(id,signal);
+    if (!file || file.mimeType === SHORTCUT) throw new DriveReadError();
+    if (file.mimeType === FOLDER) this.knownFolders.add(id); else this.knownFiles.add(id);
+    return file;
+  }
+  async catalogPage(folder: DriveFolder, signal: AbortSignal): Promise<{ files: DriveFile[]; nextPage: string }> {
+    const current = await this.catalogReference(folder.id, folder.ancestors, signal);
+    if (current.mimeType !== FOLDER || folder.depth > 15) throw new DriveReadError();
+    const params = new URLSearchParams({ q: `'${folder.id}' in parents and trashed=false`, pageSize: "100", orderBy: "name", fields: "nextPageToken,files(id,name,mimeType,size,modifiedTime)", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+    if (folder.page) params.set("pageToken",folder.page);
+    const data = await this.json(`files?${params}`,signal);
+    if (!Array.isArray(data.files)) throw new DriveReadError();
+    const files = data.files.map(raw => {
+      const file = raw as DriveFile;
+      if (!file || !DRIVE_ID.test(file.id) || typeof file.name !== "string" || typeof file.mimeType !== "string" || typeof file.modifiedTime !== "string" || Number.isNaN(Date.parse(file.modifiedTime))) throw new DriveReadError();
+      if(file.mimeType === FOLDER) this.knownFolders.add(file.id); else if(file.mimeType !== SHORTCUT) this.knownFiles.add(file.id);
+      return {...file,path:[folder.path,file.name].filter(Boolean).join(" / "),ancestors:[folder.id,...folder.ancestors]};
+    });
+    return { files, nextPage: typeof data.nextPageToken === "string" ? data.nextPageToken : "" };
   }
   /** Validate current ancestry on every retrieval; never trust a cached search result or model ID. */
   async file(id: string, signal: AbortSignal): Promise<DriveFile> {

@@ -170,7 +170,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   let driveFile: { blob: Blob; filename: string } | undefined;
   let replyMarkup: unknown;
   let accessRequirements: { all: string[]; any: string[] }[] = [];
-  let accessRecords: {section:string;ids:string[]}[]=[];
+  let accessRecords: {section:string;ids:string[];versions?:Record<string,string>}[]=[];
   let errorCode: string | null = null;
   try {
     // File deep links also fit the link-code alphabet; never consume them as account bindings.
@@ -290,7 +290,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
 async function askAgent(
   agent: TelegramAgent, session: EmployeeSession, employee: string, chatKey: string, text: string | null, voice: ReturnType<typeof voiceInput>, bot: TelegramBot,
   deadline: AbortSignal, runMs: number, progress: (stage: Stage, extra?: { runId?: string; error?: string }) => Promise<unknown>,
-): Promise<{ answer: { text: string; errorCode: string | null; document?: string; driveFiles?: {id:string;name:string}[]; accessRequirements?: { all: string[]; any: string[] }[]; accessRecords?: {section:string;ids:string[]}[] }; transcript: string }> {
+): Promise<{ answer: { text: string; errorCode: string | null; document?: string; driveFiles?: {id:string;name:string}[]; accessRequirements?: { all: string[]; any: string[] }[]; accessRecords?: {section:string;ids:string[];versions?:Record<string,string>}[] }; transcript: string }> {
   let transcript = "";
   const preparation = voice ? {
     reserveUsdMicros: SPEECH_RESERVE_MICROS,
@@ -318,6 +318,6 @@ async function askAgent(
     limits: { ...agent.limits, runDeadlineMs: Math.max(1_000, Math.min(agent.limits.runDeadlineMs, runMs)) },
     onReserved: async (id) => { await progress(voice ? "speech" : "model", { runId: id }); },
   });
-  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null, driveFiles: outcome.answer.facts.filter(fact=>fact.source.tool === "find_drive_documents").flatMap(fact=>{ const id=fact.link?.href.match(/^\/assistant\/archive\/([A-Za-z0-9_-]{10,120})$/)?.[1]; return id ? [{id,name:fact.subject}] : []; }), accessRequirements: outcome.answer.accessRequirements, accessRecords: outcome.answer.accessRecords }, transcript };
+  if (outcome.ok) return { answer: { ...telegramDelivery(outcome.answer, outcome.requestsUsed, outcome.requestLimit), errorCode: null, driveFiles: outcome.answer.facts.filter(fact=>["find_drive_documents","get_drive_document"].includes(fact.source.tool)).flatMap(fact=>{ const id=fact.link?.href.match(/^\/assistant\/archive\/([A-Za-z0-9_-]{10,120})$/)?.[1]; return id ? [{id,name:fact.subject}] : []; }), accessRequirements: outcome.answer.accessRequirements, accessRecords: outcome.answer.accessRecords }, transcript };
   return { answer: { text: outcome.message, errorCode: /^[A-Z][A-Z_]{1,63}$/.test(outcome.code) ? outcome.code : "PROCESSING_ERROR" }, transcript };
 }

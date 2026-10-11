@@ -45,7 +45,7 @@ export const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export type CallRecord = { tool: AgentTool; result: ToolResult; access?: { all: string[]; any: string[] }; records?: { section: string; ids: string[] } };
+export type CallRecord = { tool: AgentTool; result: ToolResult; access?: { all: string[]; any: string[] }; records?: { section: string; ids: string[]; versions?: Record<string,string> } };
 
 type RawFact = { call: string; row: number; fields: string[] };
 type RawCommentary = { kind: "assumption" | "explanation"; text: string };

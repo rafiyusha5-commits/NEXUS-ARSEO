@@ -310,7 +310,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
               if(!extra.every(code=>extraGrants.has(code))) throw new Error("PERMISSION_DENIED");
             }
             const bounded = { ...result, rows: result.rows.slice(0, tool.maxRows) };
-            calls.set(call.id, { tool, result: bounded, access: { all: [...required,...extra,...alternatives.filter(code=>current.has(code))], any: [] }, ...(tool.name === "find_drive_documents" ? { records:{section:"drive",ids:bounded.rows.map(row=>row.entity?.id??"").filter(Boolean)} } : {}), ...(tool.scope ? { records:{section:String(parsed.value.section),ids:bounded.rows.map(row=>String(row.values.record_id??"")).filter(Boolean)} } : {}) });
+            calls.set(call.id, { tool, result: bounded, access: { all: [...required,...extra,...alternatives.filter(code=>current.has(code))], any: [] }, ...(["find_drive_documents","get_drive_document"].includes(tool.name) ? { records:{section:tool.name === "get_drive_document" ? "drive_text" : "drive",ids:bounded.rows.map(row=>row.entity?.id??"").filter(Boolean),versions:Object.fromEntries(bounded.rows.filter(row=>row.entity?.id&&typeof row.values.source_modified_at === "string").map(row=>[row.entity!.id,String(row.values.source_modified_at)]))} } : {}), ...(tool.scope ? { records:{section:String(parsed.value.section),ids:bounded.rows.map(row=>String(row.values.record_id??"")).filter(Boolean)} } : {}) });
             reply(toolContent(call.id, tool, bounded));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: bounded.rows.length, truncated: bounded.truncated, ms: now() - toolStarted });
           } catch (error) {
