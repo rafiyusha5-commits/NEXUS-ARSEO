@@ -1,5 +1,6 @@
 "use client";
 import { useEffect,useRef,useState } from "react";
+import { RequestProgress } from "./request-progress";
 export function CatalogSync() {
  const [running,setRunning]=useState(false);const [message,setMessage]=useState("");const stop=useRef(false);
  useEffect(()=>()=>{stop.current=true;},[]);
@@ -16,5 +17,5 @@ export function CatalogSync() {
   }}catch{setMessage("Обновление прервано. Можно продолжить той же кнопкой; файлы Google Drive не изменены.");}
   finally{setRunning(false);}
  }
- return <div><button type="button" disabled={running} onClick={run}>Обновить каталог Nexus</button>{running&&<button type="button" onClick={()=>{stop.current=true;setMessage("После текущего шага обновление остановится. Его можно продолжить.");}}>Приостановить</button>}<p role="status">{message}</p><p>Обновление идёт, пока эта страница открыта. Google Drive используется только для чтения.</p></div>;
+ return <div><button type="button" disabled={running} onClick={run}>Обновить каталог Nexus</button>{running&&<button type="button" onClick={()=>{stop.current=true;setMessage("После текущего шага обновление остановится. Его можно продолжить.");}}>Приостановить</button>}{running ? <RequestProgress label={message || "Начинаю обновление каталога…"} /> : <p role="status">{message}</p>}<p>Обновление идёт, пока эта страница открыта. Google Drive используется только для чтения.</p></div>;
 }

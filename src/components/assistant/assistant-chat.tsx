@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import type { AgentAnswer } from "@/lib/agent/types";
+import { RequestProgress } from "./request-progress";
 
 type Event =
   | { type: "stage"; label: string }
@@ -73,7 +74,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
         <div><p className="eyebrow">Только чтение · ваши права</p><h2>Вопрос ассистенту</h2></div>
         <span className="page-count">{used} из {limit} сегодня</span>
       </div>
-      <form className="doc-form" onSubmit={submit}>
+      <form className="doc-form" onSubmit={submit} aria-busy={busy}>
         <label className="doc-form-full">Вопрос
           <textarea name="question" rows={3} maxLength={1000} value={question} onChange={(event) => setQuestion(event.target.value)}
             placeholder="Например: какие поставки задерживаются? Какие документы есть по поставке NAR-2026-0001?" disabled={busy} />
@@ -81,6 +82,8 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
         <p className="form-help doc-form-full">Контекст последних вопросов сохраняется на 30 минут в этой беседе. Данные проверяются заново. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Финансовые данные доступны только по вашим правам.</p>
         <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button> <button type="button" disabled={busy} onClick={() => { conversation.current = null; setAnswer(null); setStages([]); setError(null); setQuestion(""); }}>Новая беседа</button></div>
       </form>
+
+      {busy && <RequestProgress label={stages.at(-1) ? `${stages.at(-1)}…` : "Ассистент обрабатывает вопрос…"} />}
 
       {(busy || stages.length > 0) && !answer && (
         <ol className="assistant-stages" aria-live="polite">

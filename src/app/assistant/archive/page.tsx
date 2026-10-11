@@ -5,6 +5,7 @@ import { loadPermissions } from "@/lib/permissions.ts";
 import { DRIVE_PERMISSIONS } from "@/lib/google/drive-readonly.ts";
 import { createSupabaseAgentData } from "@/lib/agent/server/supabase-data.ts";
 import { CatalogSync } from "@/components/assistant/catalog-sync";
+import { ArchiveSearch } from "@/components/assistant/archive-search";
 import { CONTENT_STATUS } from "@/lib/google/catalog-text.ts";
 import type { DriveFile } from "@/lib/google/drive-readonly.ts";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export default async function ArchivePage({ searchParams }: { searchParams: Prom
         {run?.data ? <p>Обновление: {run.data.status === "completed" ? "завершено" : run.data.status === "extracting" ? "чтение текста" : run.data.status === "failed" ? "прервано" : "обход папок"}. Файлов: {run.data.files}. Текст прочитан: {run.data.readable}. Без прочитанного текста: {run.data.unreadable}. {run.data.finished_at && `Время: ${new Date(run.data.finished_at).toLocaleString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p> : <p>Каталог в базе ещё не создан. Запустите первое обновление.</p>}
         {can["documents.drive.text.view"] && can["prices.purchase.view"] && roles.some(role=>["administrator","director"].includes(role.code)) && <CatalogSync />}
       </>}
-      <form method="get"><label>Название или бренд <input name="q" defaultValue={q} maxLength={120} placeholder="Belgian ДС" /></label><button type="submit">Найти</button></form>
+      <ArchiveSearch key={q} query={q} />
       {error && <p>Не удалось прочитать архив. Попробуйте позже.</p>}
       {result && <><p>{result.total === null ? "Поиск неполный" : `Найдено: ${result.total}`}</p><ul>{result.files.map(file => <li key={file.id}><Link href={`/assistant/archive/${file.id}`}>{file.name}</Link><p>{file.path}</p>{file.contentStatus&&<p>{CONTENT_STATUS[file.contentStatus]}{file.modifiedTime&&` · версия источника: ${new Date(file.modifiedTime).toLocaleDateString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p>}</li>)}</ul>
         {result.truncated && <Link href={`/assistant/archive?q=${encodeURIComponent(q)}&offset=${offset + 20}`}>Следующая страница</Link>}</>}
