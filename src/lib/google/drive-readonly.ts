@@ -6,7 +6,7 @@ export const DRIVE_ID = /^[A-Za-z0-9_-]{10,120}$/;
 const FOLDER = "application/vnd.google-apps.folder";
 const SHORTCUT = "application/vnd.google-apps.shortcut";
 const MAX_BYTES = 15 * 1024 * 1024;
-export type DriveFile = { id: string; name: string; mimeType: string; path: string; size?: string; parents?: string[]; modifiedTime?: string; ancestors?: string[]; indexedAt?: string; contentStatus?: string };
+export type DriveFile = { id: string; name: string; mimeType: string; path: string; size?: string; parents?: string[]; modifiedTime?: string; ancestors?: string[]; indexedAt?: string; contentStatus?: string; textMethod?: "text_layer" | "ocr" | null; ocrConfidence?: number | null; ocrPages?: number | null; ocrError?: string | null };
 export type DriveFolder = { id: string; path: string; depth: number; ancestors: string[]; page?: string };
 export class DriveReadError extends Error { constructor() { super("DRIVE_READ_UNAVAILABLE"); } }
 export function safeFilename(name: string) { return name.replace(/[\x00-\x1f\x7f/\\"<>:|?*]/g, "_").slice(0, 160) || "document"; }

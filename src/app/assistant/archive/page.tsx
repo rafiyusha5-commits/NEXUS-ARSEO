@@ -6,6 +6,7 @@ import { DRIVE_PERMISSIONS } from "@/lib/google/drive-readonly.ts";
 import { createSupabaseAgentData } from "@/lib/agent/server/supabase-data.ts";
 import { CatalogSync } from "@/components/assistant/catalog-sync";
 import { ArchiveSearch } from "@/components/assistant/archive-search";
+import { catalogOcrConfig } from "@/lib/google/catalog-ocr-config.ts";
 import { CONTENT_STATUS } from "@/lib/google/catalog-text.ts";
 import type { DriveFile } from "@/lib/google/drive-readonly.ts";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function ArchivePage({ searchParams }: { searchParams: Prom
   const q = (query.q ?? "").trim().slice(0, 120); const offset = Math.max(0, Math.min(1000, Number(query.offset) || 0));
   let result: { files:DriveFile[];total:number|null;truncated:boolean } | undefined; let error = false;
   if (allowed && q) { try { result = await createSupabaseAgentData(supabase).findDriveDocuments!(q,offset,AbortSignal.timeout(30000)); } catch { error = true; } }
-  const run=allowed ? await supabase.from("drive_catalog_runs").select("status,started_at,finished_at,pages,files,readable,unreadable").order("started_at",{ascending:false}).limit(1).maybeSingle() : null;
+  const run=allowed ? await supabase.from("drive_catalog_runs").select("kind,status,started_at,finished_at,pages,files,readable,unreadable").order("started_at",{ascending:false}).limit(1).maybeSingle() : null;
   // Permissions are refreshed after the remote search, before any metadata is rendered.
   const fresh = await loadPermissions(supabase, [...DRIVE_PERMISSIONS, "agent.use"]);
   const visible = allowed && ([...DRIVE_PERMISSIONS, "agent.use"] as const).every(code => fresh[code]);
@@ -26,12 +27,12 @@ export default async function ArchivePage({ searchParams }: { searchParams: Prom
     {!visible ? <p>Нет права доступа к архиву Google Drive.</p> : <section className="panel admin-section">
       <p>Оригиналы из папки «02_Для дистрибьюторов KZ» остаются на Google Drive. В Nexus хранится каталог и безопасный извлечённый текст. Google Drive — только чтение.</p>
       {run?.error ? <p>Для каталога в базе примените миграцию 202609275900_drive_catalog.sql. Поиск названий на Google Drive продолжает работать.</p> : <>
-        {run?.data ? <p>Обновление: {run.data.status === "completed" ? "завершено" : run.data.status === "extracting" ? "чтение текста" : run.data.status === "failed" ? "прервано" : "обход папок"}. Файлов: {run.data.files}. Текст прочитан: {run.data.readable}. Без прочитанного текста: {run.data.unreadable}. {run.data.finished_at && `Время: ${new Date(run.data.finished_at).toLocaleString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p> : <p>Каталог в базе ещё не создан. Запустите первое обновление.</p>}
-        {can["documents.drive.text.view"] && can["prices.purchase.view"] && roles.some(role=>["administrator","director"].includes(role.code)) && <CatalogSync />}
+        {run?.data ? <p>{run.data.kind === "ocr" ? "Пакет OCR" : "Обновление каталога"}: {run.data.status === "completed" ? "завершено" : run.data.status === "extracting" ? "чтение текста" : run.data.status === "failed" ? "прервано" : "обход папок"}. Файлов: {run.data.files}. Текст прочитан: {run.data.readable}. Без прочитанного текста: {run.data.unreadable}. {run.data.finished_at && `Время: ${new Date(run.data.finished_at).toLocaleString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p> : <p>Каталог в базе ещё не создан. Запустите первое обновление.</p>}
+        {can["documents.drive.text.view"] && can["prices.purchase.view"] && roles.some(role=>["administrator","director"].includes(role.code)) && <CatalogSync ocrEnabled={catalogOcrConfig().enabled} />}
       </>}
       <ArchiveSearch key={q} query={q} />
       {error && <p>Не удалось прочитать архив. Попробуйте позже.</p>}
-      {result && <><p>{result.total === null ? "Поиск неполный" : `Найдено: ${result.total}`}</p><ul>{result.files.map(file => <li key={file.id}><Link href={`/assistant/archive/${file.id}`}>{file.name}</Link><p>{file.path}</p>{file.contentStatus&&<p>{CONTENT_STATUS[file.contentStatus]}{file.modifiedTime&&` · версия источника: ${new Date(file.modifiedTime).toLocaleDateString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p>}</li>)}</ul>
+      {result && <><p>{result.total === null ? "Поиск неполный" : `Найдено: ${result.total}`}</p><ul>{result.files.map(file => <li key={file.id}><Link href={`/assistant/archive/${file.id}`}>{file.name}</Link><p>{file.path}</p>{file.contentStatus&&<p>{file.textMethod === "ocr" ? "Распознано OCR · возможны ошибки" : CONTENT_STATUS[file.contentStatus]}{file.ocrError&&` · OCR: ${file.ocrError === "too_many_pages" ? "слишком много страниц" : file.ocrError === "empty" ? "текст не найден" : file.ocrError === "retry_exhausted" ? "попытки исчерпаны" : "не удалось распознать"}`}{file.modifiedTime&&` · версия источника: ${new Date(file.modifiedTime).toLocaleDateString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p>}</li>)}</ul>
         {result.truncated && <Link href={`/assistant/archive?q=${encodeURIComponent(q)}&offset=${offset + 20}`}>Следующая страница</Link>}</>}
     </section>}
   </section></main>;

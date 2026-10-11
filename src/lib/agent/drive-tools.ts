@@ -21,9 +21,11 @@ export const DRIVE_TOOLS: AgentTool[] = [{
   const record=await ctx.data.getDriveDocument(String(params.drive_id),ctx.signal);
   if(!record)return {rows:[],total:0,truncated:false,notes:["Документ недоступен или его версия изменилась. Обновите каталог."]};
   const values:Record<string,string|number|null>={file_name:maskDataText(record.file.name,160),content_status:CONTENT_STATUS[record.file.contentStatus??"pending"]??"Текст недоступен",source_modified_at:record.file.modifiedTime??null,indexed_at:record.file.indexedAt??null};
-  if(record.text){const safeText=maskOutgoing(record.text);values.document_excerpt=catalogExcerpt(safeText,String(params.query??""));values.expiry_date=catalogExpiry(safeText);}
+  const recognized = record.file.textMethod === "ocr";
+  if(recognized && record.text) values.content_status = "Распознано OCR · не проверено сотрудником";
+  if(record.text){const safeText=maskOutgoing(record.text);values.document_excerpt=catalogExcerpt(safeText,String(params.query??""));if(!recognized)values.expiry_date=catalogExpiry(safeText);}
   const draft=/макет|черновик|draft/iu.test(record.file.name);
   if(draft)delete values.expiry_date;
-  return {rows:[{subject:maskDataText(record.file.name,160)??"Документ",values,entity:{type:"drive",id:record.file.id}}],total:1,truncated:false,notes:[...(record.truncated?["Извлечённый текст ограничен по длине; фрагмент не заменяет полный документ."]:[]),...(draft?["Это макет или черновик, не используйте его как действующую декларацию."]:[]),...(!record.text?["Текст не прочитан. Нельзя утверждать содержание или срок действия по названию."]:[])]};
+  return {rows:[{subject:maskDataText(record.file.name,160)??"Документ",values,entity:{type:"drive",id:record.file.id}}],total:1,truncated:false,notes:[...(recognized?["Текст распознан OCR и не проверен сотрудником: возможны ошибки в цифрах, датах и названиях. Срок действия нужно сверить с оригиналом."]:[]),...(record.truncated?["Извлечённый текст ограничен по длине; фрагмент не заменяет полный документ."]:[]),...(draft?["Это макет или черновик, не используйте его как действующую декларацию."]:[]),...(!record.text?["Текст не прочитан. Нельзя утверждать содержание или срок действия по названию."]:[])]};
  },
 }];

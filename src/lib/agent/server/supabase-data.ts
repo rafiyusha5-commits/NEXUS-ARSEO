@@ -66,12 +66,12 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
       await requireDrive(signal);
       const permissions=await supabase.rpc("my_permissions",{p_codes:["prices.purchase.view","documents.drive.text.view"]}).abortSignal(signal);
       if(permissions.error||!permissions.data?.includes("prices.purchase.view")||!permissions.data?.includes("documents.drive.text.view"))throw new DataError();
-      const result=await supabase.from("drive_catalog_files").select("file_id,name,folder_path,mime_type,ancestor_ids,source_modified_at,content_status,text_indexed_at").eq("file_id",id).abortSignal(signal).maybeSingle();
+      const result=await supabase.from("drive_catalog_files").select("file_id,name,folder_path,mime_type,ancestor_ids,source_modified_at,content_status,text_indexed_at,text_method,ocr_confidence,ocr_pages,ocr_error").eq("file_id",id).abortSignal(signal).maybeSingle();
       if(result.error||!result.data)return null;const row=result.data;
       try {const current=await driveArchive.catalogReference(id,row.ancestor_ids,signal);if(Date.parse(current.modifiedTime??"")!==Date.parse(row.source_modified_at))return null;}catch{return null;}
       const text=await supabase.from("drive_catalog_text").select("body,truncated").eq("file_id",id).abortSignal(signal).maybeSingle();
       if(text.error)throw new DataError();
-      const file:DriveFile={id,name:row.name,path:row.folder_path,mimeType:row.mime_type,modifiedTime:row.source_modified_at,contentStatus:row.content_status,indexedAt:row.text_indexed_at};
+      const file:DriveFile={id,name:row.name,path:row.folder_path,mimeType:row.mime_type,modifiedTime:row.source_modified_at,contentStatus:row.content_status,indexedAt:row.text_indexed_at,textMethod:row.text_method,ocrConfidence:row.ocr_confidence,ocrPages:row.ocr_pages,ocrError:row.ocr_error};
       return {file,text:text.data?.body??null,truncated:text.data?.truncated??false};
     },
     async verifySystemAccess(records, signal) {
