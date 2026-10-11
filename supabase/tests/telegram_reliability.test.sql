@@ -56,18 +56,21 @@ select tests.tg_expect_error(format($q$select public.agent_finish_run('bf540000-
 reset role;
 do $$begin
  assert (select count(*) from public.agent_runs r join tg_runs t on t.run_id=r.id where t.n<=3 and r.cost_status='actual')=3,'voice and date-search runs are closed with their real usage';
- assert (select actual_usd_micros=7225 and tools->0->'params'->>'duration_seconds'='9' and tools->1->'params'->>'date'='2026-10-15' from public.agent_runs where id=(select run_id from tg_runs where n=1)),'trace stored';
+ assert (select actual_usd_micros=7225 and input_tokens=2500 and output_tokens=250
+   and question_excerpt is null and tools->0->'params'='{}'::jsonb and tools->1->'params'='{}'::jsonb
+   and tools->0->>'name'='speech_to_text' and tools->1->>'name'='find_shipments'
+   and tools->1->>'rows'='2' and tools->1->>'ms'='40'
+   from public.agent_runs where id=(select run_id from tg_runs where n=1)),'technical trace and accounting retained, question and parameters removed';
  assert (select request_refunded and actual_usd_micros=20000 from public.agent_runs where id=(select run_id from tg_runs where n=2)),'failed speech: question returned, cost kept';
  assert (select requests_used from public.agent_usage_days where user_id='bf540000-0000-4000-8000-000000000001')=2,'four reserved, two returned';
 end$$;
 
 -- 2. Update state: progress, the point of no return and final states.
 set local role service_role;
-select public.telegram_claim_update(5001,700001) as t1 \gset
-select public.telegram_claim_update(5002,700001) as t2 \gset
-select public.telegram_claim_update(5003,700002) as t3 \gset
+select set_config('tests.t1',public.telegram_claim_update(5001,700001),true);
+select set_config('tests.t2',public.telegram_claim_update(5002,700001),true);
+select set_config('tests.t3',public.telegram_claim_update(5003,700002),true);
 do $$begin assert public.telegram_claim_update(5001,700001) is null,'a repeated delivery is never claimed twice';end$$;
-select set_config('tests.t1',:'t1',true),set_config('tests.t2',:'t2',true),set_config('tests.t3',:'t3',true);
 do $$
 declare t1 text:=current_setting('tests.t1');t2 text:=current_setting('tests.t2');t3 text:=current_setting('tests.t3');
  v_run uuid:=(select run_id from tg_runs where n=1);v_other uuid:=(select run_id from tg_runs where n=4);

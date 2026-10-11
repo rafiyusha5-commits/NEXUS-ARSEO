@@ -271,9 +271,13 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     try {
       const reserve = timing.minSendMs + timing.finalWriteMs;
       const visible = !accessRecords.length || await bounded(() => session!.data.verifySystemAccess(accessRecords, deadline), reserve);
-      const linked = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), reserve);
-      const held = await bounded(() => session!.permissions(["agent.use", ...DRIVE_PERMISSIONS, ...accessRequirements.flatMap(group => [...group.all, ...group.any])]), reserve);
-      if (!visible || linked !== userId || !held.has("agent.use") || (driveFile && !DRIVE_PERMISSIONS.every(code => held.has(code))) || accessRequirements.some(group => !group.all.every(code => held.has(code)) || (group.any.length && !group.any.some(code => held.has(code))))) throw new Error("ANSWER_WITHHELD");
+      if (!visible) throw new Error("ANSWER_WITHHELD");
+      // No separate link/permission reads: the final RPC sees one SQL snapshot.
+      const authorized = await bounded(() => deps.rpc("telegram_authorize_delivery", {
+        p_update_id: message.updateId, p_token: claim, p_user_id: userId,
+        p_requirements: [...accessRequirements, ...(driveFile ? [{ all: [...DRIVE_PERMISSIONS], any: [] }] : [])],
+      }), reserve);
+      if (authorized !== true) throw new Error("ANSWER_WITHHELD");
     } catch {
       await status("failed", 0).catch(() => undefined);
       return;

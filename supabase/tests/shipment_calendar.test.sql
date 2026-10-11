@@ -1,6 +1,10 @@
 \set ON_ERROR_STOP 1
 begin;
 
+-- Do not depend on pre-existing seed suppliers; imports require a manufacturer.
+insert into public.counterparties(id,roles,legal_name,country) values
+ ('e3000000-0000-4000-8000-000000000011',array['supplier','manufacturer'],'Calendar Test Factory','FI');
+
 insert into auth.users(id,email,raw_user_meta_data) values
  ('e3000000-0000-4000-8000-000000000001','calendar-director@test.local','{"full_name":"Calendar Director"}'),
  ('e3000000-0000-4000-8000-000000000002','calendar-marketer@test.local','{"full_name":"Calendar Marketer"}');
@@ -16,7 +20,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','e3000000-0000-4000-8000-000000000001',false);
 insert into calendar_context(shipment_id)
 select public.create_shipment_with_stages(
- 'CAL-TEST','import',(select id from public.counterparties where roles&&array['supplier','manufacturer'] order by created_at limit 1),null,
+ 'CAL-TEST','import','e3000000-0000-4000-8000-000000000011',null,
  (select id from public.routes where status='active' order by created_at limit 1),(select id from public.currencies where code='EUR'),
  (select id from public.warehouses where status='active' and not is_virtual order by code limit 1),
  'e3000000-0000-4000-8000-000000000001',current_date-2,current_date+7

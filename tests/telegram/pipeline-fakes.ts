@@ -25,6 +25,9 @@ export class FakeDatabase {
   readonly updates = new Map<number, Row>();
   readonly calls: string[] = [];
   linked: string | null = USER_ID;
+  granted = new Set<string>();
+  /** Runs before the final database snapshot (e.g. unlink while RPC is in flight). */
+  beforeAuthorization: (() => void) | undefined;
   failClaim = false;
   failDeliveryMark = false;
   private next = 0;
@@ -53,6 +56,13 @@ export class FakeDatabase {
         return token;
       }
       case "telegram_employee": return this.linked;
+      case "telegram_authorize_delivery": {
+        this.beforeAuthorization?.();
+        const groups = args.p_requirements as { all: string[]; any: string[] }[];
+        return !!owns && row.status === "delivery_started" && (row.userId === null || row.userId === args.p_user_id)
+          && this.linked === args.p_user_id && this.granted.has("agent.use")
+          && groups.every(g => g.all.every(c => this.granted.has(c)) && (!g.any.length || g.any.some(c => this.granted.has(c))));
+      }
       case "telegram_update_progress":
         if (!owns || !["processing", "delivery_started"].includes(row.status)) return false;
         row.stage = String(args.p_stage);
@@ -114,6 +124,7 @@ export type Harness = { db: FakeDatabase; bot: FakeBot; ledger: FakeLedger; open
 type Transcribe = (audio: Uint8Array, signal: AbortSignal) => Promise<{ text: string; costUsdMicros: number; durationSeconds: number }>;
 export function harness(provider: AgentModelProvider, options: Partial<TelegramPipelineDeps> & { transcribe?: Transcribe; runDeadlineMs?: number } = {}): Harness {
   const h = { db: new FakeDatabase(), bot: new FakeBot(), ledger: new FakeLedger(), opened: 0, closed: 0, closeDelayMs: 0, granted: new Set(ALL_PERMISSIONS) } as Harness;
+  h.db.granted = h.granted;
   const session = (): EmployeeSession => ({
     permissions: async (codes) => new Set(codes.filter((code) => h.granted.has(code))),
     data: fakeData(),

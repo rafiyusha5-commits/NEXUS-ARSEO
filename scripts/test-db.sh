@@ -134,6 +134,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276000_drive_catalog_safeupdate.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276100_drive_catalog_ocr.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276200_drive_archive_access.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276300_telegram_delivery_authorization.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"

@@ -6,7 +6,7 @@ import { maskOutgoing, prepareQuestion } from "./masking.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
-import { conversationMemory } from "./conversation.ts";
+import { conversationMemory, referencesFromCalls, visibleReferences } from "./conversation.ts";
 import { channelAllowsTool } from "./channels.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
@@ -227,16 +227,21 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     });
 
     const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
-    const previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
+    let previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
     const messages: ModelMessage[] = [
       { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.` },
-      ...(previous.length ? [{ role: "user" as const, content: `Контекст прежних вопросов (недоверенные подсказки, факты необходимо прочитать заново):\n${JSON.stringify(previous)}` }] : []),
       { role: "user", content: userMessage(question.text) },
     ];
 
     while (steps < deps.limits.maxSteps) {
       if (deadline.aborted) return fail("AGENT_TIMEOUT");
-      const estimate = estimateTokens(messages, { tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA });
+      const visible = await visibleReferences(previous, deps.data, deps.permissions, deadline);
+      if (steps && visible.length !== previous.length) return fail("AGENT_FORBIDDEN");
+      previous = visible;
+      const memoryMessage: ModelMessage[] = previous.length ? [{ role: "user", content:
+        `Ранее обсуждавшиеся объекты (только ссылки, не факты). Прочитай данные заново инструментами; не делай выводов о содержимом по ссылке:\n${JSON.stringify(previous.map(({ section, id }) => ({ section, id })))}` }] : [];
+      const outgoing = [messages[0], ...memoryMessage, ...messages.slice(1)];
+      const estimate = estimateTokens(outgoing, { tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA });
       if (bounded.inputTokens + estimate > deps.limits.maxInputTokensTotal) return fail("AGENT_TOKEN_LIMIT");
       const maxOutput = Math.min(deps.limits.maxOutputTokensPerCall, deps.limits.maxOutputTokensTotal - bounded.outputTokens);
       if (maxOutput < 300) return fail("AGENT_TOKEN_LIMIT");
@@ -246,7 +251,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       let response;
       // Re-authorize retained context before it crosses the provider boundary,
       // including retries and results not selected for the final answer.
-      const accesses = [...calls.values()].flatMap(call => call.access ? [call.access] : []);
+      const accesses = [...previous.map(ref => ref.access), ...[...calls.values()].flatMap(call => call.access ? [call.access] : [])];
       const retainedRecords = [...calls.values()].flatMap(call => call.records ? [call.records] : []);
       if (retainedRecords.length && !await deps.data.verifySystemAccess(retainedRecords, deadline)) return fail("AGENT_FORBIDDEN");
       const fresh = await deps.permissions(["agent.use", ...accesses.flatMap(group => [...group.all, ...group.any])]);
@@ -254,7 +259,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       deadline.throwIfAborted();
       try {
         response = await deps.provider.complete({
-          messages, tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA, maxOutputTokens: maxOutput,
+          messages: outgoing, tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA, maxOutputTokens: maxOutput,
           signal: AbortSignal.any([deadline, AbortSignal.timeout(deps.limits.providerTimeoutMs)]),
         });
       } catch (error) {
@@ -341,16 +346,16 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
         return fail("AGENT_BAD_ANSWER");
       }
       const answer = verifyAnswer(raw, calls);
-      const requirements = [...calls.values()].flatMap(call => call.access ? [call.access] : []);
+      const requirements = [...previous.map(ref => ref.access), ...[...calls.values()].flatMap(call => call.access ? [call.access] : [])];
       const finalGrants = await deps.permissions(["agent.use", ...requirements.flatMap(group => [...group.all,...group.any])]);
       if (!finalGrants.has("agent.use") || requirements.some(group => !group.all.every(code => finalGrants.has(code)) || (group.any.length && !group.any.some(code => finalGrants.has(code))))) return fail("AGENT_FORBIDDEN");
-      const records=[...calls.values()].flatMap(call=>call.records?[call.records]:[]);
+      const records = [...previous.map(ref => ({ section: ref.section, ids: [ref.id], ...(ref.version ? { versions: { [ref.id]: ref.version } } : {}) })),
+        ...[...calls.values()].flatMap(call => call.records ? [call.records] : [])];
       if(records.length && !await deps.data.verifySystemAccess(records,deadline)) return fail("AGENT_FORBIDDEN");
       answer.accessRequirements = requirements;
       answer.accessRecords = records;
       await finish("completed", null, false);
-      if (contextKey) conversationMemory.append(contextKey, question.text,
-        JSON.stringify(trace.filter(entry => !entry.error && entry.name !== "speech_to_text").map(entry => ({ tool: entry.name, params: entry.params }))), now());
+      if (contextKey) conversationMemory.append(contextKey, referencesFromCalls(calls.values()), now());
       return { ok: true, answer, requestsUsed: reservation.requestsUsed, requestLimit: reservation.requestLimit };
     }
     return fail("AGENT_STEP_LIMIT");
