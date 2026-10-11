@@ -15,7 +15,7 @@ const SECRET_RULES: Rule[] = [
   { pattern: /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g, replace: "[скрыт ключ]" },
   { pattern: /\bAIza[0-9A-Za-z_-]{20,}/g, replace: "[скрыт ключ]" },
   {
-    pattern: /\b(password|passwd|пароль|token|токен|secret|секрет|api[_ -]?key|ключ\s+api|private[_ -]?key)(\s*[:=]\s*)(\S+)/gi,
+    pattern: /(?<![\p{L}\p{N}_])(password|passwd|пароль|token|токен|secret|секрет|api[_ -]?key|ключ\s+api|private[_ -]?key)(\s*[:=]\s*)(\S+)/giu,
     replace: (_m, key: string, sep: string) => `${key}${sep}[скрыто]`,
   },
   { pattern: /\b[0-9a-f]{32,}\b/gi, replace: "[скрыто]" },

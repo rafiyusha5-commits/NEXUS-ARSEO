@@ -2,7 +2,7 @@
 // the user's session data source, a fresh permission check, the ledger and the model provider.
 import { actualCostMicros, reserveCostMicros, type AgentLimits } from "./config.ts";
 import { ANSWER_JSON_SCHEMA, parseAnswer, verifyAnswer, type CallRecord } from "./facts.ts";
-import { hasLongDigitChain, maskOutgoing, maskSensitive, prepareQuestion, traceExcerpt } from "./masking.ts";
+import { maskOutgoing, prepareQuestion } from "./masking.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
@@ -115,11 +115,10 @@ function estimateTokens(messages: ModelMessage[], definitions?: unknown): number
 }
 
 function safeParams(params: Record<string, string | number>): Record<string, string | number> {
-  return Object.fromEntries(Object.entries(params).map(([key, value]) => {
-    if (typeof value !== "string") return [key, value];
-    // A number that no rule recognised is not written to the trace at all.
-    return [key, hasLongDigitChain(maskSensitive(value).text, 9) ? "[скрыто]" : maskOutgoing(value).slice(0, 60)];
-  }));
+  // Any model-controlled string (even an ID or enum) can encode document contents.
+  // Retain no parameter values in persistent telemetry.
+  void params;
+  return {};
 }
 
 export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<RunOutcome> {
@@ -134,7 +133,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
 
   let reservation: Reservation;
   try {
-    reservation = await deps.ledger.reserve({ userId: deps.userId, channel: deps.channel, questionExcerpt: traceExcerpt(question.text), reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) + (deps.questionPreparation?.reserveUsdMicros ?? 0) });
+    reservation = await deps.ledger.reserve({ userId: deps.userId, channel: deps.channel, questionExcerpt: "", reserveUsdMicros: reserveCostMicros(deps.limits, deps.pricing) + (deps.questionPreparation?.reserveUsdMicros ?? 0) });
   } catch (error) {
     const code = error instanceof Error && LEDGER_CODES.has(error.message) ? error.message : "AGENT_LEDGER_ERROR";
     return { ok: false, code, message: errorText(code), refunded: false };
@@ -245,6 +244,14 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       steps += 1;
       stage(steps === 1 ? "Разбираю вопрос" : "Анализирую данные");
       let response;
+      // Re-authorize retained context before it crosses the provider boundary,
+      // including retries and results not selected for the final answer.
+      const accesses = [...calls.values()].flatMap(call => call.access ? [call.access] : []);
+      const retainedRecords = [...calls.values()].flatMap(call => call.records ? [call.records] : []);
+      if (retainedRecords.length && !await deps.data.verifySystemAccess(retainedRecords, deadline)) return fail("AGENT_FORBIDDEN");
+      const fresh = await deps.permissions(["agent.use", ...accesses.flatMap(group => [...group.all, ...group.any])]);
+      if (!fresh.has("agent.use") || accesses.some(group => !group.all.every(code => fresh.has(code)) || (group.any.length && !group.any.some(code => fresh.has(code))))) return fail("AGENT_FORBIDDEN");
+      deadline.throwIfAborted();
       try {
         response = await deps.provider.complete({
           messages, tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA, maxOutputTokens: maxOutput,

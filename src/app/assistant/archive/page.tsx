@@ -16,17 +16,18 @@ export default async function ArchivePage({ searchParams }: { searchParams: Prom
   const allowed = ([...DRIVE_PERMISSIONS, "agent.use"] as const).every(code => can[code]);
   const query = await searchParams;
   const q = (query.q ?? "").trim().slice(0, 120); const offset = Math.max(0, Math.min(1000, Number(query.offset) || 0));
-  let result: { files:DriveFile[];total:number|null;truncated:boolean } | undefined; let error = false;
-  if (allowed && q) { try { result = await createSupabaseAgentData(supabase).findDriveDocuments!(q,offset,AbortSignal.timeout(30000)); } catch { error = true; } }
+  let result: { files:DriveFile[];total:number|null;truncated:boolean;requiredPermissions?:string[] } | undefined; let error = false;
   const run=allowed ? await supabase.from("drive_catalog_runs").select("kind,status,started_at,finished_at,pages,files,readable,unreadable").order("started_at",{ascending:false}).limit(1).maybeSingle() : null;
+  if (allowed && q) { try { result = await createSupabaseAgentData(supabase).findDriveDocuments!(q,offset,AbortSignal.timeout(30000)); } catch { error = true; } }
   // Permissions are refreshed after the remote search, before any metadata is rendered.
-  const fresh = await loadPermissions(supabase, [...DRIVE_PERMISSIONS, "agent.use"]);
-  const visible = allowed && ([...DRIVE_PERMISSIONS, "agent.use"] as const).every(code => fresh[code]);
+  const required = [...DRIVE_PERMISSIONS, "agent.use", ...(result?.requiredPermissions ?? [])];
+  const fresh = await loadPermissions(supabase, required);
+  const visible = allowed && required.every(code => fresh[code]);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="assistant" /><section className="workspace admin-workspace">
     <header className="topbar"><h1>Архив Google Drive</h1><Link href="/assistant">Ассистент</Link></header>
     {!visible ? <p>Нет права доступа к архиву Google Drive.</p> : <section className="panel admin-section">
       <p>Оригиналы из папки «02_Для дистрибьюторов KZ» остаются на Google Drive. В Nexus хранится каталог и безопасный извлечённый текст. Google Drive — только чтение.</p>
-      {run?.error ? <p>Для каталога в базе примените миграцию 202609275900_drive_catalog.sql. Поиск названий на Google Drive продолжает работать.</p> : <>
+      {run?.error ? <p>Каталог недоступен. Администратору необходимо проверить миграции и серверный доступ к архиву.</p> : <>
         {run?.data ? <p>{run.data.kind === "ocr" ? "Пакет OCR" : "Обновление каталога"}: {run.data.status === "completed" ? "завершено" : run.data.status === "extracting" ? "чтение текста" : run.data.status === "failed" ? "прервано" : "обход папок"}. Файлов: {run.data.files}. Текст прочитан: {run.data.readable}. Без прочитанного текста: {run.data.unreadable}. {run.data.finished_at && `Время: ${new Date(run.data.finished_at).toLocaleString("ru-RU",{timeZone:"Asia/Aqtobe"})}`}</p> : <p>Каталог в базе ещё не создан. Запустите первое обновление.</p>}
         {can["documents.drive.text.view"] && can["prices.purchase.view"] && roles.some(role=>["administrator","director"].includes(role.code)) && <CatalogSync ocrEnabled={catalogOcrConfig().enabled} />}
       </>}

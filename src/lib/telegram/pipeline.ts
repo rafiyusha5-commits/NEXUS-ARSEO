@@ -251,8 +251,8 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     reply = TELEGRAM_TEXT.failed;
     errorCode = "PROCESSING_ERROR";
   }
-  await closeSession();
-
+  // Keep the employee session alive until the final send-boundary check.
+  try {
   if (errorCode) await progress("sending", { error: errorCode }, timing.deliveryMs);
   // Delivery window. Not even the delivery mark is written without time to send after it.
   if (remaining() < timing.minSendMs + timing.finalWriteMs) {
@@ -264,6 +264,20 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
   if (marked !== true) {
     await status("failed", 0).catch(() => undefined);
     return;
+  }
+  // The delivery mark and earlier progress writes may have taken seconds.
+  // Recheck AFTER them. No more awaits may intervene between this check and send.
+  if (session && userId && !errorCode) {
+    try {
+      const reserve = timing.minSendMs + timing.finalWriteMs;
+      const visible = !accessRecords.length || await bounded(() => session!.data.verifySystemAccess(accessRecords, deadline), reserve);
+      const linked = await bounded(() => deps.rpc("telegram_employee", { p_chat_id: message.chatId }), reserve);
+      const held = await bounded(() => session!.permissions(["agent.use", ...DRIVE_PERMISSIONS, ...accessRequirements.flatMap(group => [...group.all, ...group.any])]), reserve);
+      if (!visible || linked !== userId || !held.has("agent.use") || (driveFile && !DRIVE_PERMISSIONS.every(code => held.has(code))) || accessRequirements.some(group => !group.all.every(code => held.has(code)) || (group.any.length && !group.any.some(code => held.has(code))))) throw new Error("ANSWER_WITHHELD");
+    } catch {
+      await status("failed", 0).catch(() => undefined);
+      return;
+    }
   }
   const sendMs = Math.min(timing.sendTimeoutMs, remaining() - timing.finalWriteMs);
   if (sendMs < timing.minSendMs) {
@@ -285,6 +299,7 @@ export async function processTelegramMessage(update: unknown, deps: TelegramPipe
     await progress("sending", { error: definite ? error.code : "TELEGRAM_UNAVAILABLE" }, timing.finalWriteMs / 2);
     await status(definite ? "failed" : "delivery_unknown", 0).catch(() => undefined);
   }
+  } finally { await closeSession(); }
 }
 
 async function askAgent(

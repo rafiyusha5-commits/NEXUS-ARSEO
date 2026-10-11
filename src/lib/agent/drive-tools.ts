@@ -10,6 +10,7 @@ export const DRIVE_TOOLS: AgentTool[] = [{
     if (!ctx.data.findDriveDocuments) throw new Error("DRIVE_NOT_CONFIGURED");
     const result = await ctx.data.findDriveDocuments(String(params.query), Number(params.offset ?? 0), ctx.signal);
     return { rows: result.files.map(file => ({ subject: maskDataText(file.name, 160) ?? "Документ", values: { file_name: maskDataText(file.name, 160), folder_path: maskDataText(file.path, 300),source_modified_at:file.modifiedTime??null }, entity: { type: "drive", id: file.id } })), total: result.total, truncated: result.truncated,
+      requiredPermissions: result.requiredPermissions,
       notes: ["Поиск документов. Для ответа по содержимому отдельно прочитайте get_drive_document. Файл с названием Макет или Черновик не является подтверждённым оригиналом."] };
   },
 },{

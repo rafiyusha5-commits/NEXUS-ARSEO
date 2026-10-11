@@ -188,7 +188,7 @@ describe("assistant run", () => {
     assert.equal(d.ledger.reservations[0].userId, USER_ID, "the run is reserved for the session user the server verified");
     assert.equal(d.ledger.finished[0].status, "completed");
     assert.equal(d.ledger.finished[0].refund, false);
-    assert.deepEqual(d.ledger.finished[0].tools[0], { name: "find_shipments", params: { query: "NAR-2026", limit: 5 }, rows: 1, truncated: false, ms: d.ledger.finished[0].tools[0].ms });
+    assert.deepEqual(d.ledger.finished[0].tools[0], { name: "find_shipments", params: {}, rows: 1, truncated: false, ms: d.ledger.finished[0].tools[0].ms });
     assert.equal(d.ledger.finished[0].inputTokens, 2500);
     assert.equal(d.ledger.finished[0].actualUsdMicros, 2500 * 2 + 250 * 8);
     assert.ok(d.stages.includes("Ищу поставки") && d.stages.includes("Проверяю факты"));
@@ -259,7 +259,7 @@ describe("assistant run", () => {
     }
     assert.ok(seen.includes("NAR-2026-0007"), "ordinary shipment numbers still work");
     assert.ok(seen.includes(`shipment_id\\":\\"${SHIPMENT_ID}`), "the record id reaches the model for follow-up tools");
-    assert.equal(d.ledger.finished[0].tools[1].params.query, "[скрыто]");
+    assert.deepEqual(d.ledger.finished[0].tools[1].params, {});
   });
 
   it("refuses a question whose number cannot be cleaned, before reserving or calling the model", async () => {
@@ -276,7 +276,7 @@ describe("assistant run", () => {
     const provider = new ScriptedProvider([toolCall("c1", "find_shipments", { query: null, status: null, type: null, limit: null })]);
     const d = deps(provider, { permissions: async (codes) => {
       calls += 1;
-      if (calls > 2) throw new Error("network down: password=secret");
+      if (calls > 3) throw new Error("network down: password=secret");
       return new Set(codes);
     } });
     const outcome = await runAgent("Где поставки?", d);

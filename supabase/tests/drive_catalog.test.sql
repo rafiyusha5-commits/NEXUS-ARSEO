@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP 1
 begin;
+insert into private.drive_gateway_config(id,secret_sha256) values(true,encode(sha256(convert_to(repeat('a',64),'UTF8')),'hex')) on conflict(id) do update set secret_sha256=excluded.secret_sha256;
+select set_config('request.headers',jsonb_build_object('x-nexus-drive-gateway',repeat('a',64))::text,true);
 insert into auth.users(id,email,raw_user_meta_data) values
  ('dc000000-0000-4000-8000-000000000001','catalog-admin@test.local','{"full_name":"Catalog admin"}'),
  ('dc000000-0000-4000-8000-000000000002','catalog-logistic@test.local','{"full_name":"Catalog viewer"}');

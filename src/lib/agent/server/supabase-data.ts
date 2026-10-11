@@ -1,6 +1,7 @@
 import "server-only";
 import { driveArchive } from "../../google/drive-server.ts";
-import { DRIVE_PERMISSIONS,driveTerms, type DriveFile } from "../../google/drive-readonly.ts";
+import { catalogGateway } from "../../google/catalog-gateway.ts";
+import { createCatalogAccess } from "../../google/catalog-access.ts";
 import { SYSTEM_BY_KEY, sectionAllowed } from "../system-registry.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentDataSource, ShipmentRow } from "../types.ts";
@@ -36,11 +37,7 @@ function searchTerm(value: string): string {
 }
 
 export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSource {
-  async function requireDrive(signal: AbortSignal) {
-    signal.throwIfAborted();
-    const { data, error } = await supabase.rpc("my_permissions", { p_codes: [...DRIVE_PERMISSIONS, "agent.use"] });
-    if (error || !Array.isArray(data) || ![...DRIVE_PERMISSIONS, "agent.use"].every(code => data.includes(code))) throw new DataError();
-  }
+  const archive = createCatalogAccess(supabase, () => catalogGateway(supabase), driveArchive);
   async function withCurrencies(rows: ShipmentRow[], signal: AbortSignal): Promise<ShipmentRow[]> {
     const ids=[...new Set(rows.map(row=>row.currency_id??row.cost_currency_id).filter((id): id is string=>typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)))];
     if(!ids.length) return rows;
@@ -49,46 +46,16 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
     return rows.map(row=>({...row,currency_code:codes.get(row.currency_id??row.cost_currency_id)??null}));
   }
   return {
-    async findDriveDocuments(query, offset, signal) {
-      await requireDrive(signal);
-      const catalog=await supabase.rpc("search_drive_catalog",{p_query:driveTerms(query).join(" "),p_offset:offset}).abortSignal(signal);
-      if(!catalog.error && catalog.data?.ready)return catalog.data;
-      if(catalog.error && !["PGRST202","42883"].includes(catalog.error.code))throw new DataError();
-      return driveArchive.search(query,signal,offset);
-    },
-    async downloadDriveFile(id, signal) {
-      await requireDrive(signal);
-      const catalog=await supabase.from("drive_catalog_files").select("ancestor_ids").eq("file_id",id).abortSignal(signal).maybeSingle();
-      if(catalog.data)await driveArchive.catalogReference(id,catalog.data.ancestor_ids,signal);
-      return driveArchive.download(id,signal);
-    },
-    async getDriveDocument(id,signal) {
-      await requireDrive(signal);
-      const permissions=await supabase.rpc("my_permissions",{p_codes:["prices.purchase.view","documents.drive.text.view"]}).abortSignal(signal);
-      if(permissions.error||!permissions.data?.includes("prices.purchase.view")||!permissions.data?.includes("documents.drive.text.view"))throw new DataError();
-      const result=await supabase.from("drive_catalog_files").select("file_id,name,folder_path,mime_type,ancestor_ids,source_modified_at,content_status,text_indexed_at,text_method,ocr_confidence,ocr_pages,ocr_error").eq("file_id",id).abortSignal(signal).maybeSingle();
-      if(result.error||!result.data)return null;const row=result.data;
-      try {const current=await driveArchive.catalogReference(id,row.ancestor_ids,signal);if(Date.parse(current.modifiedTime??"")!==Date.parse(row.source_modified_at))return null;}catch{return null;}
-      const text=await supabase.from("drive_catalog_text").select("body,truncated").eq("file_id",id).abortSignal(signal).maybeSingle();
-      if(text.error)throw new DataError();
-      const file:DriveFile={id,name:row.name,path:row.folder_path,mimeType:row.mime_type,modifiedTime:row.source_modified_at,contentStatus:row.content_status,indexedAt:row.text_indexed_at,textMethod:row.text_method,ocrConfidence:row.ocr_confidence,ocrPages:row.ocr_pages,ocrError:row.ocr_error};
-      return {file,text:text.data?.body??null,truncated:text.data?.truncated??false};
-    },
+    findDriveDocuments: archive.findDriveDocuments,
+    downloadDriveFile: archive.downloadDriveFile,
+    getDriveDocument: archive.getDriveDocument,
     async verifySystemAccess(records, signal) {
       const grouped=new Map<string,Set<string>>();
       for(const record of records){
-        if (record.section === "drive" || record.section === "drive_text") { try { await requireDrive(signal);
-          for(let offset=0;offset<record.ids.length;offset+=4) {
-            const checks=await Promise.all(record.ids.slice(offset,offset+4).map(async id=>{
-              const catalog=await supabase.from("drive_catalog_files").select("ancestor_ids,source_modified_at").eq("file_id",id).abortSignal(signal).maybeSingle();
-              if(catalog.data){const current=await driveArchive.catalogReference(id,catalog.data.ancestor_ids,signal);
-                if(record.section==="drive_text" && (!record.versions?.[id] || Date.parse(current.modifiedTime??"")!==Date.parse(record.versions[id]) || Date.parse(catalog.data.source_modified_at)!==Date.parse(record.versions[id])))return false;
-                if(record.versions?.[id] && Date.parse(current.modifiedTime??"")!==Date.parse(record.versions[id]))return false;
-              } else if(record.section==="drive_text")return false;else await driveArchive.file(id,signal);
-              return true;
-            }));if(checks.some(check=>!check))return false;
-          }
-        } catch { return false; } continue; }
+        if (record.section === "drive" || record.section === "drive_text") {
+          if (!await archive.verifyDriveAccess(record, signal)) return false;
+          continue;
+        }
         const section=SYSTEM_BY_KEY.get(record.section); if(!section) return false;
         if(section.rpc) continue; // RPC domains are additionally protected by their exact captured permissions.
         const ids=grouped.get(section.key)??new Set<string>();record.ids.forEach(id=>ids.add(id));grouped.set(section.key,ids);

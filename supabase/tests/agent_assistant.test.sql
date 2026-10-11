@@ -273,7 +273,7 @@ from public.agent_reserve_run(tests.agent_me(),'web',E'номер 0456 78912, 04
 reset role;
 do $$begin
  assert not exists(select 1 from public.agent_runs where question_excerpt ~ '[0-9]{3}|[0-9][ ._/()-][0-9]{2}'),'excerpts keep no digit runs';
- assert exists(select 1 from public.agent_runs where question_excerpt like 'удостоверение [скрыто], ИИН [скрыто]'),'the excerpt is masked by the database';
+ assert not exists(select 1 from public.agent_runs where question_excerpt is not null),'the database retains no question excerpt';
  assert not exists(select 1 from public.agent_runs where question_excerpt ~* 'hunter2|abc\.def|eyJ|sk-proj|​'),'secrets and invisible characters are removed';
 end$$;
 
@@ -318,8 +318,8 @@ select public.agent_finish_run(tests.agent_me(),(select run_id from agent_pii),(
 reset role;
 do $$begin
  assert (select tools from public.agent_runs where id=(select run_id from agent_pii))=
-  '[{"name":"find_shipments","params":{"query":"[скрыто] password=[скрыто]","status":"in_transit","limit":5},"rows":1,"truncated":false,"ms":12},{"name":"get_help","params":{"topic":"documents"},"rows":1,"truncated":false,"ms":0,"error":"TOOL_ERROR"}]'::jsonb,
-  'the stored trace is rebuilt from cleaned values only';
+  '[{"name":"find_shipments","params":{},"rows":1,"truncated":false,"ms":12},{"name":"get_help","params":{},"rows":1,"truncated":false,"ms":0,"error":"TOOL_ERROR"}]'::jsonb,
+  'the stored trace retains technical counters but no parameter values';
  assert (select model='gpt-4.1-mini' and provider='openai' from public.agent_runs where id=(select run_id from agent_pii)),'checked metadata is stored';
 end$$;
 set role authenticated;

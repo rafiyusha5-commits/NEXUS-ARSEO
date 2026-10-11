@@ -71,6 +71,7 @@ export class DriveReadonly {
       if(file.mimeType === FOLDER) this.knownFolders.add(file.id); else if(file.mimeType !== SHORTCUT) this.knownFiles.add(file.id);
       return {...file,path:[folder.path,file.name].filter(Boolean).join(" / "),ancestors:[folder.id,...folder.ancestors]};
     });
+    await this.catalogReference(folder.id, folder.ancestors, signal);
     return { files, nextPage: typeof data.nextPageToken === "string" ? data.nextPageToken : "" };
   }
   /** Validate current ancestry on every retrieval; never trust a cached search result or model ID. */
@@ -96,12 +97,14 @@ export class DriveReadonly {
   }
   async search(query: string, signal: AbortSignal, offset = 0): Promise<{ files: DriveFile[]; total: number | null; truncated: boolean }> {
     const terms = driveTerms(query); if (!terms.length || query.length > 120 || offset < 0 || offset > 1000) throw new DriveReadError();
-    const queue = [{ id: DRIVE_ROOT, path: "", depth: 0 }]; const seen = new Set<string>(); const matches: DriveFile[] = [];
+    const queue: DriveFolder[] = [{ id: DRIVE_ROOT, path: "", depth: 0, ancestors: [] }]; const seen = new Set<string>(); const matches: DriveFile[] = [];
     let calls = 0; let incomplete = false; let scoped = false;
     const idQuery = query.length >= 20 && DRIVE_ID.test(query);
     const goal = offset + (terms.includes("дс") || idQuery ? 1 : 20);
     while (queue.length && calls < 100 && matches.length < goal) {
       const folder = queue.shift()!; if (seen.has(folder.id)) continue; seen.add(folder.id);
+      try { await this.catalogReference(folder.id, folder.ancestors, signal); }
+      catch { signal.throwIfAborted(); continue; }
       let page = "";
       do {
         if (++calls > 100) { incomplete = true; break; }
@@ -114,8 +117,13 @@ export class DriveReadonly {
           if (!file || !DRIVE_ID.test(file.id) || typeof file.name !== "string" || typeof file.mimeType !== "string") throw new DriveReadError();
           const path = [folder.path, file.name].filter(Boolean).join(" / ");
           if (file.mimeType === SHORTCUT) continue;
-          if (file.mimeType === FOLDER) { this.knownFolders.add(file.id); if (folder.depth < 15) queue.push({ id: file.id, path, depth: folder.depth + 1 }); else incomplete = true; }
-          else { this.knownFiles.add(file.id); if (file.id === query || terms.every(term => driveTerms(path).some(word => word.includes(term)))) matches.push({ id: file.id, name: file.name, mimeType: file.mimeType, size: file.size, path }); }
+          if (file.mimeType === FOLDER) { this.knownFolders.add(file.id); if (folder.depth < 15) queue.push({ id: file.id, path, depth: folder.depth + 1, ancestors: [folder.id, ...folder.ancestors] }); else incomplete = true; }
+          else { this.knownFiles.add(file.id); if (file.id === query || terms.every(term => driveTerms(path).some(word => word.includes(term)))) {
+            try {
+              const live = await this.catalogReference(file.id, [folder.id, ...folder.ancestors], signal);
+              matches.push({ ...live, path: [folder.path, live.name].filter(Boolean).join(" / "), ancestors: [folder.id, ...folder.ancestors] });
+            } catch { signal.throwIfAborted(); }
+          } }
         }
         page = typeof data.nextPageToken === "string" ? data.nextPageToken : "";
       } while (page);
@@ -126,7 +134,12 @@ export class DriveReadonly {
       }
     }
     incomplete ||= queue.length > 0;
-    return { files: matches.slice(offset, offset + 20), total: incomplete || scoped ? null : matches.length, truncated: incomplete || scoped || matches.length > offset + 20 };
+    const valid: DriveFile[] = [];
+    for (const match of matches) {
+      try { await this.catalogReference(match.id, match.ancestors!, signal); valid.push(match); }
+      catch { signal.throwIfAborted(); }
+    }
+    return { files: valid.slice(offset, offset + 20), total: incomplete || scoped ? null : valid.length, truncated: incomplete || scoped || valid.length > offset + 20 };
   }
   async download(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }> {
     const file = await this.file(id, signal);

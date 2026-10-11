@@ -60,7 +60,7 @@ export type ShipmentRow = Record<string, unknown>;
  * the columns the tools need; tools project the result through their allow-lists again.
  */
 export interface AgentDataSource {
-  findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean }>;
+  findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean; requiredPermissions?: string[] }>;
   downloadDriveFile?(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }>;
   getDriveDocument?(id:string,signal:AbortSignal):Promise<{file:import("../google/drive-readonly.ts").DriveFile;text:string|null;truncated:boolean}|null>;
   verifySystemAccess(records: { section: string; ids: string[]; versions?: Record<string,string> }[], signal: AbortSignal): Promise<boolean>;
