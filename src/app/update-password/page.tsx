@@ -1,4 +1,5 @@
 import { updatePassword } from "./actions";
+import { AuthBrandPanel, NexusWordmark } from "@/components/brand";
 
 export default async function UpdatePasswordPage({
   searchParams,
@@ -9,15 +10,10 @@ export default async function UpdatePasswordPage({
 
   return (
     <main className="login-page">
-      <section className="login-brand">
-        <div className="login-brand-mark">N</div>
-        <p className="eyebrow">Безопасность Nexus-ARSEO</p>
-        <h1>Новый пароль</h1>
-        <p>Используйте отдельный пароль, который не применяется для почты или других сервисов.</p>
-      </section>
+      <AuthBrandPanel title="Новый пароль" text="Используйте отдельный пароль, который не применяется для почты или других сервисов." />
       <section className="login-panel">
         <div className="login-card">
-          <p className="eyebrow">Nexus-ARSEO</p>
+          <NexusWordmark className="login-wordmark" />
           <h2>Задайте новый пароль</h2>
           <p className="login-intro">Не менее 12 символов.</p>
           {error && <div className="login-error">Пароли должны совпадать и содержать не менее 12 символов.</div>}
