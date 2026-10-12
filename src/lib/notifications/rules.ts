@@ -45,6 +45,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         return { href: `/documents/${entity}`, label: "Открыть документ" };
     }
   }
+  // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.
+  if (target.entity_type === "shelf_life_control") return { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" };
   return shipment ? { href: `/shipments/${shipment}`, label: "Открыть поставку" } : null;
 }
 

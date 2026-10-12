@@ -30,6 +30,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Склад", items: [
     { label: "Остатки и партии", href: "/inventory", key: "inventory" },
     { label: "Перемещения и списания", href: "/inventory/movements", key: "inventory-movements" },
+    { label: "Контроль ОСГ", href: "/inventory/shelf-life", key: "shelf-life" },
     { label: "Склады и зоны", href: "/warehouses", key: "warehouses" },
     { label: "Стикеры и маркировка", href: "/stickers", key: "stickers" },
   ] },

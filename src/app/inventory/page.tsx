@@ -21,7 +21,7 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
   const total=(stock??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);
   const expiring=(stock??[]).filter(row=>["warning","critical","expired"].includes(row.shelf_life_state)).length;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="inventory"/><section className="workspace admin-workspace">
-    <header className="topbar"><div><p className="eyebrow">Фаза 2 · Складской учёт</p><h1>Партии и остатки</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory/movements">Движения</Link><span className="page-count">FIFO включён</span></div></header>
+    <header className="topbar"><div><p className="eyebrow">Фаза 2 · Складской учёт</p><h1>Партии и остатки</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory/movements">Движения</Link><Link className="secondary compact" href="/inventory/shelf-life">Контроль ОСГ</Link><span className="page-count">FIFO включён</span></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609271200_inventory_fifo.sql</strong> в Supabase. После этого появятся регистрация партий и FIFO.</div>}
     <section className="shipment-summary-grid inventory-summary">

@@ -16,6 +16,7 @@ describe("notification links", () => {
     assert.deepEqual(notificationLink({ entity_type: "document", entity_id: TASK, shipment_id: null }), { href: `/documents/${TASK}`, label: "Открыть документ" });
     assert.deepEqual(notificationLink({ entity_type: "shipment_document_check", entity_id: SHIPMENT, shipment_id: SHIPMENT }),
       { href: `/shipments/${SHIPMENT}?tab=documents#document-check`, label: "Открыть «Сверку»" });
+    assert.deepEqual(notificationLink({ entity_type: "shelf_life_control", entity_id: null, shipment_id: null }), { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" });
   });
 
   it("falls back to the shipment and to no link", () => {
