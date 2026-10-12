@@ -1,10 +1,10 @@
-# Агент «Сверщик документов поставки»
+# Агент «Сверка»
 
 Агент сверяет документы активной поставки с её карточкой и сообщает о проблемах до того, как они всплывут на таможне.
 
 - Миграция: `supabase/migrations/202609276400_document_check_agent.sql`. Применяется после `202609276300_telegram_delivery_authorization.sql`, повторное применение безопасно.
 - Тесты: `supabase/tests/document_check_agent.test.sql`, `tests/document-check/rules.test.ts`, ссылка уведомления — `tests/notifications/rules.test.ts`.
-- Экран: карточка поставки → вкладка «Документы» → блок «Проверка документов» (`src/components/documents/shipment-document-check-panel.tsx`).
+- Экран: карточка поставки → вкладка «Документы» → блок «Сверка документов с карточкой» (`src/components/documents/shipment-document-check-panel.tsx`).
 
 ## Принципы
 

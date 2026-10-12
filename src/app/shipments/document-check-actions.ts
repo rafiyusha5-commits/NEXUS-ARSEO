@@ -21,9 +21,9 @@ export async function runDocumentCheckAction(formData: FormData) {
   if (!UUID.test(shipmentId)) redirect("/shipments?error=Некорректная поставка");
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("run_shipment_document_check", { p_shipment_id: shipmentId, p_source: "manual" });
-  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось проверить документы.")));
+  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "«Сверка» не выполнена.")));
   revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", "Документы проверены"));
+  redirect(back(shipmentId, "success", "«Сверка» выполнена"));
 }
 
 // A task is created only by this button, for the employee who pressed it. The text is taken from the
@@ -40,7 +40,7 @@ export async function createDocumentCheckTaskAction(formData: FormData) {
     supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId }),
     supabase.from("shipments").select("shipment_number").eq("id", shipmentId).maybeSingle(),
   ]);
-  if (checkError || !shipment) redirect(back(shipmentId, "error", "Не удалось прочитать проверку документов"));
+  if (checkError || !shipment) redirect(back(shipmentId, "error", "Не удалось прочитать результат «Сверки»"));
   const finding = parseDocumentCheck(check).findings.find((item) => item.key === key);
   if (!finding) redirect(back(shipmentId, "error", "Это замечание уже устранено"));
 

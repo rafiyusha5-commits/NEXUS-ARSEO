@@ -1,4 +1,4 @@
-// Agent «Сверщик документов поставки»: the checks run in the database
+// Agent «Сверка» (shipment documents against the card): the checks run in the database
 // (supabase/migrations/202609276400_document_check_agent.sql); this module only reads the result and
 // prepares it for the shipment card. Nothing here decides on its own or calls a language model.
 
@@ -133,6 +133,6 @@ export function findingTaskDescription(finding: CheckFinding) {
     finding.message,
     finding.documentTitle && `Документ: ${finding.documentTitle}`,
     describeValues(finding),
-    "Создано из проверки документов поставки.",
+    "Создано агентом «Сверка» по документам поставки.",
   ].filter(Boolean).join("\n").slice(0, 2000);
 }

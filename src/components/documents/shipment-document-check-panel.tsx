@@ -7,7 +7,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 
 const sourceLabel: Record<string, string> = { recognition: "после распознавания или по кнопке", manual: "по кнопке", daily: "ежедневная проверка" };
 
-// Agent «Сверщик документов поставки». The findings are calculated by the database for the signed-in
+// Agent «Сверка» (shipment documents against the card). The findings are calculated by the database for the signed-in
 // employee each time the card opens; the agent itself changes nothing in the shipment.
 export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipmentId: string; notice?: { kind: "error" | "success"; message: string } }) {
   const supabase = await createClient();
@@ -22,7 +22,7 @@ export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipm
   ].filter((group) => group.items.length > 0);
 
   return <section className="panel admin-section" id="document-check">
-    <div className="panel-heading"><div><p className="eyebrow">Агент · Сверщик документов</p><h2>Проверка документов</h2></div><div className="topbar-actions">
+    <div className="panel-heading"><div><p className="eyebrow">Агент «Сверка»</p><h2>Сверка документов с карточкой</h2></div><div className="topbar-actions">
       {!error && <span className={`doc-check-state doc-check-${summary.state}`}>{CHECK_STATE_LABEL[summary.state]}{summary.state !== "ok" ? ` · ${summary.errors ? `ошибок ${summary.errors}` : ""}${summary.errors && summary.warnings ? ", " : ""}${summary.warnings ? `предупреждений ${summary.warnings}` : ""}` : ""}</span>}
       <form action={runDocumentCheckAction}><input type="hidden" name="shipment_id" value={shipmentId}/><PendingSubmitButton className="ghost compact doc-check-button" pendingText="Проверяем…">Проверить сейчас</PendingSubmitButton></form>
     </div></div>

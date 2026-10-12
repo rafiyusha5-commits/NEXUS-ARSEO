@@ -1,4 +1,4 @@
--- Agent «Сверщик документов поставки» (document check).
+-- Agent «Сверка» (document check): shipment documents against the shipment card.
 --
 -- Compares the documents of an active shipment with its card and with each other, by fixed rules only
 -- (no language model, nothing is sent outside the database):
@@ -457,7 +457,7 @@ begin
   where shipment_id = p_shipment_id;
 
   if cardinality(v_new) > 0 then
-    v_title := 'Проверка документов ' || v_number || ': '
+    v_title := 'Сверка ' || v_number || ': '
       || case when v_errors > 0 then 'найдены ошибки' else 'есть замечания' end;
     -- Only the kind of problem goes into the text: plates, weights and document names stay in the card.
     select 'Ошибок: ' || v_errors || ', предупреждений: ' || v_warnings || '. Новое: '

@@ -1,4 +1,4 @@
--- Agent «Сверщик документов поставки» (202609276400): rules, access, notifications once per problem,
+-- Agent «Сверка» (202609276400): rules, access, notifications once per problem,
 -- daily run for service_role only, and no writes into shipments, vehicles, documents or extractions.
 \set ON_ERROR_STOP 1
 begin;
@@ -186,7 +186,7 @@ begin
  assert (select count(*) from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001')=1,'the director sees one notification';
  assert (select type||'|'||entity_type||'|'||entity_id from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001')
    ='discrepancy|shipment_document_check|dc300000-0000-4000-8000-000000000001';
- assert (select title from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001')='Проверка документов DC-1: найдены ошибки';
+ assert (select title from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001')='Сверка DC-1: найдены ошибки';
  assert (select body from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001') like 'Ошибок: 5, предупреждений: 7. Новое: %';
  assert (select body from public.notifications where shipment_id='dc300000-0000-4000-8000-000000000001') not like '%99ZZZ99%','no plates or values in the text';
  -- the second run finds nothing new

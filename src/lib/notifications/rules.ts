@@ -40,7 +40,7 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
       case "shipment":
         return { href: `/shipments/${entity}`, label: "Открыть поставку" };
       case "shipment_document_check":
-        return { href: `/shipments/${entity}?tab=documents#document-check`, label: "Открыть проверку документов" };
+        return { href: `/shipments/${entity}?tab=documents#document-check`, label: "Открыть «Сверку»" };
       case "document":
         return { href: `/documents/${entity}`, label: "Открыть документ" };
     }
