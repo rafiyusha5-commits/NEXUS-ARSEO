@@ -28,7 +28,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${RUN[@]}" "$PGBIN/initdb" -D "$WORKDIR/data" -A trust -U postgres >/dev/null
+# UTF8 like Supabase: with a POSIX locale initdb would pick SQL_ASCII and length() would count bytes.
+"${RUN[@]}" "$PGBIN/initdb" -D "$WORKDIR/data" -A trust -U postgres --encoding=UTF8 --locale=C.UTF-8 >/dev/null
 "${RUN[@]}" "$PGBIN/pg_ctl" -D "$WORKDIR/data" -l "$WORKDIR/server.log" \
   -o "-k $WORKDIR -p $PORT -c listen_addresses=''" -w start >/dev/null
 
@@ -119,10 +120,78 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 # Several vehicles per shipment: columns, replaceable RPCs and the review function are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
+# Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
+# Telegram reliability: replaces the status function of 5300 and the accounting allow-lists; idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275500_agent_catalog.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275600_agent_archivist.sql" >/dev/null
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275700_calculator_purchase_prices.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275800_agent_drive_archive.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275900_drive_catalog.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276000_drive_catalog_safeupdate.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276100_drive_catalog_ocr.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276200_drive_archive_access.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276300_telegram_delivery_authorization.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
+
+# Parallel server calls for one employee must not exceed the daily assistant limit (accounting RPCs
+# are executable only by service_role, the Nexus server key): the reservation
+# locks the user's day row, so exactly daily_request_limit of 30 concurrent requests succeed.
+echo "test: agent daily limit under concurrency"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_setup.sql" >/dev/null
+for i in $(seq 1 30); do
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
+    >"$WORKDIR/agent_$i.out" 2>&1 &
+done
+wait
+granted=$(cat "$WORKDIR"/agent_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+limited=$(cat "$WORKDIR"/agent_*.out | grep -c 'AGENT_DAILY_LIMIT' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_check.sql" >/dev/null
+echo "test: agent monthly budget under concurrency"
+# The monthly budget is reserved under a row lock as well: with room for exactly 7 more reservations,
+# 7 of 30 parallel requests succeed and the rest are refused by the budget.
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_budget_setup.sql" >/dev/null
+for i in $(seq 1 30); do
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
+    >"$WORKDIR/budget_$i.out" 2>&1 &
+done
+wait
+granted=$(cat "$WORKDIR"/budget_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+limited=$(cat "$WORKDIR"/budget_*.out | grep -c 'AGENT_MONTHLY_BUDGET' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v granted="$granted" -v limited="$limited" -f "$ROOT/supabase/tests/agent_concurrency_budget_check.sql" >/dev/null
+echo "test: agent settlement of abandoned runs under concurrency"
+# Abandoned runs are charged their whole reservation by the next reservation; a late finish replaces
+# the estimate. Ten late finishes race with ten reservations: each run's money is counted once.
+"${PSQL[@]}" -f "$ROOT/supabase/tests/agent_concurrency_settle_setup.sql" >/dev/null
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role service_role; select 'run:'||run_id from public.agent_reserve_run('ac000000-0000-4000-8000-000000000001','web',null,1000);" \
+    >"$WORKDIR/settle_reserve_$i.out" 2>&1 &
+  "${PSQL[@]}" -tA -c "set role service_role; select public.agent_finish_run('ac000000-0000-4000-8000-000000000001',s.run_id,s.token,'failed','AGENT_PROVIDER_ERROR',false,'openai','m',1,0,50,10,300,'[]') from tests.agent_stale s where s.n=$i; select 'fin:ok';" \
+    >"$WORKDIR/settle_finish_$i.out" 2>&1 &
+done
+wait
+reserved=$(cat "$WORKDIR"/settle_reserve_*.out | grep -cE '^run:[0-9a-f-]{36}$' || true)
+finished=$(cat "$WORKDIR"/settle_finish_*.out | grep -cE '^fin:ok$' || true)
+"${PSQL[@]}" -v ON_ERROR_STOP=1 -v finished="$finished" -v reserved="$reserved" -f "$ROOT/supabase/tests/agent_concurrency_settle_check.sql" >/dev/null
+
+echo "test: Telegram update claimed once under concurrency"
+# Two workers or a redelivery may hand the same update to Nexus at the same time: exactly one claim.
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role service_role; select 'claim:'||coalesce(public.telegram_claim_update(990001,880001),'none');" \
+    >"$WORKDIR/claim_$i.out" 2>&1 &
+done
+wait
+claimed=$(cat "$WORKDIR"/claim_*.out | grep -cE '^claim:[0-9a-f]{64}$' || true)
+refused=$(cat "$WORKDIR"/claim_*.out | grep -c '^claim:none$' || true)
+if [[ "$claimed" != "1" || "$refused" != "9" ]]; then
+  echo "Telegram update claimed $claimed times, refused $refused times; expected 1 and 9" >&2
+  exit 1
+fi
 
 echo "database tests passed"

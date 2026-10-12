@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import { applicationSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pdf-parse", "exceljs", "pizzip"],
+  outputFileTracingIncludes: { "/api/drive/catalog/sync": ["./src/lib/google/catalog-text-worker.cjs", "./node_modules/pdf-parse/**", "./node_modules/pizzip/**", "./node_modules/exceljs/**"] },
   async headers() {
     return [
       {

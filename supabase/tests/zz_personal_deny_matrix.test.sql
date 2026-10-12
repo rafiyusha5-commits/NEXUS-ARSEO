@@ -64,6 +64,13 @@ insert into public.inventory_movements (batch_id, movement_type, quantity, uom, 
 select '9c000000-0000-4000-8000-000000000016', 'receipt', 5, 'piece', id, '9c000000-0000-4000-8000-000000000001'
 from public.warehouses where code = 'AKT';
 
+-- An assistant run of the administrator (the reference reader of the matrix).
+insert into public.agent_usage_days (user_id, usage_date, requests_used)
+values ('9c000000-0000-4000-8000-000000000001', current_date, 1) on conflict do nothing;
+insert into public.agent_budget_months (budget_month) values (date_trunc('month', current_date)::date) on conflict do nothing;
+insert into public.agent_runs (user_id, channel, usage_date, budget_month, finish_token_hash)
+values ('9c000000-0000-4000-8000-000000000001', 'web', current_date, date_trunc('month', current_date)::date, repeat('0', 64));
+
 create table tests.matrix_tables (name text primary key, admin_rows bigint);
 insert into tests.matrix_tables (name) values
   ('counterparties'), ('counterparties_contacts'), ('contracts'), ('contract_terms'),
@@ -75,7 +82,8 @@ insert into tests.matrix_tables (name) values
   ('documents'), ('document_versions'), ('document_links'), ('document_requirements'),
   ('document_templates'), ('document_template_versions'),
   ('product_listing_cards'), ('product_listing_card_items'),
-  ('tasks'), ('audit_log'), ('approvals'), ('notifications');
+  ('tasks'), ('audit_log'), ('approvals'), ('notifications'),
+  ('agent_runs'), ('agent_usage_days'), ('agent_budget_months'), ('agent_settings');
 grant select, update on tests.matrix_tables to authenticated;
 
 set role authenticated;
