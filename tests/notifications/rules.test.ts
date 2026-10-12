@@ -14,6 +14,7 @@ describe("notification links", () => {
       { href: `/shipments/${SHIPMENT}#stage-${RUN}`, label: "Открыть этап" });
     assert.deepEqual(notificationLink({ entity_type: "shipment", entity_id: SHIPMENT, shipment_id: SHIPMENT }), { href: `/shipments/${SHIPMENT}`, label: "Открыть поставку" });
     assert.deepEqual(notificationLink({ entity_type: "document", entity_id: TASK, shipment_id: null }), { href: `/documents/${TASK}`, label: "Открыть документ" });
+    assert.deepEqual(notificationLink({ entity_type: "shelf_life_control", entity_id: null, shipment_id: null }), { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" });
   });
 
   it("falls back to the shipment and to no link", () => {

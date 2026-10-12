@@ -157,3 +157,13 @@ h1,h2,p { margin:0; } h1 { font-size:28px; letter-spacing:-.04em; } h2 { font-si
 .assistant-values dd{margin:2px 0;font-weight:600}
 .assistant-values small,.assistant-block small{color:#6b7a72;font-size:12px}
 .assistant-trace-tools{margin:0;padding-left:16px;font-size:13px}
+/* Shelf life control agent */
+.shelf-horizon{display:flex;gap:6px;flex-wrap:wrap}.shelf-horizon a{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--ink);font-size:11px;font-weight:700;text-decoration:none}.shelf-horizon a.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.shelf-ok{margin-top:14px;padding:14px 16px;border-radius:12px;background:#ddf3e6;color:#1c6847;font-size:12px;font-weight:700}
+.shelf-risk-list{margin:16px 0 0;padding:0;list-style:none;display:grid;gap:12px}.shelf-risk{padding:16px;border:1px solid var(--line);border-left:4px solid;border-radius:14px;background:#fff}.shelf-risk-expired{border-left-color:#7f1d1d}.shelf-risk-below{border-left-color:#c2412d}.shelf-risk-soon{border-left-color:#d49a12}
+.shelf-risk-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.shelf-risk-head strong,.shelf-risk-head small{display:block}.shelf-risk-head strong{font-size:14px}.shelf-risk-head small{margin-top:4px;color:var(--muted);font-size:11px}.shelf-risk-head a{color:inherit;font-weight:700}
+.shelf-risk-badge-expired{background:#fde2e2;color:#7f1d1d}.shelf-risk-badge-below{background:#ffebe7;color:#8e2f20}.shelf-risk-badge-soon{background:#fff1d3;color:#865b00}
+.shelf-risk-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.shelf-risk-facts dt{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.shelf-risk-facts dd{margin:3px 0 0;font-size:13px;font-weight:700}
+.shelf-customers{margin:0;padding:0 0 0 18px;display:grid;gap:6px}.shelf-customers li{padding:8px 10px;border-radius:10px}.shelf-customers li>div{display:inline-block;max-width:calc(100% - 140px);vertical-align:top}.shelf-customers strong,.shelf-customers small{display:block}.shelf-customers strong{font-size:12px}.shelf-customers small{margin-top:3px;color:var(--muted);font-size:11px}.shelf-customer-state{float:right;font-size:11px;font-weight:800}
+.shelf-customer-soon{background:#fffaf0}.shelf-customer-soon .shelf-customer-state{color:#865b00}.shelf-customer-below{background:#fff6f4}.shelf-customer-below .shelf-customer-state{color:#8e2f20}.shelf-customer-ok{background:#f5f7f5}.shelf-customer-ok .shelf-customer-state{color:#1c6847}
+@media (max-width:700px){.shelf-risk-facts{grid-template-columns:1fr 1fr}.shelf-customers li>div{max-width:100%;display:block}.shelf-customer-state{float:none;display:block;margin-top:4px}}

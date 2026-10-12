@@ -74,6 +74,7 @@ select 'authenticated', unnest(array[
   'public.my_agent_usage', 'public.create_my_telegram_code', 'public.confirm_my_telegram_link', 'public.unlink_my_telegram',
   'public.sync_calculator_purchase_prices', 'public.create_shipment_item', 'public.my_product_purchase_prices',
   'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
+  'public.shelf_life_risks',
   'private.drive_gateway_allowed', 'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
@@ -84,7 +85,8 @@ select 'authenticated', unnest(array[
 union all
 select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
   'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
-  'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress']);
+  'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress',
+  'public.run_shelf_life_control']);
 
 do $$
 declare
