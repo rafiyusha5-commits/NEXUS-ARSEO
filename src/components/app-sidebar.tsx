@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import { logout } from "@/app/login/actions";
 import type { AccessProfile, AccessRole } from "@/lib/auth/access";
 import { roleLabel } from "@/lib/auth/access";
+import { BrandLockup } from "./brand";
+import { MenuIcon, NavIcon } from "./nav-icons";
 import { NotificationsBadge } from "./notifications-badge";
 
 type NavigationItem = { label: string; href: string; key: string; managerOnly?: boolean };
@@ -83,41 +85,47 @@ export function AppSidebar({
 
   return (
     <aside className="sidebar">
-      <Link className="brand" href="/">
-        <span className="brand-mark">N</span>
-        <span><strong>Nexus</strong><small>ARSEO</small></span>
-      </Link>
-      <nav className="sidebar-nav" aria-label="Основная навигация">
-        {navigationGroups.map((group) => {
-          const items = group.items.filter((item) => !item.managerOnly || isManager);
-          if (!items.length) return null;
-          const containsActive = items.some((item) => item.key === active);
-          return <details className="sidebar-group" open={containsActive || group.label === "Главная"} key={group.label}>
-            <summary>{group.label}<span aria-hidden="true">⌄</span></summary>
-            <div className="sidebar-group-links">
-              {items.map((item) => (
-                <Link className={item.key === active ? "active" : ""} href={item.href} key={item.key}>
-                  {item.label}
-                  {item.key === "notifications" && (
-                    <Suspense fallback={null}>
-                      <NotificationsBadge />
-                    </Suspense>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </details>;
-        })}
-      </nav>
-      <div className="profile">
-        <span>{initials(profile.full_name) || "AR"}</span>
-        <div className="profile-copy">
-          <strong>{profile.full_name}</strong>
-          <small>{roleLabel(roles, profile.job_title)}</small>
+      {/* Phones: the menu folds into a panel opened by this checkbox; no client script needed. */}
+      <input className="sidebar-toggle-input" type="checkbox" id="sidebar-toggle" aria-label="Показать меню" />
+      <div className="sidebar-head">
+        <Link className="brand" href="/" aria-label="Nexus ARSEO — на главную">
+          <BrandLockup />
+        </Link>
+        <label className="sidebar-toggle" htmlFor="sidebar-toggle"><MenuIcon /><span>Меню</span></label>
+      </div>
+      <div className="sidebar-body">
+        <nav className="sidebar-nav" aria-label="Основная навигация">
+          {navigationGroups.map((group) => {
+            const items = group.items.filter((item) => !item.managerOnly || isManager);
+            if (!items.length) return null;
+            const containsActive = items.some((item) => item.key === active);
+            return <details className="sidebar-group" open={containsActive || group.label === "Главная"} key={group.label}>
+              <summary><span className="sidebar-group-label"><NavIcon group={group.label} />{group.label}</span><span className="sidebar-chevron" aria-hidden="true">⌄</span></summary>
+              <div className="sidebar-group-links">
+                {items.map((item) => (
+                  <Link className={item.key === active ? "active" : ""} aria-current={item.key === active ? "page" : undefined} href={item.href} key={item.key}>
+                    {item.label}
+                    {item.key === "notifications" && (
+                      <Suspense fallback={null}>
+                        <NotificationsBadge />
+                      </Suspense>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </details>;
+          })}
+        </nav>
+        <div className="profile">
+          <span>{initials(profile.full_name) || "AR"}</span>
+          <div className="profile-copy">
+            <strong>{profile.full_name}</strong>
+            <small>{roleLabel(roles, profile.job_title)}</small>
+          </div>
+          <form action={logout}>
+            <button className="profile-logout" type="submit" title="Выйти" aria-label="Выйти из системы">↪</button>
+          </form>
         </div>
-        <form action={logout}>
-          <button className="profile-logout" type="submit" title="Выйти" aria-label="Выйти из системы">↪</button>
-        </form>
       </div>
     </aside>
   );

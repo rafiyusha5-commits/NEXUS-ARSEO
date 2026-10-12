@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requestPasswordReset } from "./actions";
+import { AuthBrandPanel, NexusWordmark } from "@/components/brand";
 
 const errorMessages: Record<string, string> = {
   validation: "Введите корректный адрес электронной почты.",
@@ -24,15 +25,10 @@ export default async function ForgotPasswordPage({
 
   return (
     <main className="login-page">
-      <section className="login-brand">
-        <div className="login-brand-mark">N</div>
-        <p className="eyebrow">Безопасность Nexus-ARSEO</p>
-        <h1>Восстановление<br />доступа</h1>
-        <p>Ссылка для смены пароля придёт только на корпоративную почту сотрудника.</p>
-      </section>
+      <AuthBrandPanel title={<>Восстановление<br />доступа</>} text="Ссылка для смены пароля придёт только на корпоративную почту сотрудника." />
       <section className="login-panel">
         <div className="login-card">
-          <p className="eyebrow">Nexus-ARSEO</p>
+          <NexusWordmark className="login-wordmark" />
           <h2>Забыли пароль?</h2>
           <p className="login-intro">Введите адрес вашей учётной записи.</p>
           {sent === "1" && <div className="login-success">Письмо отправлено. Откройте ссылку в нём на этом компьютере.</div>}

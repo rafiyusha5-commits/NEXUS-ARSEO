@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { login } from "./actions";
 import { hasSupabaseEnv } from "@/lib/supabase/config";
+import { AuthBrandPanel, NexusWordmark } from "@/components/brand";
 
 const messages: Record<string, string> = {
   configuration: "Подключение к базе данных ещё не настроено.",
@@ -21,16 +22,11 @@ export default async function LoginPage({
 
   return (
     <main className="login-page">
-      <section className="login-brand">
-        <div className="login-brand-mark">N</div>
-        <p className="eyebrow">Внутренняя система ТОО ARSEO</p>
-        <h1>Импорт и экспорт<br />в одном рабочем пространстве</h1>
-        <p>Поставки, документы, склады и аналитика под единым контролем.</p>
-      </section>
+      <AuthBrandPanel title="Рабочее пространство ARSEO" points={["Поставки и логистика", "Склад, документы и сертификация", "Продажи и аналитика"]} />
 
       <section className="login-panel">
         <div className="login-card">
-          <p className="eyebrow">Nexus-ARSEO</p>
+          <NexusWordmark className="login-wordmark" />
           <h2>Вход в систему</h2>
           <p className="login-intro">Используйте корпоративную учётную запись.</p>
 
