@@ -39,10 +39,14 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         break;
       case "shipment":
         return { href: `/shipments/${entity}`, label: "Открыть поставку" };
+      case "shipment_document_check":
+        return { href: `/shipments/${entity}?tab=documents#document-check`, label: "Открыть «Сверку»" };
       case "document":
         return { href: `/documents/${entity}`, label: "Открыть документ" };
     }
   }
+  // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.
+  if (target.entity_type === "shelf_life_control") return { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" };
   return shipment ? { href: `/shipments/${shipment}`, label: "Открыть поставку" } : null;
 }
 

@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/access";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions";
+import { runDocumentCheckAfterRecognition } from "@/lib/document-check/run";
 
 // Scans are read one by one by an external service, so a run may take longer than a text-only run.
 export const maxDuration = 300;
@@ -21,6 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   try {
     const summary = await extractShipmentSources(supabase, id);
+    await runDocumentCheckAfterRecognition(supabase, id);
     revalidatePath(`/shipments/${id}`);
     return Response.json({ ok: true, summary });
   } catch (error) {
