@@ -5,6 +5,7 @@ import { ShipmentDocumentsPanel } from "@/components/documents/shipment-document
 import { ShipmentTransportsPanel } from "@/components/shipments/shipment-transports-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
+import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
@@ -27,7 +28,7 @@ function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]
 const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—":value.toLocaleString("ru-RU",{maximumFractionDigits});
 const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"маш."};
 
-export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;tab?:string}>}){
+export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;check_error?:string;check_success?:string;tab?:string}>}){
   const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
   const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view"] as const);
   const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
@@ -116,6 +117,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       </section>
       <ShipmentTransportsPanel shipmentId={shipment.id} transports={transports??[]} receivedIds={[...receivedTransports]} canEdit={canEdit} canReceive={!!permissions["inventory.receive"]} loadLines={loadSummary.lines}/>
     <>
+    <ShipmentDocumentCheckPanel shipmentId={shipment.id} notice={notices.check_error?{kind:"error",message:notices.check_error}:notices.check_success?{kind:"success",message:notices.check_success}:undefined}/>
     <ShipmentSourceDocumentsPanel shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
     {generationPreview&&<ShipmentDocumentReadiness shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
     {permissions["templates.generate"]&&permissions["documents.create"]&&<section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Выходной комплект</p><h2>Сформировать документы перевозки</h2></div><span className="page-count">{generationTemplates.length}</span></div><p className="form-help">Система использует подтверждённые данные из загруженных инвойсов, договор-заявок и транспортных документов.</p><div className="compact-list">{generationTemplates.map(template=>{const type=one(template.type);return <div className="doc-link-row" key={template.id}><div><strong>{template.name}</strong><small>{type?.name_ru??"Документ"} · {template.flow_direction==="input"?"от поставщика":"для покупателя"}</small></div><Link className="primary button-link compact" href={`/templates/${template.id}/generate?shipment=${shipment.id}`}>Сформировать</Link></div>})}{!generationTemplates.length&&<div className="empty-state">Нет подходящих утверждённых DOCX/XLSX-шаблонов для этой поставки.</div>}</div></section>}
