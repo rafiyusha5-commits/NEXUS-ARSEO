@@ -192,7 +192,16 @@ as $$
            or exists (select 1 from tr where tr.status in ('at_customs', 'arrived', 'unloaded'))
            or exists (select 1 from customs_runs) as started
     from s
+  ), link_docs as (
+    -- Documents with an active link to this shipment or one of its vehicles.
+    select distinct l.document_id
+    from public.document_links l
+    join s on (l.entity_type = 'shipment' and l.entity_id = s.id)
+           or (l.entity_type = 'shipment_transport' and l.entity_id in (select tr.id from tr))
+    where l.removed_at is null
   ), src as (
+    -- Recognition results of the current version of a linked document only: an unlinked document or a
+    -- replaced file is not checked with old values.
     select e.document_id, e.source_kind, e.status, e.shipment_transport_id as bound_id,
            coalesce(e.shipment_transport_id, (select single_id from vehicles)) as transport_id,
            d.title, d.document_number,
@@ -200,7 +209,19 @@ as $$
     from public.shipment_source_extractions e
     join s on e.shipment_id = s.id
     join public.documents d on d.id = e.document_id and d.archived_at is null
+    join public.document_versions v on v.id = e.document_version_id and v.document_id = e.document_id and v.is_current
     where e.status in ('extracted', 'needs_review', 'confirmed', 'failed')
+      and e.document_id in (select document_id from link_docs)
+  ), unread_versions as (
+    -- Linked documents recognised before whose current version has no finished recognition yet.
+    select d.id, d.title
+    from public.documents d
+    join public.document_versions v on v.document_id = d.id and v.is_current
+    where d.archived_at is null and d.id in (select document_id from link_docs)
+      and exists (select 1 from public.shipment_source_extractions e where e.shipment_id = p_shipment_id and e.document_id = d.id)
+      and not exists (select 1 from public.shipment_source_extractions e
+                      where e.shipment_id = p_shipment_id and e.document_id = d.id and e.document_version_id = v.id
+                        and e.status in ('extracted', 'needs_review', 'confirmed', 'failed'))
   ), plates as (
     select src.*, p.field, p.label, nullif(btrim(src.data ->> p.field), '') as value
     from src
@@ -240,6 +261,10 @@ as $$
     select private.document_check_finding('document_not_read', 'warning',
              'Документ не прочитан: данные из него не сверены', null, null, src.document_id, src.title) as f
     from src where src.status = 'failed'
+    union all
+    select private.document_check_finding('document_version_not_read', 'warning',
+             'Загружена новая версия документа, она ещё не распознана: данные из неё не сверены', null, null, u.id, u.title)
+    from unread_versions u
     union all
     select private.document_check_finding('document_needs_review', 'warning',
              'Документы расходятся между собой: значения ждут проверки сотрудником', null, null, src.document_id, src.title)
@@ -497,8 +522,20 @@ as $$
   select (now() at time zone 'Asia/Qyzylorda')::date
 $$;
 
--- Removes document names and ids of documents the employee may not open (generated documents with
--- prices), so the check never discloses more than the document register.
+-- What the application receives. The internal key contains the document id and the normalised value,
+-- so it is replaced by an opaque one: an md5 of the internal key, stable between calls and employees,
+-- which identifies the finding (for the task button) without revealing anything. Document names, ids
+-- and values of documents the employee may not open (generated documents with prices) are removed, so
+-- the check never discloses more than the document register.
+create or replace function private.document_check_public_key(p_key text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select md5('document-check:' || p_key)
+$$;
+
 create or replace function private.document_check_visible(p_findings jsonb)
 returns jsonb
 language sql
@@ -507,9 +544,11 @@ security definer
 set search_path = ''
 as $$
   select coalesce(jsonb_agg(
-           case when f ? 'document_id' and not private.can_view_generated_document((f ->> 'document_id')::uuid)
-                then f - 'document_id' - 'document_title' - 'document_value' - 'card_value'
-                else f end
+           jsonb_set(
+             case when f ? 'document_id' and not private.can_view_generated_document((f ->> 'document_id')::uuid)
+                  then f - 'document_id' - 'document_title' - 'document_value' - 'card_value'
+                  else f end,
+             '{key}', to_jsonb(private.document_check_public_key(f ->> 'key')))
            order by n), '[]'::jsonb)
   from jsonb_array_elements(p_findings) with ordinality as e(f, n)
 $$;
@@ -598,6 +637,7 @@ revoke all on function private.document_check_findings(uuid, date) from public, 
 revoke all on function private.refresh_document_check(uuid, text, date) from public, anon, authenticated, service_role;
 revoke all on function private.document_check_today() from public, anon, authenticated, service_role;
 revoke all on function private.document_check_visible(jsonb) from public, anon, authenticated, service_role;
+revoke all on function private.document_check_public_key(text) from public, anon, authenticated, service_role;
 
 revoke all on function public.shipment_document_check(uuid) from public, anon, service_role;
 grant execute on function public.shipment_document_check(uuid) to authenticated;

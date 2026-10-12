@@ -252,6 +252,120 @@ do $$ begin
  assert not exists(select 1 from jsonb_array_elements(public.shipment_document_check('dc300000-0000-4000-8000-000000000001')->'findings') f where f->>'code'='document_expired');
 end $$;
 
+-- ========== Review fixes: opaque keys for hidden documents, linked documents, current versions ==========
+-- A director who may not open generated documents with prices.
+reset role;
+insert into auth.users(id,email,raw_user_meta_data) values
+ ('dc000000-0000-4000-8000-000000000006','dc-noprices@test.local','{"full_name":"DC No prices"}');
+insert into public.user_roles(user_id,role_id) select 'dc000000-0000-4000-8000-000000000006',id from public.app_roles where code='director';
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
+select 'dc000000-0000-4000-8000-000000000006',p.id,'deny','document check test','dc000000-0000-4000-8000-000000000001'
+from public.permissions p where p.code='templates.generate_prices';
+-- d8: a generated invoice with prices, linked to the shipment, with numbers that do not match.
+set session_replication_role=replica;
+insert into public.documents(id,document_type_id,title,document_number,status,source,uploaded_by,current_version)
+select 'dc400000-0000-4000-8000-000000000008',id,'Секретный инвойс','INV-SECRET-9','approved','generated','dc000000-0000-4000-8000-000000000001',1
+from public.document_types where code='invoice';
+insert into public.document_versions(id,document_id,version_number,storage_path,original_filename,mime_type,file_size_bytes,is_current,uploaded_by)
+values('dc410008-0000-4000-8000-000000000001','dc400000-0000-4000-8000-000000000008',1,
+ 'documents/dc400000-0000-4000-8000-000000000008/00000000000000000000000000000008-d.pdf','d.pdf','application/pdf',10,true,'dc000000-0000-4000-8000-000000000001');
+insert into public.document_generations(template_id,template_version_id,shipment_id,document_id,output_format,contains_prices,fields_snapshot,generated_by)
+values(gen_random_uuid(),gen_random_uuid(),'dc300000-0000-4000-8000-000000000001','dc400000-0000-4000-8000-000000000008','docx',true,'{}','dc000000-0000-4000-8000-000000000001');
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+ ('dc400000-0000-4000-8000-000000000008','shipment','dc300000-0000-4000-8000-000000000001','dc000000-0000-4000-8000-000000000001');
+insert into public.shipment_source_extractions(id,shipment_id,document_id,document_version_id,source_kind,status,extracted_data,extractor_version,requested_by)
+values('dc500000-0000-4000-8000-000000000008','dc300000-0000-4000-8000-000000000001','dc400000-0000-4000-8000-000000000008','dc410008-0000-4000-8000-000000000001',
+ 'invoice','extracted','{"invoice_number":"INV-SECRET-1","contract_number":"K-SECRET-5"}','rules-v1','dc000000-0000-4000-8000-000000000001');
+set session_replication_role=origin;
+
+create temp table dc_keys(source text,keys text[]);
+grant select,insert on dc_keys to authenticated;
+set role authenticated;
+select set_config('request.jwt.claim.sub','dc000000-0000-4000-8000-000000000006',false);
+do $$
+declare
+ v_read jsonb := public.shipment_document_check('dc300000-0000-4000-8000-000000000001');
+ v_run jsonb := public.run_shipment_document_check('dc300000-0000-4000-8000-000000000001','manual');
+ v_text text;
+begin
+ foreach v_text in array array[v_read::text, v_run::text] loop
+  assert v_text !~* 'dc400000-0000-4000-8000-000000000008|dc410008|Секретный инвойс|INV-?SECRET|K-?SECRET|INVSECRET|KSECRET',
+   format('hidden document details leak: %s', v_text);
+ end loop;
+ -- the hidden document still counts, without its details
+ assert exists(select 1 from jsonb_array_elements(v_read->'findings') f where f->>'code'='invoice_number_mismatch' and not f ? 'document_id'),'the hidden mismatch is reported without details';
+ -- allowed findings keep their details and links
+ assert exists(select 1 from jsonb_array_elements(v_read->'findings') f where f->>'code'='plate_mismatch' and f->>'document_id'='dc400000-0000-4000-8000-000000000001' and f->>'card_value'='22BBB22');
+ -- keys are opaque and stable: the same finding has the same key in both functions and in a repeated call
+ assert (select bool_and(f->>'key' ~ '^[0-9a-f]{32}$') from jsonb_array_elements(v_read->'findings') f),'keys are opaque';
+ insert into dc_keys select 'read',array(select f->>'key' from jsonb_array_elements(v_read->'findings') f order by 1);
+ insert into dc_keys select 'run',array(select f->>'key' from jsonb_array_elements(v_run) f order by 1);
+ insert into dc_keys select 'again',array(select f->>'key' from jsonb_array_elements(public.shipment_document_check('dc300000-0000-4000-8000-000000000001')->'findings') f order by 1);
+ assert (select count(distinct keys) from dc_keys)=1,'the same keys in both functions and on every call';
+end $$;
+-- the employee who may open the document sees it, under the same opaque key
+select set_config('request.jwt.claim.sub','dc000000-0000-4000-8000-000000000001',false);
+do $$
+declare v jsonb := public.shipment_document_check('dc300000-0000-4000-8000-000000000001');
+begin
+ assert exists(select 1 from jsonb_array_elements(v->'findings') f where f->>'code'='invoice_number_mismatch' and f->>'document_id'='dc400000-0000-4000-8000-000000000008');
+ assert array(select f->>'key' from jsonb_array_elements(v->'findings') f order by 1)=(select keys from dc_keys where source='read'),'keys do not depend on who asks';
+ assert v::text !~ 'INVSECRET|KSECRET','normalised values never appear in keys';
+end $$;
+
+-- ---------- only documents still linked to the shipment or its vehicles ----------
+reset role;
+set session_replication_role=replica;
+-- d4 (vehicle papers, unknown plate) is unlinked; d2 (CMR of vehicle 1) gets a second link to the shipment, then loses the vehicle link.
+update public.document_links set removed_at=now(),removed_by='dc000000-0000-4000-8000-000000000001' where document_id='dc400000-0000-4000-8000-000000000004';
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+ ('dc400000-0000-4000-8000-000000000002','shipment','dc300000-0000-4000-8000-000000000001','dc000000-0000-4000-8000-000000000001');
+update public.document_links set removed_at=now(),removed_by='dc000000-0000-4000-8000-000000000001'
+ where document_id='dc400000-0000-4000-8000-000000000002' and entity_type='shipment_transport';
+set session_replication_role=origin;
+set role authenticated;
+do $$
+declare v jsonb := public.shipment_document_check('dc300000-0000-4000-8000-000000000001')->'findings';
+begin
+ assert not exists(select 1 from jsonb_array_elements(v) f where f->>'document_id'='dc400000-0000-4000-8000-000000000004'),'an unlinked document is no longer checked';
+ assert not exists(select 1 from jsonb_array_elements(v) f where f->>'code'='plate_unknown'),'its plate is not reported';
+ assert exists(select 1 from jsonb_array_elements(v) f where f->>'code'='weight_mismatch' and f->>'document_id'='dc400000-0000-4000-8000-000000000002'),'a document with another active link is still checked';
+end $$;
+
+-- ---------- only the current version of a document ----------
+reset role;
+set session_replication_role=replica;
+-- d3 (invoice with mismatching numbers) gets a new current version that is not recognised yet.
+update public.document_versions set is_current=false where document_id='dc400000-0000-4000-8000-000000000003';
+insert into public.document_versions(id,document_id,version_number,storage_path,original_filename,mime_type,file_size_bytes,is_current,uploaded_by)
+values('dc410003-0000-4000-8000-000000000002','dc400000-0000-4000-8000-000000000003',2,
+ 'documents/dc400000-0000-4000-8000-000000000003/00000000000000000000000000000032-d.pdf','d.pdf','application/pdf',10,true,'dc000000-0000-4000-8000-000000000001');
+set session_replication_role=origin;
+set role authenticated;
+do $$
+declare v jsonb := public.shipment_document_check('dc300000-0000-4000-8000-000000000001')->'findings';
+begin
+ assert not exists(select 1 from jsonb_array_elements(v) f where f->>'document_id'='dc400000-0000-4000-8000-000000000003' and f->>'code' in ('invoice_number_mismatch','contract_number_mismatch')),
+  'values of the previous version are not presented as the new version';
+ assert exists(select 1 from jsonb_array_elements(v) f where f->>'code'='document_version_not_read' and f->>'document_id'='dc400000-0000-4000-8000-000000000003' and f->>'severity'='warning'),
+  'the unread new version is reported, not passed as matching';
+end $$;
+reset role;
+-- the new version is recognised: its own values are checked
+set session_replication_role=replica;
+insert into public.shipment_source_extractions(id,shipment_id,document_id,document_version_id,source_kind,status,extracted_data,extractor_version,requested_by)
+values('dc500000-0000-4000-8000-000000000033','dc300000-0000-4000-8000-000000000001','dc400000-0000-4000-8000-000000000003','dc410003-0000-4000-8000-000000000002',
+ 'invoice','extracted','{"invoice_number":"INV-2","contract_number":"K-1","gross_weight_kg":9000}','rules-v1','dc000000-0000-4000-8000-000000000001');
+set session_replication_role=origin;
+set role authenticated;
+do $$
+declare v jsonb := public.shipment_document_check('dc300000-0000-4000-8000-000000000001')->'findings';
+begin
+ assert not exists(select 1 from jsonb_array_elements(v) f where f->>'document_id'='dc400000-0000-4000-8000-000000000003' and f->>'code' in ('document_version_not_read','invoice_number_mismatch','contract_number_mismatch'));
+ assert exists(select 1 from jsonb_array_elements(v) f where f->>'document_id'='dc400000-0000-4000-8000-000000000003' and f->>'code'='weight_mismatch' and f->>'document_value'='9000 кг'),
+  'the new version is checked with its own values';
+end $$;
+
 reset role;
 rollback;
 \echo 'document_check_agent: all checks passed'
