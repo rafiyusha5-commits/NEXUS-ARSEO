@@ -63,6 +63,23 @@ describe("Контроль ОСГ: reading the forecast", () => {
     assert.equal(formatQuantities(batch.quantities), "80 кор.");
   });
 
+  it("shows hidden customers as one anonymous line with their real risk", () => {
+    const [batch] = parseShelfLifeRisks({ items: [item({ customers: [
+      { hidden_count: 2, last_ok_day: "2026-10-07", state: "below", guarantee_letter: true, customer_name: "leak", customer_id: CUSTOMER, required_pct: 90, source: "client" },
+    ] })] }).items;
+    const [hidden] = batch.customers;
+    assert.equal(hidden.hiddenCount, 2);
+    assert.deepEqual([hidden.customerId, hidden.customerName, hidden.requiredPct, hidden.source], [undefined, undefined, null, null], "nothing hidden is kept even if sent");
+    assert.equal(describeRequirement(hidden), "Клиенты, карточки которых вам недоступны: 2 — их требования учтены, подробности скрыты");
+    assert.match(customerAdvice(hidden, false), /гарантийным письмом/);
+  });
+
+  it("keeps an unknown remaining shelf life unknown", () => {
+    const [batch] = parseShelfLifeRisks({ items: [item({ remaining_pct: null, manufacture_date: null, state: "expired", customers: [] })] }).items;
+    assert.equal(batch.remainingPct, null);
+    assert.equal(batch.customers.length, 0);
+  });
+
   it("counts states and accepts only the offered horizons", () => {
     const { items } = parseShelfLifeRisks({ items: [item(), item({ batch_id: "44444444-4444-4444-8444-444444444444", state: "soon" })] });
     assert.deepEqual(summarizeRisks(items), { total: 2, expired: 0, below: 1, soon: 1 });

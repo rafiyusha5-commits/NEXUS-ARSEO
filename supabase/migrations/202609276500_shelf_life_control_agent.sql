@@ -27,9 +27,11 @@ as $$
   select 70::numeric
 $$;
 
--- The last day a batch still has at least p_required_pct of its shelf life left. Shelf life is counted
--- from the manufacture date, otherwise from the product's shelf life in days, as in
--- private.sale_shelf_life_pct. Null when neither is known.
+-- The last day a batch still meets p_required_pct by the sales rule itself: private.sale_shelf_life_pct
+-- (shelf life from the manufacture date, otherwise the product's shelf life in days; the percentage is
+-- rounded to two digits). The exact day is near expiry - required * shelf life / 100; the days around it
+-- are checked with the sales function, so rounding can never make the two disagree. Never after the
+-- expiry date, as reservations do not take expired batches. Null when the shelf life is unknown.
 create or replace function private.shelf_life_last_ok_day(
   p_expiry date, p_manufacture date, p_shelf_days integer, p_required_pct numeric)
 returns date
@@ -38,9 +40,12 @@ immutable
 set search_path = ''
 as $$
   select case
-    when p_expiry is null or p_required_pct is null then null
-    when p_manufacture is not null then p_expiry - ceil(p_required_pct * greatest(1, p_expiry - p_manufacture) / 100.0)::integer
-    when p_shelf_days is not null then p_expiry - ceil(p_required_pct * greatest(1, p_shelf_days) / 100.0)::integer
+    when p_expiry is null or p_required_pct is null or (p_manufacture is null and p_shelf_days is null) then null
+    else (
+      select least(max(a.approx + g.k), p_expiry)
+      from (select p_expiry - ceil(p_required_pct * greatest(1, coalesce(p_expiry - p_manufacture, p_shelf_days)) / 100.0)::integer as approx) a
+      cross join generate_series(-2, 2) as g(k)
+      where private.sale_shelf_life_pct(p_expiry, p_manufacture, p_shelf_days, a.approx + g.k) >= p_required_pct)
   end
 $$;
 
@@ -74,9 +79,13 @@ as $$
   where cp.id = p_customer
 $$;
 
--- Batches at risk within p_horizon days, newest problems first. With p_check_access the customers are
--- limited to those the signed-in employee may see (the daily summary counts all of them).
-create or replace function private.shelf_life_risks(p_today date, p_horizon integer, p_check_access boolean)
+-- Batches at risk within p_horizon days, newest problems first. The risk is always calculated with the
+-- real requirements of all customers. With p_mask_hidden the customers the signed-in employee may not see
+-- are shown only as one anonymous group per batch (how many, the earliest deadline, the worst state):
+-- no names, ids, percentages or sources. The daily summary passes false and counts the same risk.
+-- Dropped first: an earlier draft named the last parameter differently.
+drop function if exists private.shelf_life_risks(date, integer, boolean);
+create or replace function private.shelf_life_risks(p_today date, p_horizon integer, p_mask_hidden boolean)
 returns jsonb
 language sql
 stable
@@ -91,8 +100,10 @@ as $$
   ), batches as (
     select b.id, b.batch_number, b.product_id, b.expiry_date, b.manufacture_date, p.shelf_life_days,
            p.internal_sku, coalesce(p.name ->> 'ru', p.name ->> 'en', p.internal_sku) as product_name,
-           private.sale_shelf_life_pct(b.expiry_date, b.manufacture_date, p.shelf_life_days, p_today) as remaining_pct,
            (b.manufacture_date is not null or p.shelf_life_days is not null) as known,
+           -- Unknown shelf life: no percentage at all rather than an invented one.
+           case when b.manufacture_date is not null or p.shelf_life_days is not null
+                then private.sale_shelf_life_pct(b.expiry_date, b.manufacture_date, p.shelf_life_days, p_today) end as remaining_pct,
            (select jsonb_agg(jsonb_build_object('uom', f.uom, 'quantity', f.quantity) order by f.uom) from free f where f.batch_id = b.id) as quantities,
            (select string_agg(distinct w.code, ', ' order by w.code)
               from public.inventory_balances bal join public.warehouses w on w.id = bal.warehouse_id
@@ -108,43 +119,60 @@ as $$
     select c.counterparty_id, t.product_id
     from public.contract_terms t join public.contracts c on c.id = t.contract_id
     where t.term_type = 'min_remaining_shelf_life_pct' and t.product_id is not null and c.status = 'active' and c.archived_at is null
-  ), visible as (
-    select cu.customer_id, cu.product_id, coalesce(cp.short_name, cp.legal_name) as customer_name
+  ), product_customers as (
+    select cu.customer_id, cu.product_id, coalesce(cp.short_name, cp.legal_name) as customer_name,
+           not p_mask_hidden or (select private.can_access_counterparty_record('view', cu.customer_id)) as visible
     from customers cu
     join public.counterparties cp on cp.id = cu.customer_id and cp.status = 'active'
-    where not p_check_access or (select private.can_access_counterparty_record('view', cu.customer_id))
   ), per_customer as (
-    select b.id as batch_id, v.customer_id, v.customer_name, r.required_pct, r.source,
+    select b.id as batch_id, pc.customer_id, pc.customer_name, pc.visible, r.required_pct, r.source,
            private.shelf_life_last_ok_day(b.expiry_date, b.manufacture_date, b.shelf_life_days, r.required_pct) as last_ok
     from batches b
-    join visible v on v.product_id = b.product_id
-    cross join lateral private.shelf_life_requirement(v.customer_id, b.product_id, p_today) r
+    join product_customers pc on pc.product_id = b.product_id
+    cross join lateral private.shelf_life_requirement(pc.customer_id, b.product_id, p_today) r
     where b.known
     union all
-    -- Products without (visible) customers: the default requirement for any customer.
-    select b.id, null, null, private.shelf_life_default_pct(), 'default',
+    -- Products without any customer: the default requirement for any customer.
+    select b.id, null, null, true, private.shelf_life_default_pct(), 'default',
            private.shelf_life_last_ok_day(b.expiry_date, b.manufacture_date, b.shelf_life_days, private.shelf_life_default_pct())
     from batches b
-    where b.known and not exists (select 1 from visible v where v.product_id = b.product_id)
+    where b.known and not exists (select 1 from product_customers pc where pc.product_id = b.product_id)
   ), rated as (
     select pc.*,
            case when pc.last_ok < p_today then 'below' when pc.last_ok < p_today + p_horizon then 'soon' else 'ok' end as state
     from per_customer pc
+  ), entries as (
+    select r.batch_id, r.state, r.last_ok, r.customer_name as sort_name,
+           jsonb_strip_nulls(jsonb_build_object(
+             'customer_id', r.customer_id, 'customer_name', r.customer_name,
+             'required_pct', r.required_pct, 'source', r.source, 'last_ok_day', r.last_ok, 'state', r.state,
+             -- Below the requirement but not expired: a guarantee letter may still allow the sale.
+             'guarantee_letter', r.state = 'below' and b.expiry_date >= p_today)) as entry
+    from rated r join batches b on b.id = r.batch_id
+    where r.visible
+    union all
+    select r.batch_id,
+           case when bool_or(r.state = 'below') then 'below' when bool_or(r.state = 'soon') then 'soon' else 'ok' end,
+           min(r.last_ok), null,
+           jsonb_build_object(
+             'hidden_count', count(*), 'last_ok_day', min(r.last_ok),
+             'state', case when bool_or(r.state = 'below') then 'below' when bool_or(r.state = 'soon') then 'soon' else 'ok' end,
+             'guarantee_letter', bool_or(r.state = 'below' and b.expiry_date >= p_today))
+    from rated r join batches b on b.id = r.batch_id
+    where not r.visible
+    group by r.batch_id
   ), at_risk as (
+    -- Expired batches with free stock are listed even when their shelf life cannot be calculated.
     select b.*, min(r.last_ok) as first_deadline,
            case when b.expiry_date < p_today then 'expired'
                 when bool_or(r.state = 'below') then 'below'
                 else 'soon' end as state,
-           jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-             'customer_id', r.customer_id, 'customer_name', r.customer_name,
-             'required_pct', r.required_pct, 'source', r.source, 'last_ok_day', r.last_ok, 'state', r.state,
-             -- Below the requirement but not expired: a guarantee letter may still allow the sale.
-             'guarantee_letter', r.state = 'below' and b.expiry_date >= p_today))
-             order by case r.state when 'soon' then 0 when 'ok' then 1 else 2 end, r.last_ok, r.customer_name) as customers
+           coalesce((select jsonb_agg(e.entry order by case e.state when 'soon' then 0 when 'ok' then 1 else 2 end, e.last_ok, e.sort_name nulls last)
+                     from entries e where e.batch_id = b.id), '[]'::jsonb) as customers
     from batches b
-    join rated r on r.batch_id = b.id
+    left join rated r on r.batch_id = b.id
     group by b.id, b.batch_number, b.product_id, b.expiry_date, b.manufacture_date, b.shelf_life_days,
-             b.internal_sku, b.product_name, b.remaining_pct, b.known, b.quantities, b.warehouses
+             b.internal_sku, b.product_name, b.known, b.remaining_pct, b.quantities, b.warehouses
     having b.expiry_date < p_today or min(r.last_ok) < p_today + p_horizon
   )
   select jsonb_build_object(
@@ -159,8 +187,9 @@ as $$
                'state', a.state, 'first_deadline', a.first_deadline, 'customers', a.customers)
              order by case a.state when 'expired' then 0 when 'below' then 1 else 2 end, a.first_deadline, a.expiry_date, a.internal_sku)
       from at_risk a), '[]'::jsonb),
-    -- Batches whose shelf life cannot be calculated: no manufacture date and no shelf life of the product.
-    'unknown_count', (select count(*) from batches b where not b.known))
+    -- Batches whose shelf life cannot be calculated (no manufacture date and no shelf life of the product)
+    -- and that are not expired: expired ones are already listed above.
+    'unknown_count', (select count(*) from batches b where not b.known and b.expiry_date >= p_today))
 $$;
 
 -- 2. Functions for the application ----------------------------------------------------------------

@@ -33,7 +33,7 @@ export default async function ShelfLifeRiskPage({ searchParams }: { searchParams
         <div className="panel-heading"><div><p className="eyebrow">Прогноз ОСГ</p><h2>Партии со свободным остатком</h2></div>
           <nav className="shelf-horizon" aria-label="Горизонт прогноза">{HORIZON_OPTIONS.map((days) => <Link key={days} className={days === horizon ? "active" : undefined} aria-current={days === horizon ? "page" : undefined} href={`/inventory/shelf-life?horizon=${days}`}>{days} дн.</Link>)}</nav>
         </div>
-        <p className="form-help">Для каждой партии показано, до какого дня она проходит по требованию к остаточному сроку годности каждого клиента, который покупал этот товар за последний год. Требование берётся из договора (по товару, затем общее), затем из карточки клиента; если его нигде нет — {DEFAULT_REQUIRED_PCT} % по умолчанию. Клиенты внутри партии перечислены в порядке отгрузки: сначала те, у кого окно закрывается раньше. Список обновляется при каждом открытии; раз в день сотрудники со складским доступом получают сводку в уведомлениях Nexus.</p>
+        <p className="form-help">Для каждой партии показано, до какого дня она проходит по требованию к остаточному сроку годности каждого клиента, который покупал этот товар за последний год. Требование берётся из договора (по товару, затем общее), затем из карточки клиента; если его нигде нет — {DEFAULT_REQUIRED_PCT} % по умолчанию. Клиенты, карточки которых вам недоступны, учитываются с их настоящими требованиями, но показываются одной строкой без названий и процентов. Клиенты внутри партии перечислены в порядке отгрузки: сначала те, у кого окно закрывается раньше. Список обновляется при каждом открытии; раз в день сотрудники со складским доступом получают сводку в уведомлениях Nexus.</p>
         {risks.unknownCount > 0 && <div className="setup-notice">Не посчитано партий: {risks.unknownCount} — нет даты производства партии и срока годности в карточке товара.</div>}
         {!risks.items.length && <div className="shelf-ok">В ближайшие {risks.horizonDays} дн. ни одна партия не опустится ниже требований клиентов.</div>}
         <ul className="shelf-risk-list">{risks.items.map((batch) => <li key={batch.batchId} className={`shelf-risk shelf-risk-${batch.state}`}>
@@ -51,6 +51,7 @@ export default async function ShelfLifeRiskPage({ searchParams }: { searchParams
             <div><strong>{describeRequirement(customer)}</strong><small>{customerAdvice(customer, batch.state === "expired")}</small></div>
             <span className="shelf-customer-state">{batch.state === "expired" ? "истёк" : CUSTOMER_STATE_LABEL[customer.state]}</span>
           </li>)}</ol>
+          {!batch.customers.length && <p className="form-help">{batch.state === "expired" ? "Срок годности истёк: продажа невозможна, решите вопрос списания или возврата. Процент ОСГ не посчитан: нет даты производства партии и срока годности в карточке товара." : "Требования клиентов оценить невозможно."}</p>}
           {batch.customers.some((customer) => customer.guaranteeLetter) && permissions["sales.view"] && <p className="form-help">Гарантийное письмо оформляется в заказе покупателя: <Link href="/sales">Заказы покупателей</Link>.</p>}
         </li>)}</ul>
       </section>

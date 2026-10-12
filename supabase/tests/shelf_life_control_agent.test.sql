@@ -150,13 +150,14 @@ select pg_temp.fails($$select public.shelf_life_risks(0)$$,'от 1 до 365');
 select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000003',false);
 select pg_temp.fails($$select public.shelf_life_risks()$$,'Нет доступа к остаткам');
 select pg_temp.fails($$select public.run_shelf_life_control()$$,'permission denied');
--- without customers.view no customer names: the default applies instead
+-- without customers.view the customers are one anonymous group with the real risk, not the 70 % default
 select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000002',false);
 do $$
 declare b1 jsonb := pg_temp.batch(public.shelf_life_risks(),'SL-B1');
 begin
- assert not exists(select 1 from jsonb_array_elements(b1->'customers') c where c ? 'customer_name'),'customer names are hidden';
- assert (b1->'customers'->0->>'source')='default';
+ assert not exists(select 1 from jsonb_array_elements(b1->'customers') c where c ? 'customer_name' or c ? 'customer_id' or c ? 'required_pct' or c ? 'source'),'customer details are hidden';
+ assert b1->'customers'=jsonb_build_array(jsonb_build_object('hidden_count',4,'last_ok_day',current_date-40,'state','below','guarantee_letter',true)), b1->>'customers';
+ assert b1->>'state'='below' and (b1->>'first_deadline')::date=current_date-40,'the same risk as for the director';
 end $$;
 
 -- ---------- daily summary ----------
@@ -196,6 +197,105 @@ do $$ begin
  assert (select count(*) from public.inventory_reservations)=(select r from sl_state);
  assert (select count(*) from public.guarantee_letters)=(select g from sl_state);
 end $$;
+
+-- ========== Review fixes ==========
+-- ---------- the last allowed day matches the sales rule (private.sale_shelf_life_pct) ----------
+do $$
+declare
+ c record; v_last date;
+begin
+ -- 2027-12-31, 366 days of shelf life, 67.76 %: the sales rule rounds to two digits, so 2027-04-27 still passes
+ v_last := private.shelf_life_last_ok_day('2027-12-31','2027-12-31'::date-366,null,67.76);
+ assert v_last='2027-04-27', format('last day for 67.76 %%: %s', v_last);
+ assert private.sale_shelf_life_pct('2027-12-31','2027-12-31'::date-366,null,v_last)>=67.76;
+ assert private.sale_shelf_life_pct('2027-12-31','2027-12-31'::date-366,null,v_last+1)<67.76;
+ -- the same property for whole, fractional, 0 % and 100 % requirements, with and without a manufacture date
+ for c in select * from (values
+   ('2027-12-31'::date,'2027-12-31'::date-366,null::int,67.76),('2027-12-31','2027-12-31'::date-366,null,33.33),
+   ('2027-12-31','2027-12-31'::date-366,null,0),('2027-12-31','2027-12-31'::date-366,null,100),
+   ('2027-06-30',null,100,70),('2027-06-30',null,365,67.76),('2027-06-30',null,7,0),('2027-06-30',null,7,100),('2027-06-30',null,3,99.99)) x(e,m,d,r)
+ loop
+  v_last := private.shelf_life_last_ok_day(c.e,c.m,c.d,c.r);
+  assert v_last<=c.e, format('%s: never after the expiry date', c);
+  assert private.sale_shelf_life_pct(c.e,c.m,c.d,v_last)>=c.r, format('%s: the last day passes (%s)', c, v_last);
+  assert v_last=c.e or private.sale_shelf_life_pct(c.e,c.m,c.d,v_last+1)<c.r, format('%s: the next day fails (%s)', c, v_last);
+ end loop;
+ assert private.shelf_life_last_ok_day('2027-12-31','2027-12-31'::date-366,null,0)='2027-12-31','0 %: until the expiry date';
+ assert private.shelf_life_last_ok_day('2027-12-31','2027-12-31'::date-366,null,100)='2027-12-31'::date-366,'100 %: the manufacture day';
+ assert private.shelf_life_last_ok_day('2027-06-30',null,100,70)='2027-06-30'::date-70,'without a manufacture date the product shelf life is used';
+end $$;
+
+-- ---------- an expired batch is listed even when its shelf life is unknown ----------
+create temp table sl_before as select (public_risks->>'unknown_count')::int as unknown
+ from (select private.shelf_life_risks(current_date,30,false) as public_risks) x;
+grant select on sl_before to authenticated;
+set session_replication_role=replica;
+insert into public.inventory_batches(id,product_id,batch_number,manufacture_date,expiry_date,status,created_by) values
+ ('5e400000-0000-4000-8000-000000000009','5e200000-0000-4000-8000-000000000004','SL-B9',null,current_date-1,'available','5e000000-0000-4000-8000-000000000001');
+insert into public.inventory_balances(batch_id,warehouse_id,uom,quantity_on_hand,quantity_reserved)
+select '5e400000-0000-4000-8000-000000000009',id,'box',50,0 from public.warehouses where code='AKT';
+set session_replication_role=origin;
+set role authenticated;
+select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000001',false);
+do $$
+declare v jsonb := public.shelf_life_risks(); b9 jsonb := pg_temp.batch(public.shelf_life_risks(),'SL-B9');
+begin
+ assert b9 is not null and b9->>'state'='expired', format('expired batch without shelf life data is listed: %s', b9);
+ assert b9->'remaining_pct'='null'::jsonb or not b9 ? 'remaining_pct','its remaining shelf life is not invented';
+ assert (v->>'unknown_count')::int=(select unknown from sl_before),'not counted twice as "cannot be calculated"';
+end $$;
+reset role;
+set role service_role;
+do $$ begin
+ assert public.run_shelf_life_control(current_date+2)>=2;
+end $$;
+reset role;
+do $$ begin
+ assert (select body from public.notifications where recipient_user_id='5e000000-0000-4000-8000-000000000001' and dedupe_key='shelf_life_daily:'||(current_date+2))
+   ~ 'Срок годности истёк: [2-9]','the daily summary counts it as expired (with SL-B5)';
+end $$;
+
+-- ---------- hidden customers keep their real requirements ----------
+-- SL-005: customer 7 requires 90 % (card); the batch made T-15, expiring T+85 (100 days) has 85 % today:
+-- below 90 %, while the 70 % default would still hold until T+15.
+insert into public.counterparties(id,roles,legal_name,short_name,country,tax_id,min_remaining_shelf_life_pct) values
+ ('5e100000-0000-4000-8000-000000000007',array['customer'],'Client Seven LLP','Клиент 7','KZ','SL-7',90);
+insert into public.products(id,internal_sku,name,manufacturer_id,status,shelf_life_days) values
+ ('5e200000-0000-4000-8000-000000000005','SL-005','{"ru":"Йогурт"}','5e100000-0000-4000-8000-000000000009','active',100);
+set session_replication_role=replica;
+insert into public.sales(id,sale_number,customer_id,warehouse_id,sale_date,planned_shipment_date,status,created_by)
+select '5e300000-0000-4000-8000-000000000007','SL-SO-7','5e100000-0000-4000-8000-000000000007',id,current_date-3,current_date-3,'confirmed','5e000000-0000-4000-8000-000000000001'
+from public.warehouses where code='AKT';
+insert into public.sale_items(sale_id,product_id,quantity,uom) values ('5e300000-0000-4000-8000-000000000007','5e200000-0000-4000-8000-000000000005',5,'box');
+insert into public.inventory_batches(id,product_id,batch_number,manufacture_date,expiry_date,status,created_by) values
+ ('5e400000-0000-4000-8000-000000000010','5e200000-0000-4000-8000-000000000005','SL-B10',current_date-15,current_date+85,'available','5e000000-0000-4000-8000-000000000001');
+insert into public.inventory_balances(batch_id,warehouse_id,uom,quantity_on_hand,quantity_reserved)
+select '5e400000-0000-4000-8000-000000000010',id,'box',40,0 from public.warehouses where code='AKT';
+set session_replication_role=origin;
+set role authenticated;
+select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000001',false);
+do $$
+declare b jsonb := pg_temp.batch(public.shelf_life_risks(7),'SL-B10');
+begin
+ assert b->>'state'='below' and (b->'customers'->0->>'customer_name')='Клиент 7' and (b->'customers'->0->>'required_pct')::numeric=90, format('director: %s', b);
+end $$;
+select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000002',false);
+do $$
+declare v jsonb := public.shelf_life_risks(7); b jsonb := pg_temp.batch(public.shelf_life_risks(7),'SL-B10');
+begin
+ assert b is not null and b->>'state'='below', format('without customers.view the same risk is shown: %s', b);
+ assert (b->>'first_deadline')::date=current_date-5,'the same deadline as for the director';
+ assert not exists(select 1 from jsonb_array_elements(b->'customers') c where c->>'source'='default'),'no 70 % default in place of a real requirement';
+ assert v::text !~ 'Клиент 7|Client Seven|5e100000-0000-4000-8000-000000000007', 'no hidden customer name or id';
+ assert not exists(select 1 from jsonb_array_elements(v->'items') i, jsonb_array_elements(i->'customers') c
+                   where c ? 'customer_id' or c ? 'customer_name'
+                      or ((c ? 'required_pct' or c ? 'source') and c->>'source' is distinct from 'default')),'hidden customers carry no details';
+ -- the 70 % line is only for products without any customer, never for hidden ones
+ assert not exists(select 1 from jsonb_array_elements(v->'items') i, jsonb_array_elements(i->'customers') c
+                   where c->>'source'='default' and i->>'internal_sku' in ('SL-001','SL-005')),'no default for products with customers';
+ assert exists(select 1 from jsonb_array_elements(b->'customers') c where (c->>'hidden_count')::int=1),'the hidden customers are counted';
+end $$;
+reset role;
 
 rollback;
 \echo 'shelf_life_control_agent: all checks passed'

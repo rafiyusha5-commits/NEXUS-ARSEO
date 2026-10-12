@@ -9,8 +9,11 @@ export type RequirementSource = "contract_product" | "contract" | "client" | "de
 export type RiskCustomer = {
   customerId?: string;
   customerName?: string;
-  requiredPct: number;
-  source: RequirementSource;
+  /** Null for customers the employee may not see: their requirement counts, but is not shown. */
+  requiredPct: number | null;
+  source: RequirementSource | null;
+  /** Customers hidden from the employee, grouped into this one line; 0 for an ordinary line. */
+  hiddenCount: number;
   lastOkDay: string | null;
   state: CustomerState;
   guaranteeLetter: boolean;
@@ -99,14 +102,15 @@ function parseCustomers(raw: unknown): RiskCustomer[] {
     if (!entry || typeof entry !== "object") return [];
     const row = entry as Record<string, unknown>;
     const requiredPct = num(row.required_pct);
-    const source = oneOf(row.source, ["contract_product", "contract", "client", "default"] as const);
+    const source = oneOf(row.source, ["contract_product", "contract", "client", "default"] as const) ?? null;
     const state = oneOf(row.state, ["below", "soon", "ok"] as const);
-    if (requiredPct === null || !source || !state) return [];
+    const hiddenCount = Math.max(0, Math.floor(num(row.hidden_count) ?? 0));
+    if (!state || (!hiddenCount && (requiredPct === null || !source))) return [];
     const customerId = text(row.customer_id);
     return [{
-      customerId: customerId && UUID.test(customerId) ? customerId : undefined,
-      customerName: text(row.customer_name),
-      requiredPct, source, state,
+      customerId: !hiddenCount && customerId && UUID.test(customerId) ? customerId : undefined,
+      customerName: hiddenCount ? undefined : text(row.customer_name),
+      requiredPct: hiddenCount ? null : requiredPct, source: hiddenCount ? null : source, hiddenCount, state,
       lastOkDay: date(row.last_ok_day),
       guaranteeLetter: row.guarantee_letter === true,
     }];
@@ -128,7 +132,10 @@ export function formatPct(value: number | null) {
 
 /** «Клиент 1 — требование 30 % (карточка клиента)», or «Любой клиент» for the default without customers. */
 export function describeRequirement(customer: RiskCustomer) {
-  return `${customer.customerName ?? "Любой клиент"} — требование ${formatPct(customer.requiredPct)} (${SOURCE_LABEL[customer.source]})`;
+  if (customer.hiddenCount) {
+    return `Клиенты, карточки которых вам недоступны: ${customer.hiddenCount} — их требования учтены, подробности скрыты`;
+  }
+  return `${customer.customerName ?? "Любой клиент"} — требование ${formatPct(customer.requiredPct)} (${customer.source ? SOURCE_LABEL[customer.source] : "—"})`;
 }
 
 /** What the employee can do for one customer. */
