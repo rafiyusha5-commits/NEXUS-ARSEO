@@ -8,6 +8,7 @@ import { extractShipmentSources } from "@/lib/document-extraction/shipment-servi
 import { sanitizeConfirmedSourceData, SOURCE_FIELD_DEFINITIONS } from "@/lib/document-extraction/rules";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { describeExtractionSummary } from "@/lib/document-extraction/summary";
+import { runDocumentCheckAfterRecognition } from "@/lib/document-check/run";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const value = (formData: FormData, key: string) => {
@@ -31,6 +32,7 @@ export async function extractShipmentSourcesAction(formData: FormData) {
     console.error("[source-document-extraction]", error);
     redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы.")));
   }
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));
 }
@@ -47,6 +49,7 @@ export async function retryShipmentSourceOcrAction(formData: FormData) {
   let summary;
   try { summary = await extractShipmentSources(supabase, shipmentId, { documentId, force: permissions["source_documents.review"] }); }
   catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error, "Не удалось повторить распознавание."))); }
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, summary.failed ? "error" : "success", describeExtractionSummary(summary)));
 }
@@ -64,6 +67,7 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   if(!permissions["source_documents.review"])redirect(back(shipmentId,"error","Недостаточно прав для подтверждения данных"));
   const { error } = await supabase.rpc("review_shipment_source_extraction", { p_extraction_id: extractionId,p_confirmed_data:confirmedData,p_apply_to_shipment:applyToShipment&&permissions["shipments.update"] });
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error,"Не удалось подтвердить распознанные данные.")));
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }
@@ -77,6 +81,7 @@ export async function assignSourceTransportAction(formData: FormData) {
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null });
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
 }
