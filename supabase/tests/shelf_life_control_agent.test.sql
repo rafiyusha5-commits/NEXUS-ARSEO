@@ -156,8 +156,8 @@ do $$
 declare b1 jsonb := pg_temp.batch(public.shelf_life_risks(),'SL-B1');
 begin
  assert not exists(select 1 from jsonb_array_elements(b1->'customers') c where c ? 'customer_name' or c ? 'customer_id' or c ? 'required_pct' or c ? 'source'),'customer details are hidden';
- assert b1->'customers'=jsonb_build_array(jsonb_build_object('hidden_count',4,'last_ok_day',current_date-40,'state','below','guarantee_letter',true)), b1->>'customers';
- assert b1->>'state'='below' and (b1->>'first_deadline')::date=current_date-40,'the same risk as for the director';
+ assert b1->'customers'=jsonb_build_array(jsonb_build_object('hidden_count',4,'state','below','guarantee_letter',true)), b1->>'customers';
+ assert b1->>'state'='below' and b1->'first_deadline'='null'::jsonb,'the same risk as for the director, without hidden dates';
 end $$;
 
 -- ---------- daily summary ----------
@@ -284,7 +284,7 @@ do $$
 declare v jsonb := public.shelf_life_risks(7); b jsonb := pg_temp.batch(public.shelf_life_risks(7),'SL-B10');
 begin
  assert b is not null and b->>'state'='below', format('without customers.view the same risk is shown: %s', b);
- assert (b->>'first_deadline')::date=current_date-5,'the same deadline as for the director';
+ assert b->'first_deadline'='null'::jsonb,'no deadline made of a hidden window';
  assert not exists(select 1 from jsonb_array_elements(b->'customers') c where c->>'source'='default'),'no 70 % default in place of a real requirement';
  assert v::text !~ 'Клиент 7|Client Seven|5e100000-0000-4000-8000-000000000007', 'no hidden customer name or id';
  assert not exists(select 1 from jsonb_array_elements(v->'items') i, jsonb_array_elements(i->'customers') c
@@ -294,6 +294,35 @@ begin
  assert not exists(select 1 from jsonb_array_elements(v->'items') i, jsonb_array_elements(i->'customers') c
                    where c->>'source'='default' and i->>'internal_sku' in ('SL-001','SL-005')),'no default for products with customers';
  assert exists(select 1 from jsonb_array_elements(b->'customers') c where (c->>'hidden_count')::int=1),'the hidden customers are counted';
+end $$;
+reset role;
+
+-- ---------- dates never reveal the requirements of hidden customers ----------
+-- Hidden windows of SL-B1 (customers 1-4): T+10, T-40, T-30, T-10; of SL-B10 (customer 7): T-5.
+set role authenticated;
+select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000002',false);
+do $$
+declare
+ v jsonb := public.shelf_life_risks(30);
+ mine text := pg_temp.mine(v)::text;
+ d date;
+begin
+ foreach d in array array[current_date+10,current_date-40,current_date-30,current_date-10,current_date-5] loop
+  assert position(d::text in mine)=0, format('hidden window %s is in the answer: %s', d, mine);
+ end loop;
+ assert pg_temp.batch(v,'SL-B1')->>'state'='below' and pg_temp.batch(v,'SL-B10')->>'state'='below','the real batches stay at risk';
+ assert pg_temp.batch(v,'SL-B1')->'first_deadline'='null'::jsonb and pg_temp.batch(v,'SL-B10')->'first_deadline'='null'::jsonb,
+  'no batch deadline made of hidden windows';
+ assert not exists(select 1 from jsonb_array_elements(v->'items') i, jsonb_array_elements(i->'customers') c
+                   where c ? 'hidden_count' and (c ? 'last_ok_day' or c ? 'required_pct' or c ? 'source' or c ? 'customer_id' or c ? 'customer_name')),
+  'the hidden group carries only the count, the state and the guarantee letter hint';
+ assert (select bool_and(c ? 'hidden_count') from jsonb_array_elements(pg_temp.batch(v,'SL-B10')->'customers') c),'SL-B10 shows only the hidden group';
+end $$;
+-- the director still sees the windows
+select set_config('request.jwt.claim.sub','5e000000-0000-4000-8000-000000000001',false);
+do $$ begin
+ assert (pg_temp.batch(public.shelf_life_risks(30),'SL-B1')->>'first_deadline')::date=current_date-40;
+ assert (pg_temp.batch(public.shelf_life_risks(30),'SL-B10')->>'first_deadline')::date=current_date-5;
 end $$;
 reset role;
 

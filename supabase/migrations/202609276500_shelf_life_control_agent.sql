@@ -81,8 +81,9 @@ $$;
 
 -- Batches at risk within p_horizon days, newest problems first. The risk is always calculated with the
 -- real requirements of all customers. With p_mask_hidden the customers the signed-in employee may not see
--- are shown only as one anonymous group per batch (how many, the earliest deadline, the worst state):
--- no names, ids, percentages or sources. The daily summary passes false and counts the same risk.
+-- are shown only as one anonymous group per batch (how many and the worst state): no names, ids,
+-- percentages, sources or dates, and the batch deadline (first_deadline) counts only visible customers.
+-- The batch still appears with its real state, so the risk is never hidden. The daily summary passes false and counts the same risk.
 -- Dropped first: an earlier draft named the last parameter differently.
 drop function if exists private.shelf_life_risks(date, integer, boolean);
 create or replace function private.shelf_life_risks(p_today date, p_horizon integer, p_mask_hidden boolean)
@@ -142,7 +143,7 @@ as $$
            case when pc.last_ok < p_today then 'below' when pc.last_ok < p_today + p_horizon then 'soon' else 'ok' end as state
     from per_customer pc
   ), entries as (
-    select r.batch_id, r.state, r.last_ok, r.customer_name as sort_name,
+    select r.batch_id, false as hidden, r.state, r.last_ok, r.customer_name as sort_name,
            jsonb_strip_nulls(jsonb_build_object(
              'customer_id', r.customer_id, 'customer_name', r.customer_name,
              'required_pct', r.required_pct, 'source', r.source, 'last_ok_day', r.last_ok, 'state', r.state,
@@ -151,11 +152,13 @@ as $$
     from rated r join batches b on b.id = r.batch_id
     where r.visible
     union all
-    select r.batch_id,
+    -- Hidden customers: how many and the worst state only. No dates: with the batch dates a deadline
+    -- would reveal the requirement.
+    select r.batch_id, true,
            case when bool_or(r.state = 'below') then 'below' when bool_or(r.state = 'soon') then 'soon' else 'ok' end,
-           min(r.last_ok), null,
+           null, null,
            jsonb_build_object(
-             'hidden_count', count(*), 'last_ok_day', min(r.last_ok),
+             'hidden_count', count(*),
              'state', case when bool_or(r.state = 'below') then 'below' when bool_or(r.state = 'soon') then 'soon' else 'ok' end,
              'guarantee_letter', bool_or(r.state = 'below' and b.expiry_date >= p_today))
     from rated r join batches b on b.id = r.batch_id
@@ -163,11 +166,12 @@ as $$
     group by r.batch_id
   ), at_risk as (
     -- Expired batches with free stock are listed even when their shelf life cannot be calculated.
-    select b.*, min(r.last_ok) as first_deadline,
+    -- The risk itself counts every customer; the deadline shown counts only the visible ones.
+    select b.*, min(r.last_ok) filter (where r.visible) as first_deadline,
            case when b.expiry_date < p_today then 'expired'
                 when bool_or(r.state = 'below') then 'below'
                 else 'soon' end as state,
-           coalesce((select jsonb_agg(e.entry order by case e.state when 'soon' then 0 when 'ok' then 1 else 2 end, e.last_ok, e.sort_name nulls last)
+           coalesce((select jsonb_agg(e.entry order by e.hidden, case e.state when 'soon' then 0 when 'ok' then 1 else 2 end, e.last_ok, e.sort_name nulls last)
                      from entries e where e.batch_id = b.id), '[]'::jsonb) as customers
     from batches b
     left join rated r on r.batch_id = b.id
@@ -185,7 +189,7 @@ as $$
                'expiry_date', a.expiry_date, 'manufacture_date', a.manufacture_date,
                'remaining_pct', a.remaining_pct, 'quantities', a.quantities, 'warehouses', a.warehouses,
                'state', a.state, 'first_deadline', a.first_deadline, 'customers', a.customers)
-             order by case a.state when 'expired' then 0 when 'below' then 1 else 2 end, a.first_deadline, a.expiry_date, a.internal_sku)
+             order by case a.state when 'expired' then 0 when 'below' then 1 else 2 end, a.first_deadline nulls last, a.expiry_date, a.internal_sku)
       from at_risk a), '[]'::jsonb),
     -- Batches whose shelf life cannot be calculated (no manufacture date and no shelf life of the product)
     -- and that are not expired: expired ones are already listed above.

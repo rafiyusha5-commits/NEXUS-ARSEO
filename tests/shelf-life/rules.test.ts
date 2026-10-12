@@ -69,9 +69,10 @@ describe("Контроль ОСГ: reading the forecast", () => {
     ] })] }).items;
     const [hidden] = batch.customers;
     assert.equal(hidden.hiddenCount, 2);
-    assert.deepEqual([hidden.customerId, hidden.customerName, hidden.requiredPct, hidden.source], [undefined, undefined, null, null], "nothing hidden is kept even if sent");
-    assert.equal(describeRequirement(hidden), "Клиенты, карточки которых вам недоступны: 2 — их требования учтены, подробности скрыты");
-    assert.match(customerAdvice(hidden, false), /гарантийным письмом/);
+    assert.deepEqual([hidden.customerId, hidden.customerName, hidden.requiredPct, hidden.source, hidden.lastOkDay], [undefined, undefined, null, null, null], "nothing hidden is kept even if sent");
+    assert.equal(describeRequirement(hidden), "Клиенты, карточки которых вам недоступны: 2 — их требования учтены в оценке риска");
+    assert.equal(customerAdvice(hidden, false), "Для части этих клиентов требование уже не выполняется: продажа им возможна только с гарантийным письмом. Названия клиентов, их требования и сроки отгрузки видны сотрудникам с правом просмотра покупателей.");
+    assert.doesNotMatch(customerAdvice({ ...hidden, state: "soon", guaranteeLetter: false }, false), /\d{2}\.\d{2}\.\d{4}/, "no date for hidden customers");
   });
 
   it("keeps an unknown remaining shelf life unknown", () => {

@@ -111,7 +111,8 @@ function parseCustomers(raw: unknown): RiskCustomer[] {
       customerId: !hiddenCount && customerId && UUID.test(customerId) ? customerId : undefined,
       customerName: hiddenCount ? undefined : text(row.customer_name),
       requiredPct: hiddenCount ? null : requiredPct, source: hiddenCount ? null : source, hiddenCount, state,
-      lastOkDay: date(row.last_ok_day),
+      // The database sends no dates for hidden customers; anything sent anyway is ignored.
+      lastOkDay: hiddenCount ? null : date(row.last_ok_day),
       guaranteeLetter: row.guarantee_letter === true,
     }];
   });
@@ -133,14 +134,22 @@ export function formatPct(value: number | null) {
 /** «Клиент 1 — требование 30 % (карточка клиента)», or «Любой клиент» for the default without customers. */
 export function describeRequirement(customer: RiskCustomer) {
   if (customer.hiddenCount) {
-    return `Клиенты, карточки которых вам недоступны: ${customer.hiddenCount} — их требования учтены, подробности скрыты`;
+    return `Клиенты, карточки которых вам недоступны: ${customer.hiddenCount} — их требования учтены в оценке риска`;
   }
   return `${customer.customerName ?? "Любой клиент"} — требование ${formatPct(customer.requiredPct)} (${customer.source ? SOURCE_LABEL[customer.source] : "—"})`;
 }
 
 /** What the employee can do for one customer. */
+export const HIDDEN_DETAILS_NOTE = "Названия клиентов, их требования и сроки отгрузки видны сотрудникам с правом просмотра покупателей.";
+
 export function customerAdvice(customer: RiskCustomer, expired: boolean) {
   if (expired) return "Срок годности истёк: продажа невозможна, решите вопрос списания или возврата.";
+  if (customer.hiddenCount) {
+    const state = customer.state === "below"
+      ? `Для части этих клиентов требование уже не выполняется${customer.guaranteeLetter ? ": продажа им возможна только с гарантийным письмом" : ""}.`
+      : customer.state === "soon" ? "Для части этих клиентов окно отгрузки закрывается в пределах выбранного срока." : "Их требования пока выполняются.";
+    return `${state} ${HIDDEN_DETAILS_NOTE}`;
+  }
   if (customer.state === "below") {
     return customer.guaranteeLetter
       ? `Требование не выполняется с ${formatIsoDate(nextDay(customer.lastOkDay))}. Продажа возможна только с гарантийным письмом клиента.`
