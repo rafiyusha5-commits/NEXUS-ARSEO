@@ -1,11 +1,11 @@
 import Image from "next/image";
 
-// ARSEO lion and the Nexus wordmark. The lion comes in a dark version for light surfaces and a white
-// one for the red brand panel; the files are in public/brand.
+// ARSEO lion and the Nexus wordmark. The official red lion is for light surfaces, the white lion with
+// the ARSEO caption for the red brand panel; the files are in public/brand.
 export function BrandLockup({ subtitle }: { subtitle?: string }) {
   return (
     <span className="brand-lockup">
-      <Image className="brand-logo" src="/brand/arseo-lion-dark.png" alt="ARSEO" width={164} height={204} priority />
+      <Image className="brand-logo" src="/brand/arseo-lion-red.png" alt="ARSEO" width={53} height={56} priority />
       <span className="brand-divider" aria-hidden="true" />
       <span className="brand-product-wrap">
         <Image className="brand-product" src="/brand/nexus.png" alt="Nexus" width={640} height={171} priority />

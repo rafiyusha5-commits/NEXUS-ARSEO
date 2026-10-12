@@ -20,8 +20,8 @@ button, a { font:inherit; }
 .app-shell { display:grid; grid-template-columns:268px 1fr; min-height:100vh; }
 .sidebar { background:var(--surface); color:var(--ink); border-right:1px solid var(--line); padding:26px 18px; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow:hidden; }
 .brand { display:flex; align-items:center; gap:14px; padding:0 8px 28px; color:inherit; text-decoration:none; }
-.brand-logo { display:block; width:auto; height:56px; }
-.brand-divider { width:1px; height:38px; background:#d6d3d1; }
+.brand-logo { display:block; width:auto; height:48px; }
+.brand-divider { width:1px; height:34px; background:#d6d3d1; }
 .brand-product { display:block; width:auto; height:28px; }
 .brand-mark { width:38px; height:38px; display:grid; place-items:center; color:#fff; background:var(--accent); border-radius:12px; font-weight:900; }
 .brand strong, .brand small { display:block; } .brand strong { font-size:18px; } .brand small { color:#a8a29e; letter-spacing:.16em; font-size:12px; }
@@ -44,7 +44,7 @@ nav a { color:#44403c; text-decoration:none; padding:11px 14px; border-radius:10
 .sidebar-toggle{display:none;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:600;cursor:pointer}
 .sidebar-toggle-input:focus-visible+.sidebar-head .sidebar-toggle{outline:2px solid var(--accent);outline-offset:2px}
 .brand-lockup{display:flex;align-items:center;gap:14px}.brand-product-wrap{display:grid;gap:4px}.brand-subtitle{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-@media (max-width:900px){.sidebar{position:static;height:auto;padding:14px 16px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding:0}.brand-logo{height:44px}.brand-divider{height:30px}.brand-product{height:22px}.sidebar-toggle{display:inline-flex}.sidebar-body{display:none;padding-top:14px}.sidebar-toggle-input:checked~.sidebar-body{display:flex}.sidebar-nav{overflow:visible}}
+@media (max-width:900px){.sidebar{position:static;height:auto;padding:14px 16px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding:0}.brand-logo{height:40px}.brand-divider{height:28px}.brand-product{height:22px}.sidebar-toggle{display:inline-flex}.sidebar-body{display:none;padding-top:14px}.sidebar-toggle-input:checked~.sidebar-body{display:flex}.sidebar-nav{overflow:visible}}
 .workspace { padding:38px 46px 54px; max-width:1500px; width:100%; margin:auto; }
 .topbar,.panel-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; }
 h1,h2,p { margin:0; } h1 { font-size:34px; font-weight:700; line-height:1.1; letter-spacing:-.01em; } h2 { font-size:19px; font-weight:600; letter-spacing:-.005em; }
