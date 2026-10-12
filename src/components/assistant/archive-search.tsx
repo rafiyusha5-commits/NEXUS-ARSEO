@@ -9,7 +9,7 @@ export function ArchiveSearch({ query }: { query: string }) {
   const [value, setValue] = useState(query);
   const [pending, startTransition] = useTransition();
 
-  return <form method="get" aria-busy={pending} onSubmit={event => {
+  return <form className="archive-search" method="get" aria-busy={pending} onSubmit={event => {
     event.preventDefault();
     if (pending) return;
     const href = `/assistant/archive?${new URLSearchParams({ q: value.trim() })}`;
@@ -19,7 +19,7 @@ export function ArchiveSearch({ query }: { query: string }) {
     });
   }}>
     <label>Название или бренд <input name="q" value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="Belgian ДС" disabled={pending} /></label>
-    <button type="submit" disabled={pending}>{pending ? "Ищу…" : "Найти"}</button>
+    <button className="primary" type="submit" disabled={pending}>{pending ? "Ищу…" : "Найти"}</button>
     {pending && <RequestProgress label="Ищу документы в архиве…" />}
   </form>;
 }
