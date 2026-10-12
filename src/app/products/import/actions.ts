@@ -14,6 +14,7 @@ import { loadPermissions } from "@/lib/permissions.ts";
 import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts";
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
 import { buildCalculatorPackage, CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
+import { parsePurchasePriceReport } from "@/lib/calculator-import/purchase-prices.ts";
 import { auditCalculatorPackaging, type CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 export type ReferenceImportResult =
@@ -176,4 +177,16 @@ export async function runGoogleCalculatorImport(
   } catch (error) {
     return { ok: false, message: publicErrorMessage(error, "Не удалось прочитать мастер-калькулятор из Google Sheets.") };
   }
+}
+
+export async function syncCalculatorPurchasePrices(currency: string,mode: "preview"|"apply",snapshot?: string) {
+ if(!/^[A-Z]{3}$/.test(currency) || !["preview","apply"].includes(mode) || (mode==="apply"&&!/^[a-f0-9]{64}$/.test(snapshot??""))) return {ok:false as const,message:"Выберите валюту и сначала проверьте перенос цен."};
+ const {supabase}=await requireUser();
+ const can=await loadPermissions(supabase,["products.update","prices.purchase.view"] as const);
+ if(!can["products.update"]||!can["prices.purchase.view"])return {ok:false as const,message:"Нужны права на изменение товаров и закупочные цены."};
+ const {data,error}=await supabase.rpc("sync_calculator_purchase_prices",{p_currency_code:currency,p_dry_run:mode==="preview",p_expected_hash:snapshot??null});
+ if(error)return {ok:false as const,message:publicErrorMessage(error,"Не удалось перенести цены. Проверьте подключение и повторите предпросмотр.")};
+ const report=parsePurchasePriceReport(data);if(!report)return {ok:false as const,message:"Не удалось прочитать результат проверки цен."};
+ if(mode==="apply")revalidatePath("/products","layout");
+ return {ok:true as const,report};
 }

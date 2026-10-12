@@ -12,6 +12,8 @@ function copySessionState(source: NextResponse, target: NextResponse) {
 }
 
 export async function updateSession(request: NextRequest) {
+  // Exact internal worker route authenticates with its own server secret, never employee cookies.
+  if (request.nextUrl.pathname === "/api/telegram/process") return NextResponse.next({ request });
   if (!hasSupabaseEnv()) return NextResponse.next({ request });
 
   const { url, publishableKey } = getSupabaseEnv();

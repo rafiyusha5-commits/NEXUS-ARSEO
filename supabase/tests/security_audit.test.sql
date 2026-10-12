@@ -48,7 +48,7 @@ select 'authenticated', unnest(array[
   'public.create_listing_card_version', 'public.create_sale_guarantee_letter', 'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
   'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',
   'public.confirm_customer_order', 'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
-  'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
+  'public.search_drive_catalog', 'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
   'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
   'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
   'public.reserve_customer_order_item_fefo', 'public.reserve_customer_order_item_override', 'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
@@ -71,9 +71,10 @@ select 'authenticated', unnest(array[
   'public.begin_shipment_source_ocr', 'public.finish_shipment_source_ocr',
   'public.create_inventory_operation_document', 'public.add_inventory_operation_line', 'public.remove_inventory_operation_line',
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',
-  'public.create_shipment_item', 'public.my_product_purchase_prices',
+  'public.my_agent_usage', 'public.create_my_telegram_code', 'public.confirm_my_telegram_link', 'public.unlink_my_telegram',
+  'public.sync_calculator_purchase_prices', 'public.create_shipment_item', 'public.my_product_purchase_prices',
   'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
-  'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
+  'private.drive_gateway_allowed', 'private.barcode_key', 'private.can_access_counterparty', 'private.can_access_counterparty_record',
   'private.can_write_shipments', 'private.document_is_active', 'private.has_active_deny',
   'private.has_permission', 'private.is_employee', 'private.is_own_new_document', 'private.is_own_new_template',
   'private.is_registered_document_file', 'private.is_registered_template_file', 'private.can_view_generated_document', 'private.can_read_registered_document_file', 'private.listing_card_is_draft',
@@ -81,7 +82,9 @@ select 'authenticated', unnest(array[
   'private.external_can_access_document', 'private.external_can_read_document_file', 'private.external_can_upload_document_file',
   'private.document_matches_counterparty', 'private.document_is_external_safe'])
 union all
-select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key']);
+select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
+  'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
+  'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress']);
 
 do $$
 declare

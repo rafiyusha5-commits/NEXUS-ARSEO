@@ -1,3 +1,4 @@
+import { parsePurchasePriceReport, type PurchasePriceReport } from "../calculator-import/purchase-prices.ts";
 // The report returned by public.import_reference_data() and its Russian labels.
 
 export const IMPORT_STATUSES = ["create", "update", "unchanged", "conflict", "error"] as const;
@@ -17,6 +18,7 @@ export type ReportItem = {
 export type ImportReport = {
   summary: Record<ImportStatus, number>;
   items: ReportItem[];
+  purchasePrices?: PurchasePriceReport;
   dryRun: boolean;
   applied: boolean;
 };
@@ -70,7 +72,8 @@ export function parseReport(value: unknown): ImportReport | null {
       message: typeof item.message === "string" ? item.message : null,
     });
   }
-  return { summary, items, dryRun: value.dry_run !== false, applied: value.applied === true };
+  const purchasePrices = parsePurchasePriceReport(value.purchase_prices);
+  return { summary, items, ...(purchasePrices ? {purchasePrices} : {}), dryRun: value.dry_run !== false, applied: value.applied === true };
 }
 
 export function hasProblems(report: ImportReport): boolean {

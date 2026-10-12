@@ -12,6 +12,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Обзор", href: "/", key: "overview" },
     { label: "Задачи", href: "/tasks", key: "tasks" },
     { label: "Уведомления", href: "/notifications", key: "notifications" },
+    { label: "Ассистент", href: "/assistant", key: "assistant" },
   ] },
   { label: "Закупки", items: [
     { label: "Поступления и поставки", href: "/shipments", key: "shipments" },

@@ -1,3 +1,9 @@
+# Security advisories in packages that only reach us through next and postcss. Both ranges stay inside
+# what the parent declares (next: sharp ^0.35.4, postcss: source-map-js ^1.2.1), so nothing is forced
+# out of its supported range. Remove an entry once the parent requires the patched version itself.
+overrides:
+  sharp: ^0.35.5
+  source-map-js: ^1.2.2
 allowBuilds:
   sharp: false
   unrs-resolver: false
