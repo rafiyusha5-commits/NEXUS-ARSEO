@@ -69,7 +69,10 @@ pnpm build
 pnpm typecheck
 pnpm test      # модульные тесты (Node test runner)
 pnpm test:db   # миграции и RLS на локальном PostgreSQL (нужны initdb и pg_ctl)
+pnpm audit:ci  # уязвимости рабочих зависимостей, кроме разобранных исключений
 ```
+
+Те же проверки выполняются автоматически на каждый push и Pull Request: задания `app`, `database` и `audit` в [`.github/workflows/checks.yml`](.github/workflows/checks.yml). CI работает только с синтетическими данными и не обращается к рабочим сервисам; состав проверок, политика исключений и ограничения описаны в [`docs/ci.md`](docs/ci.md).
 
 ## Стек
 

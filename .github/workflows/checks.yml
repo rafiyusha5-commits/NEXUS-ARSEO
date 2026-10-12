@@ -1,0 +1,155 @@
+# Автоматические проверки на каждый push и Pull Request.
+#
+# CI работает только с синтетическими данными. Здесь нет доступа ни к одному рабочему сервису:
+# проект Supabase, Google Drive и Sheets, OpenAI, движок OCR и бот Telegram недостижимы, секреты
+# не передаются (`secrets` в этом файле не используется), ассистент, OCR и Telegram остаются
+# выключенными, потому что включающие их переменные отсутствуют. SQL-тесты поднимают собственный
+# одноразовый кластер PostgreSQL 16 в каталоге задания и не обращаются к рабочей базе.
+#
+# Названия проверок для будущей защиты ветки: app, database, audit. Менять их не следует:
+# на них ссылается настройка «Require status checks to pass». См. docs/ci.md.
+
+name: checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Код Pull Request исполняется только в контексте pull_request с правами на чтение.
+# pull_request_target не используется: он дал бы коду из форка доступ к секретам репозитория.
+permissions:
+  contents: read
+
+# Новый коммит в ту же ветку или в тот же Pull Request отменяет устаревший прогон.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Corepack в неинтерактивной среде иначе ждёт подтверждения загрузки pnpm.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  app:
+    name: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Токен проверки не остаётся в .git/config после выгрузки.
+          persist-credentials: false
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: pnpm из packageManager проекта
+        run: |
+          corepack enable
+          echo "pnpm $(pnpm --version), node $(node --version)"
+
+      - name: Путь к хранилищу pnpm
+        run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Кеш зависимостей ровно для этого lockfile
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          # Без restore-keys: кеш используется только при совпадении lockfile, иначе собирается заново.
+          key: pnpm-${{ runner.os }}-node24-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: lint
+        run: pnpm lint
+
+      - name: test
+        run: pnpm test
+
+      - name: build
+        # Рабочие настройки не нужны: сборка проходит без переменных окружения, а при их отсутствии
+        # ассистент, OCR и Telegram остаются выключенными. Реальные значения сюда не добавлять.
+        run: pnpm build
+
+  database:
+    name: database
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PGBIN: /usr/lib/postgresql/16/bin
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: pnpm из packageManager проекта
+        run: corepack enable
+
+      - name: Серверные программы PostgreSQL 16
+        run: |
+          if [ ! -x "$PGBIN/initdb" ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          "$PGBIN/initdb" --version
+          "$PGBIN/psql" --version
+
+      - name: PostgreSQL 16 первым в PATH
+        run: echo "$PGBIN" >> "$GITHUB_PATH"
+
+      - name: test:db
+        # Скрипт создаёт отдельный кластер в каталоге задания, применяет все миграции, проверяет их
+        # повторное применение и выполняет SQL-тесты. Рабочая база не используется и не изменяется.
+        run: pnpm run test:db
+
+  audit:
+    name: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: pnpm из packageManager проекта
+        run: corepack enable
+
+      - name: Путь к хранилищу pnpm
+        run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Кеш зависимостей ровно для этого lockfile
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          key: pnpm-${{ runner.os }}-node24-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: audit --prod
+        # Уровень серьёзности не является поводом пропустить находку. Допускается единственное
+        # разобранное исключение, перечисленное в scripts/audit-prod.mjs; любая новая находка
+        # роняет проверку. См. docs/security-audit.md, раздел «Зависимости».
+        run: pnpm run audit:ci
