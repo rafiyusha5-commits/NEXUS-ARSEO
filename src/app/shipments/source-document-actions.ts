@@ -9,6 +9,7 @@ import { sanitizeConfirmedSourceData, SOURCE_FIELD_DEFINITIONS } from "@/lib/doc
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { describeExtractionSummary } from "@/lib/document-extraction/summary";
 import { runDocumentCheckAfterRecognition } from "@/lib/document-check/run";
+import { parseQuantityLines } from "@/lib/shipments/document-quantities";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const value = (formData: FormData, key: string) => {
@@ -84,4 +85,27 @@ export async function assignSourceTransportAction(formData: FormData) {
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
+}
+
+// Confirmed or shipped quantities from a confirmed invoice, packing list or waybill. The employee checks every
+// value against the original; only filled inputs are written, the database keeps the history.
+export async function applyDocumentQuantitiesAction(formData: FormData) {
+  const shipmentId = value(formData, "shipment_id");
+  const extractionId = value(formData, "extraction_id");
+  if (!UUID.test(shipmentId) || !UUID.test(extractionId)) redirect("/shipments?error=Некорректные данные");
+  const target = value(formData, "target");
+  const targets = target === "both" ? ["confirmed", "shipped"] : [target];
+  if (!targets.every(item => item === "confirmed" || item === "shipped")) redirect(back(shipmentId, "error", "Выберите, какое количество заполнить"));
+  if (value(formData, "checked") !== "on") redirect(back(shipmentId, "error", "Подтвердите, что количества сверены с оригиналом документа"));
+  let lines: ReturnType<typeof parseQuantityLines> = [];
+  try { lines = parseQuantityLines(formData.entries()); }
+  catch (error) { redirect(back(shipmentId, "error", error instanceof Error ? error.message : "Проверьте количества")); }
+  if (!lines.length) redirect(back(shipmentId, "error", "Укажите количество хотя бы для одной позиции"));
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.rpc("apply_shipment_document_quantities", { p_extraction_id: extractionId, p_targets: targets, p_lines: lines });
+  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось записать количества по документу.")));
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
+  revalidatePath(`/shipments/${shipmentId}`);
+  const changed = Number((data as { changed?: number } | null)?.changed ?? 0);
+  redirect(back(shipmentId, "success", changed ? `Количества по документу записаны: изменено значений — ${changed}` : "Количества совпадают с уже записанными, изменений нет"));
 }
