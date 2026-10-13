@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canViewShipmentPrices } from "@/lib/shipment-report-rules";
+import { canViewShipmentPrices, missingRequiredDocuments, type MissingRequiredDocument } from "@/lib/shipment-report-rules";
 
 export function localizedName(value: unknown) {
   if (!value || typeof value !== "object") return "—";
@@ -28,7 +28,7 @@ export type ReportItem = { id: string; uom: string; ordered_quantity: number | s
 export type ReportReceiptItem = { expected_quantity: number | string; accepted_quantity: number | string; damaged_quantity: number | string; shortage_quantity: number | string; overage_quantity: number | string; discrepancy_reason?: string | null; shipment_item_id: string; batch: Relation<BatchRef>; movement: Relation<MovementRef> };
 export type ReportReceipt = { id: string; shipment_transport_id: string; performed_by_name: string; notes?: string | null; received_at: string; transport: Relation<TransportRef>; items: ReportReceiptItem[] };
 export type ReportDocument = { id: string; title: string; document_number?: string | null; status: string; current_version: number; document_date?: string | null; archived_at?: string | null; document_type_id: string; type: Relation<DocumentTypeRef> };
-export type ReportRequirement = { document_type_id: string; is_mandatory: boolean; due_description?: string | null; shipment_type?: string | null; process_template_id?: string | null; route_id?: string | null; stage_id?: string | null; type: Relation<DocumentTypeRef> };
+export type ReportRequirement = { document_type_id: string; is_mandatory: boolean; applies_to?: string | null; due_description?: string | null; shipment_type?: string | null; process_template_id?: string | null; route_id?: string | null; stage_id?: string | null; type: Relation<DocumentTypeRef> };
 export type ReportTask = { id: string; title: string; status: string; priority: string; due_at?: string | null; assignee: Relation<ProfileRef> };
 export type ReportShipment = { id: string; shipment_number: string; project_code?: string | null; type: string; status: string; planned_ready_date?: string | null; planned_arrival_date?: string | null; created_at: string; process_template_id?: string | null; route_id?: string | null; supplier: Relation<Party>; customer: Relation<Party>; route: Relation<{ name?: Localized }>; warehouse: Relation<{ name?: Localized; code?: string }>; currency: Relation<{ code?: string }>; responsible: Relation<ProfileRef> };
 
@@ -39,7 +39,7 @@ export type ShipmentReport = {
   items: ReportItem[];
   receipts: ReportReceipt[];
   documents: ReportDocument[];
-  missingDocuments: ReportRequirement[];
+  missingDocuments: MissingRequiredDocument<ReportRequirement>[];
   tasks: ReportTask[];
   canViewPrices: boolean;
   totals: { ordered: number; confirmed: number; shipped: number; accepted: number; batches: number; movements: number; hasReceipt: boolean; reconciled: boolean };
@@ -55,7 +55,7 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
     supabase.from("shipment_items").select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,discrepancy_reason,shipment_transport_id,product:products(internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id", shipmentId).order("created_at"),
     supabase.from("shipment_transport_receipts").select("id,shipment_transport_id,performed_by_name,notes,received_at,transport:shipment_transports(sequence_no),items:shipment_transport_receipt_items(expected_quantity,accepted_quantity,damaged_quantity,shortage_quantity,overage_quantity,discrepancy_reason,shipment_item_id,batch:inventory_batches(batch_number,manufacture_date,expiry_date),movement:inventory_movements(quantity))").eq("shipment_id", shipmentId).order("received_at"),
     supabase.from("tasks").select("id,title,status,priority,due_at,assignee:profiles!tasks_assignee_user_id_fkey(full_name)").eq("shipment_id", shipmentId).in("status", ["open", "in_progress"]).order("due_at", { nullsFirst: false }),
-    supabase.from("document_requirements").select("document_type_id,is_mandatory,due_description,shipment_type,process_template_id,route_id,stage_id,type:document_types(code,name_ru)").eq("is_active", true),
+    supabase.from("document_requirements").select("document_type_id,applies_to,is_mandatory,due_description,shipment_type,process_template_id,route_id,stage_id,type:document_types(code,name_ru)").eq("is_active", true),
   ]);
   const transports = (transportResult.data ?? []) as unknown as ReportTransport[];
   const stages = (stageResult.data ?? []) as unknown as ReportStage[];
@@ -81,14 +81,14 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
     const batchQuantity = related.filter((entry) => one(entry.batch)).reduce((sum, entry) => sum + Number(entry.accepted_quantity ?? 0), 0);
     return { ...item, accepted, batchQuantity, discrepancy: accepted - Number(item.shipped_quantity ?? item.confirmed_quantity ?? item.ordered_quantity ?? 0) };
   });
-  const presentTypes = new Set((documents ?? []).map((document) => document.document_type_id));
-  const missingDocuments = ((requirementResult.data ?? []) as unknown as ReportRequirement[]).filter((requirement) =>
-    requirement.is_mandatory && !presentTypes.has(requirement.document_type_id)
-    && (!requirement.shipment_type || requirement.shipment_type === shipment.type)
-    && (!requirement.process_template_id || requirement.process_template_id === shipment.process_template_id)
-    && (!requirement.route_id || requirement.route_id === shipment.route_id)
-    && (!requirement.stage_id || stages.some((stage) => one(stage.stage)?.id === requirement.stage_id)),
-  );
+  // Shipment and per-vehicle requirements, counted the same way as the «Сверка» agent.
+  const missingDocuments = missingRequiredDocuments((requirementResult.data ?? []) as unknown as ReportRequirement[], {
+    shipment,
+    stageIds: new Set(stages.map((stage) => one(stage.stage)?.id).filter((id): id is string => Boolean(id))),
+    documents: (documents ?? []) as Array<{ id: string; document_type_id: string; status: string }>,
+    links: (links ?? []) as Array<{ document_id: string; entity_type: string; entity_id: string }>,
+    transports,
+  });
   const totals = {
     ordered: items.reduce((sum, item) => sum + Number(item.ordered_quantity ?? 0), 0),
     confirmed: items.reduce((sum, item) => sum + Number(item.confirmed_quantity ?? item.ordered_quantity ?? 0), 0),
