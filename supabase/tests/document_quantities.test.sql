@@ -50,6 +50,9 @@ select ('eb60'||n||'000-0000-4000-8000-000000000001')::uuid,'eb300000-0000-4000-
  case n when 3 then 'extracted' else 'confirmed' end,'rules-test','eb000000-0000-4000-8000-000000000001',
  case n when 3 then null else 'eb000000-0000-4000-8000-000000000001'::uuid end,case n when 3 then null else now() end
 from generate_series(1,4) n;
+insert into public.document_links(document_id,entity_type,entity_id,created_by)
+select id,'shipment','eb300000-0000-4000-8000-000000000001','eb000000-0000-4000-8000-000000000001'
+from public.documents where id::text like 'eb50%';
 set session_replication_role=origin;
 
 create function pg_temp.fails(p_sql text,p_pattern text) returns void language plpgsql as $$

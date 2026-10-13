@@ -55,7 +55,7 @@ export async function loadShipmentOutcome(supabase: SupabaseClient, shipmentId: 
       ? supabase.from("inventory_reservations").select("batch_id,quantity,status,balance:inventory_balances(uom),sale_item:sale_items(sale:sales(id,sale_number,status,customer:counterparties(short_name,legal_name)))").in("batch_id", batchIds)
       : Promise.resolve({ data: [] }),
     costVisible
-      ? supabase.from("cost_calculations").select("version_number,status,approved_at,goods_total,expenses_total,landed_total,currency:currencies(code),items:cost_calculation_items(shipment_item_id,quantity,landed_amount,unit_landed_cost)").eq("shipment_id", shipmentId).in("status", ["approved", "draft"]).order("version_number", { ascending: false }).limit(5)
+      ? supabase.from("cost_calculations").select("version_number,status,approved_at,goods_total,expenses_total,landed_total,currency:currencies(code),items:cost_calculation_items(shipment_item_id,quantity,landed_amount,unit_landed_cost)").eq("shipment_id", shipmentId).in("status", ["approved", "draft"]).order("status", { ascending: true }).order("version_number", { ascending: false }).limit(1)
       : Promise.resolve({ data: null }),
     granted.has("documents.view") ? supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId }) : Promise.resolve({ data: null, error: { message: "hidden" } }),
     inventoryVisible && granted.has("products.view") && batchIds.length ? supabase.rpc("shelf_life_risks", { p_horizon_days: 60 }) : Promise.resolve({ data: null, error: batchIds.length ? { message: "hidden" } : null }),

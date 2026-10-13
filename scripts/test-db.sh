@@ -154,6 +154,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
 # Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
