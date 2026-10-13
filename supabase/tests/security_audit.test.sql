@@ -47,7 +47,7 @@ select 'authenticated', unnest(array[
   'public.change_sale_guarantee_status', 'public.change_shipment_transport_status', 'public.change_task_due', 'public.create_customer_order',
   'public.create_listing_card_version', 'public.create_sale_guarantee_letter', 'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
   'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',
-  'public.confirm_customer_order', 'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
+  'public.confirm_customer_order', 'public.fulfill_customer_order', 'public.mark_all_notifications_read', 'public.mark_notification_read', 'public.my_document_permissions',
   'public.search_drive_catalog', 'public.my_permissions', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
   'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
   'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
