@@ -110,6 +110,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
+# Expense cancellation replaces the costing functions of 2700 and 4100 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278000_expense_cancel_costing.sql" >/dev/null
 # Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
 # Calculator barcode reconciliation only replaces guarded functions.
