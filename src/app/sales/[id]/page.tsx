@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { CustomerReturnsPanel } from "@/components/sales/customer-returns-panel";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
-import { CustomerReturnsPanel } from "@/components/sales/customer-returns-panel";
 import {
   addCustomerOrderItem,
   cancelCustomerOrder,
