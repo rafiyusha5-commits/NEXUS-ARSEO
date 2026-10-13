@@ -14,7 +14,7 @@ function number(value:unknown){const parsed=Number(value);return Number.isFinite
 
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 const batchStatuses:Record<string,string>={available:"Доступна",quarantine:"Карантин",blocked:"Заблокирована",depleted:"Израсходована"};
-const movementNames:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",adjustment:"Корректировка"};
+const movementNames:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",customer_return:"Возврат от клиента",adjustment:"Корректировка"};
 const reservationStatuses:Record<string,string>={active:"Активен",fulfilled:"Исполнен",cancelled:"Отменён"};
 
 export default async function BatchPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{tab?:string;error?:string;success?:string}>}){

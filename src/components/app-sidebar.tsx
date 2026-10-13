@@ -22,6 +22,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Продажи", items: [
     { label: "Заказы покупателей", href: "/sales", key: "sales" },
+    { label: "Возвраты", href: "/sales/returns", key: "customer-returns" },
     { label: "Промо и спецзаказы", href: "/commercial-programs", key: "commercial-programs" },
     { label: "Карты ввода товаров", href: "/listing-cards", key: "listing-cards" },
   ] },
@@ -44,6 +45,8 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Финансы", items: [
     { label: "Расходы и себестоимость", href: "/finance", key: "finance" },
+    { label: "Дебиторка", href: "/finance/receivables", key: "receivables" },
+    { label: "Поступления из банка", href: "/finance/bank", key: "bank" },
   ] },
   { label: "Документы", items: [
     { label: "Журнал документов", href: "/documents", key: "documents" },
