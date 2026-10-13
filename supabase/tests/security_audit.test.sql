@@ -43,7 +43,7 @@ select 'authenticated', unnest(array[
   'public.add_shipment_transport', 'public.import_calculator_master_data', 'public.my_product_master_confidential_data', 'public.my_product_master_sources', 'public.create_shipment_transport', 'public.update_shipment_transport', 'public.remove_shipment_transport', 'public.assign_source_extraction_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
   'public.add_sticker_template_version', 'public.change_sticker_order_status', 'public.create_marking_code_order', 'public.create_sticker_order', 'public.create_sticker_template',
   'public.add_customer_order_item', 'public.archive_document', 'public.archive_document_template', 'public.cancel_customer_order', 'public.cancel_listing_card',
-  'public.change_shipment_operational_state', 'public.change_shipment_stage_status',
+  'public.change_shipment_operational_state', 'public.change_shipment_stage_status', 'public.correct_shipment_dates',
   'public.change_sale_guarantee_status', 'public.change_shipment_transport_status', 'public.change_task_due', 'public.create_customer_order',
   'public.create_listing_card_version', 'public.create_sale_guarantee_letter', 'public.create_shipment_with_stages', 'public.create_task', 'public.decide_document_review',
   'public.delete_shipment_item', 'public.import_reference_data', 'public.issue_inventory_fifo',

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
 import { ShipmentTransportsPanel } from "@/components/shipments/shipment-transports-panel";
+import { ShipmentActualDatesPanel } from "@/components/shipments/shipment-actual-dates-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
@@ -126,6 +127,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Финансы поставки</p><h2>Расходы</h2></div><span className="page-count">{expenses?.length??0}</span></div>
       {permissions["finance.view"]?<><div className="compact-list">{expenses?.map(expense=>{const expenseCurrency=one(expense.currency);const payee=one(expense.payee);return <article className="operation-history-row" key={expense.id}><div><strong>{expenseType[expense.expense_type]??expense.expense_type}</strong><small>{expense.incurred_at} · {expense.is_planned?"план":"факт"} · {expense.status}</small></div><strong>{Number(expense.amount).toLocaleString("ru-RU")} {expenseCurrency?.code}</strong><small>{payee?.short_name||payee?.legal_name||"Получатель не указан"}</small></article>})}{!expenses?.length&&<div className="empty-state">Расходов по этой поставке пока нет.</div>}</div><div className="panel-footer-actions"><Link className="primary button-link" href={`/finance?shipment=${shipment.id}`}>Открыть расходы и себестоимость</Link></div></>:<div className="empty-state">Для просмотра расходов требуется право «Финансы: просмотр».</div>}
     </section>
+    <>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Процесс RVI</p><h2>Этапы поставки</h2></div><span className="page-count">{runs?.filter((run)=>run.status==="completed").length??0} из {runs?.length??0} завершено</span></div>
       <div className="stage-list">{runs?.sort((a,b)=>(one(a.stage)?.sequence_order??0)-(one(b.stage)?.sequence_order??0)).map((run)=>{const stage=one(run.stage);const stageTransport=one(run.transport);return <article className={`stage-row stage-${run.status}`} key={run.id} id={`stage-${run.id}`}>
         <div className="stage-number">{stage?.sequence_order}</div><div className="stage-copy"><strong>{name(stage?.name)}</strong><small>{stage?.scope==="transport"?(stageTransport?`Автомобиль №${stageTransport.sequence_no}`:"По перевозке"):"По поставке"} · {stage?.requirement==="required"?"обязательный":stage?.requirement==="conditional"?"по условию":"необязательный"}</small>{run.status_reason&&<p>{run.status_reason}</p>}</div>
@@ -133,6 +135,8 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
         {canEdit&&<form action={changeStageStatus} className="stage-action"><input type="hidden" name="run_id" value={run.id}/><input type="hidden" name="shipment_id" value={shipment.id}/><select name="status" defaultValue={run.status}><option value="pending">Ожидает</option><option value="in_progress">В работе</option><option value="completed">Завершён</option><option value="blocked">Заблокирован</option><option value="skipped">Пропущен</option><option value="not_applicable">Не требуется</option></select><input name="reason" placeholder="Причина, если требуется"/><button className="ghost compact" type="submit">Сохранить</button></form>}
       </article>;})}</div>
     </section>
+    <ShipmentActualDatesPanel shipmentId={shipment.id} shipmentStatus={shipment.status}/>
+    </>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Хронология</p><h2>История поставки</h2></div><span className="page-count">{stageHistory?.length??0}</span></div>
       <div className="operation-history-list">
         <article className="operation-history-row"><time>{new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeStyle:"short"}).format(new Date(shipment.created_at))}</time><div><strong>Поставка создана</strong><small>{shipment.shipment_number}</small></div></article>
