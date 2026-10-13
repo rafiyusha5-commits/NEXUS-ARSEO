@@ -17,6 +17,7 @@ import {
   changeShipmentOperationalState,
   changeStageStatus,
   deleteShipmentItem,
+  reopenShipment,
   updateShipmentItem,
 } from "../actions";
 
@@ -30,9 +31,9 @@ const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"сло�
 
 export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;check_error?:string;check_success?:string;tab?:string}>}){
   const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
-  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view"] as const);
+  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen"] as const);
   const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
-    supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
+    supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,closed_at,closer:profiles!shipments_closed_by_fkey(full_name),planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku"),
     supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
@@ -64,6 +65,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     <header className="topbar"><div><p className="eyebrow">Поставка · {shipment.type}</p><h1>{shipment.shipment_number}</h1></div><div className="topbar-actions"><span className={`status shipment-${shipment.status}`}>{shipmentStatus[shipment.status]??shipment.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}/report`}>Отчёт</Link><Link className="ghost button-link" href={`/tasks?view=all&shipment=${shipment.id}`}>Задачи поставки</Link><Link className="ghost button-link" href="/shipments">К реестру</Link></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
     {shipment.status==="on_hold"&&shipment.hold_reason&&<div className="setup-notice"><strong>Поставка приостановлена:</strong> {shipment.hold_reason}</div>}
+    {shipment.status==="closed"&&<section className="setup-notice shipment-closed-notice"><div><strong>Поставка закрыта</strong>{shipment.closed_at?` ${new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Qyzylorda"}).format(new Date(shipment.closed_at))}`:""}{one(shipment.closer)?.full_name?` · ${one(shipment.closer)?.full_name}`:""}. Изменения позиций, автомобилей и этапов недоступны.</div>{permissions["shipments.reopen"]&&<form action={reopenShipment} className="inline-item-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input name="reason" required maxLength={500} placeholder="Причина повторного открытия" aria-label="Причина повторного открытия"/><button className="ghost compact" type="submit">Открыть повторно</button></form>}</section>}
     {shipment.status==="cancelled"&&shipment.cancel_reason&&<div className="login-error admin-message"><strong>Поставка отменена:</strong> {shipment.cancel_reason}</div>}
     <OperationTabs activeTab={notices.tab} defaultTab="main" tabs={[
       {id:"main",label:"Основное"},

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",
     "test:db": "bash scripts/test-db.sh",
+    "test:db:docker": "node scripts/test-db-docker.mjs",
     "audit:ci": "node --disable-warning=ExperimentalWarning scripts/audit-prod.mts"
   },
   "dependencies": {
