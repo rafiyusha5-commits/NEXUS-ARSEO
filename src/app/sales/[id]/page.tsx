@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
+import { CustomerReturnsPanel } from "@/components/sales/customer-returns-panel";
 import {
   addCustomerOrderItem,
   cancelCustomerOrder,
@@ -103,6 +104,7 @@ export default async function SalePage({
       { id: "payment", label: "Оплата" },
       { id: "stages", label: "Этапы", badge: `${stageSteps.filter((step) => step.complete).length}/${stageSteps.length}` },
       { id: "history", label: "История", badge: history.length },
+      { id: "returns", label: "Возвраты" },
     ]}>
       <>
         <section className="shipment-summary-grid">
@@ -129,6 +131,7 @@ export default async function SalePage({
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Расчёты с покупателем</p><h2>Оплата</h2></div><span className="page-count">{currency?.code ?? "—"}</span></div><div className="operation-facts"><div><small>Расчётная сумма заказа</small><strong>{orderTotal.toLocaleString("ru-RU")} {currency?.code ?? ""}</strong></div><div><small>Позиции с ценой</small><strong>{pricedItems} из {items?.length ?? 0}</strong></div><div><small>Условия оплаты</small><strong>По договору с клиентом</strong></div><div><small>Фактическая оплата</small><strong>Данные пока не внесены</strong></div></div><p className="form-help">Фактические платежи появятся здесь после подключения банковских выписок и платёжных документов.</p></section>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Процесс продажи</p><h2>Этапы заказа</h2></div><span className="page-count">{stageSteps.filter((step) => step.complete).length} из {stageSteps.length}</span></div>{sale.status === "cancelled" && <div className="login-error admin-message">Заказ отменён: {sale.cancellation_reason || "причина не указана"}</div>}<div className="order-stage-list">{stageSteps.map((step, index) => <article className={`order-stage ${step.complete ? "complete" : ""} ${step.current ? "current" : ""}`} key={step.label}><span>{step.complete ? "✓" : index + 1}</span><div><strong>{step.label}</strong><small>{step.complete ? "Выполнено" : step.current ? "Текущий этап" : "Ожидает"}</small></div></article>)}</div></section>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Хронология</p><h2>История заказа</h2></div><span className="page-count">{history.length}</span></div><div className="operation-history-list">{history.map((event, index) => <article className="operation-history-row" key={`${event.at}-${index}`}><time>{formatDateTime(event.at)}</time><div><strong>{event.title}</strong><small>{event.detail}</small></div></article>)}</div></section>
+      <CustomerReturnsPanel saleId={id} saleStatus={sale.status} warehouseId={sale.warehouse_id}/>
     </OperationTabs>
   </section></main>;
 }
