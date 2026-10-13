@@ -6,16 +6,10 @@ import { loadOcrConfig } from "@/lib/ocr/config";
 import { OcrPermissionError, permissionMessage, persistOcrOutcome, recognizeDocument, type OcrDocument, type PipelineDeps, type PreparedOcr } from "@/lib/ocr/pipeline";
 import { createOcrProvider } from "@/lib/ocr/providers";
 import { NeedsOcrError } from "@/lib/ocr/types";
-import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, EXTRACTION_VERSION } from "./rules";
+import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, EXTRACTION_VERSION, shipmentSourceKindFromDocumentType as sourceKind } from "./rules";
 import { extractDocumentText } from "./text";
 
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
-
-function sourceKind(code: string) {
-  if (["invoice", "specification", "waybill", "transport_order", "vehicle_document", "driver_document"].includes(code)) return code;
-  if (["supplier_contract", "customer_contract"].includes(code)) return "contract";
-  return "other";
-}
 
 export type ShipmentExtractionSummary = {
   ready: number; review: number; failed: number; total: number;

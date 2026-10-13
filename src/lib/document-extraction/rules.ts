@@ -1,6 +1,6 @@
 import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
 
-export const EXTRACTION_VERSION = "rules-v2";
+export const EXTRACTION_VERSION = "rules-v3";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -16,7 +16,7 @@ type Pattern = { field: string; label: string; expressions: RegExp[]; confidence
 
 const patterns: Pattern[] = [
   { field: "order_number", label: "Номер заказа", expressions: [/(?:номер\s+заказа|заказ(?:а|у)?\s*(?:№|#|номер|no))\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,40})/iu] },
-  { field: "invoice_number", label: "Номер инвойса", expressions: [/(?:invoice|инвойс|сч[её]т[- ]фактура)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,40})/iu] },
+  { field: "invoice_number", label: "Номер инвойса", expressions: [/(?:invoice|инвойс|сч[её]т[- ]фактура)[ \t]*(?:no\.?|number|номер|№|#)[ \t]*\)?[ \t]*[:№#-]?[ \t]*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,40})/iu, /(?:invoice|инвойс|сч[её]т[- ]фактура)\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,40})/iu] },
   { field: "contract_number", label: "Номер договора", expressions: [/(?:договор(?:-заявк[аи])?|контракт)[^\n]{0,80}?\s(?:№|#|no|номер)\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{1,60})/iu] },
   { field: "cmr_number", label: "Номер CMR", expressions: [/CMR\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
   { field: "ttn_number", label: "Номер ТТН", expressions: [/ТТН\s*(?:№|#)?\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./_-]{0,30})/iu] },
@@ -38,7 +38,7 @@ const patterns: Pattern[] = [
   { field: "pallet_count", label: "Количество паллет", expressions: [/(?:количество|кол-во|к-во)\s+(?:паллет|поддонов)\s*[:—-]?\s*([0-9]{1,5})/iu] },
   { field: "gross_weight_kg", label: "Вес брутто", expressions: [/(?:вес|масса)\s+брутто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
   { field: "net_weight_kg", label: "Вес нетто", expressions: [/(?:вес|масса)\s+нетто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
-  { field: "incoterms", label: "Условия поставки", expressions: [/(?:условия\s+(?:поставки|оплаты)|incoterms?)\s*[:—-]?\s*([^\n]{3,180})/iu] },
+  { field: "incoterms", label: "Условия поставки", expressions: [/inco\s+terms?\s*[:—-]\s*(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)(?![A-Z])/iu, /(?:условия\s+(?:поставки|оплаты)|incoterms?)\s*[:—-]?\s*([^\n]{3,180})/iu] },
   // Requisites that the export CMR / ТТН / packing list print and the counterparty directory does not hold.
   { field: "loading_city", label: "Город погрузки", expressions: [/город\s+погрузки\s*[:—-]?\s*([^\n]{2,80})/iu] },
   { field: "loading_country", label: "Страна погрузки", expressions: [/страна\s+погрузки\s*[:—-]?\s*([^\n]{2,60})/iu] },
@@ -61,7 +61,7 @@ const manualFields: SourceFieldDefinition[] = [
 const datePatterns: Array<[string, string, RegExp[]]> = [
   ["order_date", "Дата заказа", [/(?:дата\s+заказа)\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
   ["shipping_date", "Дата отгрузки", [/(?:дата\s+отгрузки(?:\s+по\s+документам)?)\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
-  ["invoice_date", "Дата инвойса", [/(?:дата\s+(?:инвойса|сч[её]та[- ]фактуры))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
+  ["invoice_date", "Дата инвойса", [/(?:invoice\s+date)\s*\)?\s*[:—-]?\s*(20\d{2}-[01]\d-[0-3]\d|[0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu, /(?:дата\s+(?:инвойса|сч[её]та[- ]фактуры))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
   ["contract_date", "Дата договора", [/(?:дата\s+(?:договора|контракта))\s*[:—-]?\s*([0-3]?\d[./-][01]?\d[./-](?:20)?\d{2})/iu]],
 ];
 
@@ -90,7 +90,19 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
   return cleanData;
 }
 
+const explicitSourceKinds = new Set(["invoice", "specification", "contract", "transport_order", "vehicle_document", "driver_document", "waybill"]);
+
+export function shipmentSourceKindFromDocumentType(code: string) {
+  if (["cmr", "ttn"].includes(code)) return "waybill";
+  if (code === "packing_list") return "specification";
+  if (["supplier_contract", "customer_contract"].includes(code)) return "contract";
+  return explicitSourceKinds.has(code) ? code : "other";
+}
+
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
+  // A type selected by the employee describes this document, whereas its text may
+  // refer to other documents (a CMR normally lists its attached invoice).
+  if (explicitSourceKinds.has(hintedKind)) return hintedKind;
   if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
@@ -146,6 +158,7 @@ export type ExtractOptions = {
 };
 
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
+const INVOICE_LABEL_VALUES = new Set(["NO", "NUMBER", "NUMER", "FAKTURY", "DATE", "INVOICE", "НОМЕР", "ДАТА", "ИНВОЙС"]);
 
 export function extractShipmentFields(rawText: string, options: ExtractOptions = {}): ExtractionResult {
   const text = rawText.replace(/\r/g, "\n").replace(/[\t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n");
@@ -157,6 +170,7 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
       if (!match?.[1]) continue;
       const value = cleanFieldValue(pattern.field, clean(match[1]));
       if (!value) continue;
+      if (pattern.field === "invoice_number" && INVOICE_LABEL_VALUES.has(value.toLocaleUpperCase("ru-RU"))) continue;
       // The marker line of the OCR service is trusted only when it really comes from the service.
       if (/^NEXUS_DOCUMENT_NUMBER/u.test(match[0]) && !(options.fromOcr && IDENTITY_CARD.test(text) && /^\s*NEXUS_DOCUMENT_NUMBER/u.test(text))) continue;
       // OCR can put the next printed label on the same line as a field heading. A driver
