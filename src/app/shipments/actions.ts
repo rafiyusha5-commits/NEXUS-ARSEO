@@ -125,6 +125,16 @@ export async function changeShipmentOperationalState(formData:FormData){
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(messages[action])}`);
 }
 
+// Reopening needs shipments.view, shipments.reopen and a reason; the database checks them and returns the closing stage to work.
+export async function reopenShipment(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id"); const reason=text(formData,"reason");
+  if(!reason)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Укажите причину повторного открытия")}`);
+  const {error}=await supabase.rpc("reopen_shipment",{p_shipment_id:shipmentId,p_reason:reason});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось открыть поставку повторно."))}`);
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
+  redirect(`/shipments/${shipmentId}?tab=stages&success=${encodeURIComponent("Поставка открыта повторно: этап «Закрытие поставки» снова в работе")}`);
+}
+
 export async function receiveShipmentTransport(formData:FormData){
   const {profile,supabase}=await requireUser();
   const shipmentId=uuid(formData,"shipment_id");
