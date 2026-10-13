@@ -96,6 +96,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273700_export_document_package.sql" >/dev/null
 # Warehouse operation documents and their posting/reversal RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273800_inventory_operation_documents.sql" >/dev/null
+# Restocking depleted batches: trigger, write-off and the repair are idempotent; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277800_depleted_batch_restock.sql" >/dev/null
 # Supplier assortment and its integrity triggers are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273900_product_supplier_catalog.sql" >/dev/null
 # Import customs-stage recovery is a repeatable data correction.
