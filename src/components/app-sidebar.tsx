@@ -44,6 +44,8 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Финансы", items: [
     { label: "Расходы и себестоимость", href: "/finance", key: "finance" },
+    { label: "Дебиторка", href: "/finance/receivables", key: "receivables" },
+    { label: "Поступления из банка", href: "/finance/bank", key: "bank" },
   ] },
   { label: "Документы", items: [
     { label: "Журнал документов", href: "/documents", key: "documents" },

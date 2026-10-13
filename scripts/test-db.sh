@@ -127,6 +127,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275500_agent_catalog.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275600_agent_archivist.sql" >/dev/null
+# Receivables: tables, the sales trigger and RPCs are idempotent; grants are reset by the hardening re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277600_receivables.sql" >/dev/null
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275700_calculator_purchase_prices.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275800_agent_drive_archive.sql" >/dev/null
