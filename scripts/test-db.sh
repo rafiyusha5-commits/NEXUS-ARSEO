@@ -139,12 +139,34 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276400_document_check_agent.sql" >/dev/null
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276500_shelf_life_control_agent.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
+
+echo "test: order fulfillment under concurrency (duplicates and cancellation)"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
+fulfill_pids=()
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.fulfill_customer_order(id) from tests.fulfillment_context where k='sale';" \
+    >"$WORKDIR/fulfill_$i.out" 2>&1 &
+  fulfill_pids+=("$!")
+done
+for pid in "${fulfill_pids[@]}"; do
+  if ! wait "$pid"; then cat "$WORKDIR"/fulfill_*.out; exit 1; fi
+done
+"${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.fulfill_customer_order(id) from tests.fulfillment_context where k='other';" >"$WORKDIR/ship_race.out" 2>&1 &
+ship_pid=$!
+"${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.cancel_customer_order(id,'Synthetic race') from tests.fulfillment_context where k='other';" >"$WORKDIR/cancel_race.out" 2>&1 &
+cancel_pid=$!
+ship_ok=0; cancel_ok=0
+if wait "$ship_pid"; then ship_ok=1; fi
+if wait "$cancel_pid"; then cancel_ok=1; fi
+if [[ $((ship_ok + cancel_ok)) != 1 ]]; then cat "$WORKDIR/ship_race.out" "$WORKDIR/cancel_race.out"; exit 1; fi
+"${PSQL[@]}" -f "$ROOT/supabase/tests/order_fulfillment_concurrency_check.sql" >/dev/null
 
 # Parallel server calls for one employee must not exceed the daily assistant limit (accounting RPCs
 # are executable only by service_role, the Nexus server key): the reservation
