@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
+import { readDateChanges } from "@/lib/shipments/date-corrections";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(formData: FormData, name: string) { const value=formData.get(name); return typeof value==="string"?value.trim():""; }
@@ -186,4 +187,22 @@ export async function receiveShipmentTransport(formData:FormData){
   revalidatePath("/shipments");
   revalidatePath("/");
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Автомобиль принят. Партии и остатки зарегистрированы.")}`);
+}
+
+// Real dates of an executed shipment (shipments.backdate): only changed days are sent, with a mandatory reason.
+export async function correctShipmentDates(formData: FormData) {
+  const shipmentId=uuid(formData,"shipment_id");
+  const back=(kind:"error"|"success",message:string)=>`/shipments/${shipmentId}?tab=stages&${kind}=${encodeURIComponent(message)}#actual-dates`;
+  const reason=text(formData,"reason");
+  if(!reason) redirect(back("error","Укажите причину исправления дат"));
+  let parsed:ReturnType<typeof readDateChanges>;
+  try { parsed=readDateChanges(formData.entries()); }
+  catch(error) { redirect(back("error",error instanceof Error?error.message:"Проверьте даты")); }
+  if(!parsed.count) redirect(back("error","Даты не изменены"));
+  const {supabase}=await requireUser();
+  const {data,error}=await supabase.rpc("correct_shipment_dates",{p_shipment_id:shipmentId,p_changes:parsed.changes,p_reason:reason});
+  if(error) redirect(back("error",ruleViolationMessage(error,"Не удалось исправить даты поставки.")));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/shipments/${shipmentId}/report`);
+  const changed=Number((data as {changed?:number}|null)?.changed??0);
+  redirect(back("success",changed?`Фактические даты исправлены: ${changed}`:"Даты совпадают с записанными, изменений нет"));
 }

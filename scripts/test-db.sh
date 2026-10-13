@@ -67,6 +67,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272300_database_security_hardening.sql" >/dev/null
 # Receiving is applied after hardening so its explicitly granted RPC remains available.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272400_shipment_transport_receiving.sql" >/dev/null
+# Date corrections replace the protection trigger of 2100 re-applied above and are granted after 2300.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277300_shipment_date_corrections.sql" >/dev/null
 # Customer orders and FEFO reservations are safe to re-apply before their tests.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272500_customer_orders_fefo.sql" >/dev/null
 # Sticker layouts, print orders and marking orders are idempotent and re-applied before tests.
