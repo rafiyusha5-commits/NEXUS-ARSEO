@@ -6,6 +6,7 @@ import { ShipmentTransportsPanel } from "@/components/shipments/shipment-transpo
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
+import { LogistShipmentPanel } from "@/components/logist/logist-shipment-panel";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
@@ -86,6 +87,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       <article className="summary-card"><p>Ответственный</p><strong>{responsible?.full_name||"—"}</strong><small>Валюта: {currency?.code||"—"}</small></article>
       <article className="summary-card"><p>Плановое прибытие</p><strong>{shipment.planned_arrival_date?new Intl.DateTimeFormat("ru-RU").format(new Date(shipment.planned_arrival_date)):"—"}</strong><small>Готовность: {shipment.planned_ready_date?new Intl.DateTimeFormat("ru-RU").format(new Date(shipment.planned_ready_date)):"—"}</small></article>
     </section>
+    <LogistShipmentPanel shipmentId={shipment.id}/>
     </>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Заказ поставщику</p><h2>Позиции</h2></div><span className="page-count">{visibleItems.length}</span></div>
         {canEdit&&<form action={addShipmentItem} className="shipment-subform"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="currency_id" value={currency?.id??""}/>

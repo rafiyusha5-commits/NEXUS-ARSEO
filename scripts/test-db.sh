@@ -135,6 +135,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276100_drive_catalog_ocr.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276200_drive_archive_access.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276300_telegram_delivery_authorization.sql" >/dev/null
+# Logist proposals: grants are reset by the hardening re-applied above; tables and functions are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277400_logist_assistant.sql" >/dev/null
 # Document check agent: its state table, rules and RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276400_document_check_agent.sql" >/dev/null
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.

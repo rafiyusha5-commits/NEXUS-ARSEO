@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { loadPermissions } from "@/lib/permissions";
 import { extractShipmentSources } from "@/lib/document-extraction/shipment-service";
 import { sanitizeConfirmedSourceData, SOURCE_FIELD_DEFINITIONS } from "@/lib/document-extraction/rules";
@@ -68,6 +69,7 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   const { error } = await supabase.rpc("review_shipment_source_extraction", { p_extraction_id: extractionId,p_confirmed_data:confirmedData,p_apply_to_shipment:applyToShipment&&permissions["shipments.update"] });
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error,"Не удалось подтвердить распознанные данные.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
+  await refreshLogistAfterChange(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }
@@ -82,6 +84,7 @@ export async function assignSourceTransportAction(formData: FormData) {
   const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null });
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
+  await refreshLogistAfterChange(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
 }

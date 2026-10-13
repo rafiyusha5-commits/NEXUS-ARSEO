@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
+import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
 
@@ -36,6 +37,7 @@ export async function changeStageStatus(formData: FormData) {
   if(["blocked","skipped","not_applicable"].includes(status)&&!reason) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Для этого действия укажите причину")}`);
   const {error}=await supabase.rpc("change_shipment_stage_status",{p_run_id:runId,p_status:status,p_reason:reason||null,p_performed_by_name:text(formData,"performed_by_name")||null});
   if(error) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус этапа."))}`);
+  await refreshLogistAfterChange(supabase,shipmentId!);
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус этапа обновлён")}`);
 }
@@ -110,6 +112,7 @@ export async function changeShipmentTransportStatus(formData:FormData){
   if(!["planned","loading","in_transit","at_customs","arrived","unloaded","cancelled"].includes(status))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Некорректный статус перевозки")}`);
   const {error}=await supabase.rpc("change_shipment_transport_status",{p_transport_id:uuid(formData,"transport_id"),p_status:status});
   if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус перевозки."))}`);
+  await refreshLogistAfterChange(supabase,shipmentId!);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус перевозки обновлён")}`);
 }
 
