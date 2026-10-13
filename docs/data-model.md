@@ -395,7 +395,7 @@
 | id | uuid | да | PK |
 | product_id | uuid | да | FK → `products.id` |
 | uom | text | да | `piece`, `box`, `layer`, `pallet`, `truck` |
-| units_per_parent | numeric(12,3) | да | сколько единиц предыдущего уровня в этой (штук в коробе, коробов в слое, слоёв в паллете, паллет в фуре) |
+| units_per_parent | numeric(12,3) | да | сколько **штук** в одной единице этого уровня (в коробе, слое, паллете, фуре); для штуки — 1. Так поле заполняют импорт калькулятора и карточка товара; пересчёт единиц — `private.convert_uom` |
 | gross_weight_kg / net_weight_kg | numeric(10,3) | нет | |
 | volume_m3 | numeric(10,4) | нет | |
 | length_cm / width_cm / height_cm | numeric(8,2) | нет | |
@@ -528,7 +528,9 @@
 | product_id | uuid | да | FK |
 | batch_id | uuid | нет | FK; подбирается по FEFO |
 | warehouse_id | uuid | да | FK |
-| quantity | numeric(14,3) | да | |
+| quantity | numeric(14,3) | да | в единице остатка (`uom`) |
+| uom | text | да | единица остатка, с которого взят резерв |
+| sale_quantity | numeric(14,3) | да | покрытая часть строки заказа в её единице (пересчёт через упаковку) |
 | reserved_for_type | text | да | `sale_item`, `transfer`, `promo`, `manual_block` |
 | reserved_for_id | uuid | нет | полиморфная ссылка |
 | is_fefo_override | boolean | да | выбрана не та партия, которую предлагает FEFO |

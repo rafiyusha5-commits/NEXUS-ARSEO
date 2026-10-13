@@ -65,3 +65,29 @@ export function packagingContentsLabel(
 
   return details.join(" · ");
 }
+
+/** Pieces in one unit of the level (units_per_parent); null when the level is not set. */
+export function piecesPerUnit(uom: string, levels: readonly PackagingLevel[]) {
+  if (uom === "piece") return 1;
+  const pieces = Number(levels.find((level) => level.uom === uom)?.units_per_parent);
+  return Number.isFinite(pieces) && pieces > 0 ? pieces : null;
+}
+
+const thousandths = (value: number) => BigInt(Math.round(value * 1000));
+
+/**
+ * Exact conversion to the thousandth through the packaging, the same rule as private.convert_uom
+ * in the database: null when a level is missing or the amount does not convert exactly.
+ */
+export function convertQuantity(quantity: number, from: string, to: string, levels: readonly PackagingLevel[]) {
+  if (!Number.isFinite(quantity)) return null;
+  if (from === to) return quantity;
+  const fromPieces = piecesPerUnit(from, levels);
+  const toPieces = piecesPerUnit(to, levels);
+  if (fromPieces === null || toPieces === null) return null;
+  // Thousandths in integers: quantity × pieces is in millionths, divided by thousandths of the target.
+  const numerator = thousandths(quantity) * thousandths(fromPieces);
+  const denominator = thousandths(toPieces);
+  if (denominator === BigInt(0) || numerator % denominator !== BigInt(0)) return null;
+  return Number(numerator / denominator) / 1000;
+}
