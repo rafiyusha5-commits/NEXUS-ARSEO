@@ -1,14 +1,23 @@
 -- Closing a shipment (202609276650): the last stage can be completed, closing locks the shipment and
--- records when and by whom, a closed shipment rejects changes, and only managers may reopen it with a reason.
+-- records when and by whom, a closed shipment rejects changes, and only managers with both shipments.view and
+-- shipments.reopen may reopen it with a reason (a personal deny of either one refuses and changes nothing).
 \set ON_ERROR_STOP 1
 begin;
 
 insert into auth.users(id,email,raw_user_meta_data) values
  ('c1000000-0000-4000-8000-000000000001','close-director@test.local','{"full_name":"Close Director"}'),
- ('c1000000-0000-4000-8000-000000000002','close-logistics@test.local','{"full_name":"Close Logistics"}');
+ ('c1000000-0000-4000-8000-000000000002','close-logistics@test.local','{"full_name":"Close Logistics"}'),
+ ('c1000000-0000-4000-8000-000000000003','close-no-view@test.local','{"full_name":"Close Director Without View"}'),
+ ('c1000000-0000-4000-8000-000000000004','close-no-reopen@test.local','{"full_name":"Close Director Without Reopen"}');
 insert into public.user_roles(user_id,role_id) select v.u::uuid,r.id from (values
- ('c1000000-0000-4000-8000-000000000001','director'),('c1000000-0000-4000-8000-000000000002','senior_logistics_manager')) v(u,code)
+ ('c1000000-0000-4000-8000-000000000001','director'),('c1000000-0000-4000-8000-000000000002','senior_logistics_manager'),
+ ('c1000000-0000-4000-8000-000000000003','director'),('c1000000-0000-4000-8000-000000000004','director')) v(u,code)
  join public.app_roles r on r.code=v.code;
+-- Directors have both rights by role; a personal deny of either one must stop reopening.
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
+select v.u::uuid,p.id,'deny','shipment closing test','c1000000-0000-4000-8000-000000000001'
+from (values ('c1000000-0000-4000-8000-000000000003','shipments.view'),('c1000000-0000-4000-8000-000000000004','shipments.reopen')) v(u,code)
+join public.permissions p on p.code=v.code;
 insert into public.counterparties(id,roles,legal_name,country,tax_id) values
  ('c1100000-0000-4000-8000-000000000001',array['manufacturer','supplier'],'Close supplier','FI','CLOSE-1');
 
@@ -21,6 +30,16 @@ begin
  raise exception 'expected an error matching %, but the statement succeeded',p_pattern;
 end $$;
 grant execute on function pg_temp.fails(text,text) to authenticated;
+-- A refusal for lack of rights: SQLSTATE 42501 and the rights message, not some other error.
+create function pg_temp.denied(p_sql text) returns void language plpgsql as $$
+begin
+ begin execute p_sql; exception when others then
+  if sqlstate<>'42501' or sqlerrm !~ 'Недостаточно прав' then raise exception 'expected a 42501 refusal, got % %',sqlstate,sqlerrm; end if;
+  return;
+ end;
+ raise exception 'expected a 42501 refusal, but the statement succeeded';
+end $$;
+grant execute on function pg_temp.denied(text) to authenticated;
 create temp table cl_ids(name text primary key,id uuid);
 grant select,insert on cl_ids to authenticated;
 
@@ -59,7 +78,37 @@ select pg_temp.fails($$select public.change_shipment_stage_status((select run.id
 select pg_temp.fails($$select public.add_shipment_transport((select id from cl_ids where name='shipment'))$$,'Закрыт|closed|недоступна');
 
 -- Reopening: not for the logistics manager, not without a reason.
-select pg_temp.fails($$select public.reopen_shipment((select id from cl_ids where name='shipment'),'Ошибка в количестве')$$,'Недостаточно прав');
+select pg_temp.denied($$select public.reopen_shipment((select id from cl_ids where name='shipment'),'Ошибка в количестве')$$);
+
+-- Both rights are needed: a director with a personal deny of shipments.view or of shipments.reopen is refused,
+-- and the shipment, its stages and the stage history stay exactly as they were.
+reset role;
+create temp table cl_closed as
+select s.status, s.is_locked, s.closed_at, s.closed_by, s.updated_at, s.leading_stage_id,
+ (select count(*) from public.shipment_stage_history h where h.shipment_id=s.id) as history,
+ (select string_agg(run.id||':'||run.status||':'||coalesce(run.completed_at::text,'')||':'||coalesce(run.status_reason,''),',' order by run.id)
+  from public.shipment_stage_runs run where run.shipment_id=s.id) as runs
+from public.shipments s where s.id=(select id from cl_ids where name='shipment');
+set role authenticated;
+select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000003',false);
+select pg_temp.denied($$select public.reopen_shipment((select id from cl_ids where name='shipment'),'Ошибка в количестве')$$);
+select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000004',false);
+select pg_temp.denied($$select public.reopen_shipment((select id from cl_ids where name='shipment'),'Ошибка в количестве')$$);
+reset role;
+do $$
+declare v_shipment uuid := (select id from cl_ids where name='shipment');
+begin
+ assert (select row(s.status, s.is_locked, s.closed_at, s.closed_by, s.updated_at, s.leading_stage_id) from public.shipments s where s.id=v_shipment)
+   is not distinct from (select row(c.status, c.is_locked, c.closed_at, c.closed_by, c.updated_at, c.leading_stage_id) from cl_closed c),
+  'a refused reopening leaves the shipment closed, locked and dated';
+ assert (select status='closed' and is_locked from public.shipments where id=v_shipment), 'still closed and locked';
+ assert (select count(*) from public.shipment_stage_history h where h.shipment_id=v_shipment)=(select history from cl_closed),
+  'a refused reopening writes nothing to the stage history';
+ assert (select string_agg(run.id||':'||run.status||':'||coalesce(run.completed_at::text,'')||':'||coalesce(run.status_reason,''),',' order by run.id)
+         from public.shipment_stage_runs run where run.shipment_id=v_shipment)=(select runs from cl_closed),
+  'a refused reopening leaves every stage as it was';
+end $$;
+set role authenticated;
 select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000001',false);
 select pg_temp.fails($$select public.reopen_shipment((select id from cl_ids where name='shipment'),'  ')$$,'причину');
 do $$

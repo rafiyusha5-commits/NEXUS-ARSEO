@@ -125,7 +125,7 @@ export async function changeShipmentOperationalState(formData:FormData){
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(messages[action])}`);
 }
 
-// Reopening needs shipments.reopen and a reason; the database checks both and returns the closing stage to work.
+// Reopening needs shipments.view, shipments.reopen and a reason; the database checks them and returns the closing stage to work.
 export async function reopenShipment(formData:FormData){
   const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id"); const reason=text(formData,"reason");
   if(!reason)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Укажите причину повторного открытия")}`);

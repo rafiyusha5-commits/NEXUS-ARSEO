@@ -8,7 +8,7 @@
 -- Now:
 --   * "closed" is set only when every required stage is done; until then the shipment waits in "sales";
 --   * closing locks the shipment and records when and by whom (closed_at, closed_by);
---   * a manager with shipments.reopen may reopen a closed shipment with a reason: the closing stage
+--   * a manager with shipments.view and shipments.reopen may reopen a closed shipment with a reason: the closing stage
 --     returns to work, the other stages stay done, the reason goes into the stage history;
 --   * shipments already stuck in "closed" are repaired once (see the end of the file).
 
@@ -63,7 +63,8 @@ declare
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_run record;
 begin
-  if not (select private.has_permission('shipments.reopen')) then
+  -- Both rights, like every other shipment change: a personal deny of shipments.view stops it too.
+  if not (select private.can_write_shipments('reopen')) then
     raise exception 'Недостаточно прав для повторного открытия поставки' using errcode = '42501';
   end if;
   if v_reason is null then
