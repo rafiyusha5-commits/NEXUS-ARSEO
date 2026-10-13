@@ -100,6 +100,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274000_import_customs_stages.sql" >/dev/null
 # Purchase price visibility is permission-based and safe to re-apply.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274100_purchase_price_access.sql" >/dev/null
+# Quantities from source documents: the hardening re-applied above resets function grants; idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277200_document_quantities.sql" >/dev/null
 # The final portal hardening restores combined employee/client policies and pinned files.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
