@@ -4,6 +4,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { loadShipmentReport, localizedName, one, type ReportReceiptItem } from "@/lib/shipment-report";
+import { loadShipmentOutcome } from "@/lib/shipment-outcome";
+import { ShipmentOutcomeSections } from "@/components/reports/shipment-outcome-sections";
 
 const shipmentStatus: Record<string, string> = { planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена" };
 const stageStatus: Record<string, string> = { pending:"Ожидает",in_progress:"В работе",blocked:"Заблокирован",completed:"Завершён",skipped:"Пропущен",not_applicable:"Не требуется" };
@@ -20,9 +22,11 @@ const duration = (start: string | null | undefined, end: string | null | undefin
 export default async function ShipmentReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["prices.purchase.view"] as const);
-  const report = await loadShipmentReport(supabase, id, new Set(Object.keys(permissions).filter((key) => permissions[key as keyof typeof permissions])));
+  const permissions = await loadPermissions(supabase, ["prices.purchase.view", "inventory.view", "products.view", "sales.view", "costing.view", "documents.view"] as const);
+  const granted = new Set(Object.keys(permissions).filter((key) => permissions[key as keyof typeof permissions]));
+  const report = await loadShipmentReport(supabase, id, granted);
   if (!report) notFound();
+  const outcome = await loadShipmentOutcome(supabase, id, report.items.map((item) => item.id), granted);
   const supplier = one(report.shipment.supplier);
   const customer = one(report.shipment.customer);
   const route = one(report.shipment.route);
@@ -51,5 +55,7 @@ export default async function ShipmentReportPage({ params }: { params: Promise<{
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Приёмка</p><h2>Партии</h2></div><span className="page-count">{report.receipts.length} приёмок</span></div><div className="report-list">{report.receipts.flatMap((receipt) => (receipt.items ?? []).map((item: ReportReceiptItem, index: number) => { const batch = one(item.batch); return <article key={`${receipt.id}-${index}`}><strong>{batch?.batch_number || "Без партии"}</strong><span>Принято {number(item.accepted_quantity)} · повреждено {number(item.damaged_quantity)}</span><small>Годен до {date(batch?.expiry_date)} · {receipt.performed_by_name}</small></article>; }))}{!report.receipts.length && <p className="empty-state">Приёмка ещё не проводилась.</p>}</div></section>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Контроль исполнения</p><h2>Открытые задачи</h2></div><span className="page-count">{report.tasks.length}</span></div><div className="report-list">{report.tasks.map((task) => <article key={task.id}><strong>{task.title}</strong><span>{task.status === "in_progress" ? "В работе" : "Открыта"} · {task.priority}</span><small>{one(task.assignee)?.full_name || "Без исполнителя"} · срок {dateTime(task.due_at)}</small></article>)}{!report.tasks.length && <p className="empty-state">Открытых задач нет.</p>}</div></section>
     </section>
+
+    <ShipmentOutcomeSections outcome={outcome} items={report.items}/>
   </section></main>;
 }
