@@ -1,4 +1,4 @@
--- Closing a shipment (202609276600): the last stage can be completed, closing locks the shipment and
+-- Closing a shipment (202609276650): the last stage can be completed, closing locks the shipment and
 -- records when and by whom, a closed shipment rejects changes, and only managers may reopen it with a reason.
 \set ON_ERROR_STOP 1
 begin;
@@ -97,7 +97,7 @@ update public.shipment_stage_runs run set status='completed',completed_at=now()-
 update public.shipments set status='closed',is_locked=false,closed_at=null,closed_by=null
  where id in ((select id from cl_ids where name='old_stuck'),(select id from cl_ids where name='old_done'));
 set session_replication_role=origin;
-\i :repo_root/supabase/migrations/202609276600_shipment_closing.sql
+\i :repo_root/supabase/migrations/202609276650_shipment_closing.sql
 do $$ begin
  assert (select status||'|'||is_locked from public.shipments where id=(select id from cl_ids where name='old_stuck'))='sales|false','a stuck shipment waits for closing again';
  assert (select status||'|'||is_locked||'|'||(closed_at < now()-interval '2 days') from public.shipments where id=(select id from cl_ids where name='old_done'))='closed|true|true',
