@@ -996,8 +996,10 @@ Append-only.
 | exchange_rate_id | uuid | нет | FK |
 | document_id | uuid | нет | FK |
 | incurred_at | date | да | |
-| is_planned | boolean | да | плановый (до счёта) или фактический |
-| status | text | да | `draft`, `confirmed`, `allocated`, `paid` |
+| is_planned | boolean | да | плановый (до счёта) или фактический; в себестоимость входят только фактические |
+| status | text | да | `draft`, `confirmed`, `allocated`, `paid`, `cancelled` (отменён до оплаты), `reversed` (сторнирован после оплаты) |
+| cancelled_by / cancelled_at / cancellation_reason | uuid / timestamptz / text | нет | кто, когда и почему отменил; обязательны для `cancelled` |
+| reversed_by / reversed_at / reversal_reason | uuid / timestamptz / text | нет | кто, когда и почему сторнировал; обязательны для `reversed` |
 
 - **audit_log**: create, update, status_changed
 
