@@ -139,6 +139,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276400_document_check_agent.sql" >/dev/null
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276500_shelf_life_control_agent.sql" >/dev/null
+# Shipment number allocation replaces the existing guarded RPC and retains its grants.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276800_shipment_number_generation.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -197,5 +199,21 @@ if [[ "$claimed" != "1" || "$refused" != "9" ]]; then
   echo "Telegram update claimed $claimed times, refused $refused times; expected 1 and 9" >&2
   exit 1
 fi
+
+echo "test: shipment numbers under concurrency"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/shipment_number_concurrency_setup.sql" >/dev/null
+shipment_jobs=()
+for i in $(seq 1 30); do
+  "${PSQL[@]}" -tA -f "$ROOT/supabase/tests/shipment_number_concurrency_call.sql" \
+    >"$WORKDIR/shipment_$i.out" 2>&1 &
+  shipment_jobs+=("$!")
+done
+for job in "${shipment_jobs[@]}"; do
+  if ! wait "$job"; then
+    cat "$WORKDIR"/shipment_*.out >&2
+    exit 1
+  fi
+done
+"${PSQL[@]}" -f "$ROOT/supabase/tests/shipment_number_concurrency_check.sql" >/dev/null
 
 echo "database tests passed"
