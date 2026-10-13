@@ -26,6 +26,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Карты ввода товаров", href: "/listing-cards", key: "listing-cards" },
   ] },
   { label: "Логистика", items: [
+    { label: "Логист", href: "/logist", key: "logist" },
     { label: "Календарь перевозок", href: "/calendar", key: "calendar" },
     { label: "Маршруты", href: "/routes", key: "routes" },
   ] },
