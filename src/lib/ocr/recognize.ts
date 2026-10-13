@@ -51,6 +51,11 @@ export function proposeFromOcr(ocr: OcrResult, hintedKind: string): OcrProposal 
     if (evidence.confidence < LOW_CONFIDENCE) lowConfidence.push(field);
   }
   if (!Object.keys(result.data).length) {
+    // The employee can enter verified values through the existing review form.
+    // A known document with readable text is not the same as an unreadable scan.
+    if (sourceKind !== "other" && ocr.text.trim()) {
+      return { sourceKind, result, status: "needs_review", lowConfidence, confidence: documentConfidence, error: "Текст прочитан, но реквизиты не найдены: проверьте оригинал и введите данные вручную" };
+    }
     return { sourceKind, result, status: "failed", lowConfidence, confidence: documentConfidence, error: "Текст прочитан, но реквизиты не найдены: проверьте качество скана или введите данные вручную" };
   }
   const uncertain = lowConfidence.length > 0 || (documentConfidence !== null && documentConfidence < LOW_CONFIDENCE);
