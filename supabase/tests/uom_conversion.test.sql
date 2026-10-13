@@ -1,5 +1,5 @@
 -- Unit conversion: an order in boxes is reserved from stock received in pieces (and back), through
--- the product packaging (pieces per unit). Exactness, missing packaging, override and guarantee letters.
+-- the product packaging (pieces per unit). Exactness, missing packaging, override, guarantee letters and shipping.
 \set ON_ERROR_STOP 1
 begin;
 
@@ -211,6 +211,25 @@ select public.change_sale_guarantee_status(letter_id,'approved') from uom_contex
 select public.confirm_customer_order(sale2_id) from uom_context;
 do $$ begin
  assert (select status='confirmed' from public.sales where id=(select sale2_id from uom_context)),'approved letter in order units allows confirmation';
+end $$;
+
+-- 6b. Shipping (202609276600): the order in boxes is issued from the stock in pieces it was reserved from,
+--     and the approved letter in boxes covers that batch.
+select public.fulfill_customer_order(sale2_id) from uom_context;
+do $$ declare c uom_context%rowtype;
+begin
+ select * into c from uom_context;
+ assert (select status='shipped' and shipped_at is not null from public.sales where id=c.sale2_id),'shipped';
+ assert (select bool_and(status='fulfilled') from public.inventory_reservations where sale_item_id=c.item2_id),'reservations fulfilled';
+ assert (select count(*)=1 and min(quantity)=24 and min(uom)='piece' from public.inventory_movements
+         where sale_item_id=c.item2_id and movement_type='issue'),'issued as 24 pieces, the unit of the stock';
+ assert (select quantity_on_hand=6 and quantity_reserved=0 from public.inventory_balances where id='f7400000-0000-4000-8000-000000000001'),
+  '30 - 24 pieces stay, nothing reserved';
+end $$;
+-- A repeated call returns the same order without a second issue.
+select public.fulfill_customer_order(sale2_id) from uom_context;
+do $$ begin
+ assert (select count(*)=1 from public.inventory_movements where sale_item_id=(select item2_id from uom_context) and movement_type='issue'),'no second issue';
 end $$;
 
 reset role;

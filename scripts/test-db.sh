@@ -83,8 +83,6 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273100_purchase_plans.sql" >/dev/null
 # Promotions, special orders and low-shelf-life programs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273200_commercial_programs.sql" >/dev/null
-# Unit conversion replaces the reservation RPCs of 2500 re-applied above; it must follow them.
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273300_external_client_portal.sql" >/dev/null
 # Unified calendar and its replaceable RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273400_shipment_calendar.sql" >/dev/null
@@ -144,6 +142,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
+# Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
