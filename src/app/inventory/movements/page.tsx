@@ -8,7 +8,7 @@ import { createInventoryOperation } from "./actions";
 
 const operationLabels:Record<string,string>={transfer:"Перемещение",write_off:"Списание",adjustment:"Корректировка"};
 const statusLabels:Record<string,string>={draft:"Черновик",posted:"Проведён",cancelled:"Отменён"};
-const movementLabels:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",adjustment:"Корректировка"};
+const movementLabels:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",customer_return:"Возврат от клиента",adjustment:"Корректировка"};
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 function localName(value:unknown){if(!value||typeof value!=="object")return "—";const row=value as Record<string,unknown>;return String(row.ru??row.en??"—");}

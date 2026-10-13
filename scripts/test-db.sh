@@ -67,6 +67,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272300_database_security_hardening.sql" >/dev/null
 # Receiving is applied after hardening so its explicitly granted RPC remains available.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272400_shipment_transport_receiving.sql" >/dev/null
+# Date corrections replace the protection trigger of 2100 re-applied above and are granted after 2300.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277300_shipment_date_corrections.sql" >/dev/null
 # Customer orders and FEFO reservations are safe to re-apply before their tests.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272500_customer_orders_fefo.sql" >/dev/null
 # Sticker layouts, print orders and marking orders are idempotent and re-applied before tests.
@@ -100,6 +102,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274000_import_customs_stages.sql" >/dev/null
 # Purchase price visibility is permission-based and safe to re-apply.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274100_purchase_price_access.sql" >/dev/null
+# Quantities from source documents: the hardening re-applied above resets function grants; idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277200_document_quantities.sql" >/dev/null
 # The final portal hardening restores combined employee/client policies and pinned files.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
@@ -127,6 +131,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275500_agent_catalog.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275600_agent_archivist.sql" >/dev/null
+# Receivables: tables, the sales trigger and RPCs are idempotent; grants are reset by the hardening re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277600_receivables.sql" >/dev/null
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275700_calculator_purchase_prices.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275800_agent_drive_archive.sql" >/dev/null
@@ -134,7 +140,11 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276000_drive_catalog_safeupdate.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276100_drive_catalog_ocr.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276200_drive_archive_access.sql" >/dev/null
+# Customer returns: grants are reset by the hardening re-applied above; tables and functions are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277500_customer_returns.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276300_telegram_delivery_authorization.sql" >/dev/null
+# Logist proposals: grants are reset by the hardening re-applied above; tables and functions are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277400_logist_assistant.sql" >/dev/null
 # Document check agent: its state table, rules and RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276400_document_check_agent.sql" >/dev/null
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
@@ -142,6 +152,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
+# Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
