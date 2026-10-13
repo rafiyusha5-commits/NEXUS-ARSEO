@@ -120,6 +120,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 # Several vehicles per shipment: columns, replaceable RPCs and the review function are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
+# Received shipment items: replaces the item RPCs of 2100 and 4100 re-applied above; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277700_received_shipment_items.sql" >/dev/null
 # Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
