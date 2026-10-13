@@ -85,7 +85,7 @@ export async function allocateShipmentItem(formData:FormData){
   const quantity=Number(text(formData,"quantity"));
   if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество для распределения должно быть больше нуля")}`);
   const {error}=await supabase.rpc("allocate_shipment_item",{p_item_id:uuid(formData,"item_id"),p_transport_id:uuid(formData,"transport_id",false),p_quantity:quantity});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось распределить товар по перевозкам."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось распределить товар по перевозкам."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Товар распределён по перевозкам")}`);
 }
 
@@ -96,14 +96,14 @@ export async function updateShipmentItem(formData:FormData){
   if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество должно быть больше нуля")}`);
   if(price!==null&&(!Number.isFinite(price)||price<0))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Цена не может быть отрицательной")}`);
   const {error}=await supabase.rpc("update_shipment_item",{p_item_id:uuid(formData,"item_id"),p_quantity:quantity,p_unit_price:price});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось обновить позицию поставки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось обновить позицию поставки."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция обновлена")}`);
 }
 
 export async function deleteShipmentItem(formData:FormData){
   const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
   const {error}=await supabase.rpc("delete_shipment_item",{p_item_id:uuid(formData,"item_id")});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось удалить позицию поставки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось удалить позицию поставки."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция удалена")}`);
 }
 
