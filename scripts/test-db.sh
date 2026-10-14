@@ -163,6 +163,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
+# The operational summary is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278600_operational_summary.sql" >/dev/null
 # Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
