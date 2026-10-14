@@ -76,3 +76,15 @@ export async function fulfillCustomerOrder(data: FormData) {
   revalidatePath("/inventory/movements");
   redirect(orderUrl(saleId, "Заказ отгружен. Резервы погашены, складские движения записаны.", "success", "shipping"));
 }
+
+export async function returnCustomerOrderToPreparation(data: FormData) {
+  const { supabase } = await requireUser();
+  const saleId = uuid(data, "sale_id")!;
+  const { error } = await supabase.rpc("return_customer_order_to_preparation", {
+    p_sale_id: saleId, p_reason: text(data, "reason"),
+  });
+  if (error) redirect(orderUrl(saleId, ruleViolationMessage(error), "error", "shipping"));
+  revalidatePath(`/sales/${saleId}`);
+  revalidatePath("/sales");
+  redirect(orderUrl(saleId, "Заказ возвращён к подготовке. Проверьте резервы и ОСГ, затем подтвердите заказ заново.", "success", "shipping"));
+}
