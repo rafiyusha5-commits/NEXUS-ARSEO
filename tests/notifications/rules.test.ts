@@ -8,12 +8,14 @@ const SHIPMENT = "22222222-2222-4222-8222-222222222222";
 const RUN = "33333333-3333-4333-8333-333333333333";
 
 describe("notification links", () => {
-  it("links tasks, stages, shipments and documents", () => {
+  it("links tasks, stages, shipments, documents and customer orders", () => {
     assert.deepEqual(notificationLink({ entity_type: "task", entity_id: TASK, shipment_id: SHIPMENT }), { href: `/tasks?task=${TASK}`, label: "Открыть задачу" });
     assert.deepEqual(notificationLink({ entity_type: "shipment_stage_run", entity_id: RUN, shipment_id: SHIPMENT }),
       { href: `/shipments/${SHIPMENT}#stage-${RUN}`, label: "Открыть этап" });
     assert.deepEqual(notificationLink({ entity_type: "shipment", entity_id: SHIPMENT, shipment_id: SHIPMENT }), { href: `/shipments/${SHIPMENT}`, label: "Открыть поставку" });
     assert.deepEqual(notificationLink({ entity_type: "document", entity_id: TASK, shipment_id: null }), { href: `/documents/${TASK}`, label: "Открыть документ" });
+    assert.deepEqual(notificationLink({ entity_type: "sale", entity_id: TASK, shipment_id: null }), { href: `/sales/${TASK}?tab=shipping`, label: "Открыть заказ" });
+    assert.equal(notificationLink({ entity_type: "sale", entity_id: "../admin", shipment_id: null }), null);
     assert.deepEqual(notificationLink({ entity_type: "shipment_document_check", entity_id: SHIPMENT, shipment_id: SHIPMENT }),
       { href: `/shipments/${SHIPMENT}?tab=documents#document-check`, label: "Открыть «Сверку»" });
     assert.deepEqual(notificationLink({ entity_type: "shelf_life_control", entity_id: null, shipment_id: null }), { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" });

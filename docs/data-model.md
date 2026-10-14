@@ -1243,10 +1243,16 @@ Append-only.
 | sale_id | uuid | нет | FK |
 | reason | text | да | `low_shelf_life`, `other` |
 | document_id | uuid | нет | FK — сформированное письмо |
-| status | text | да | `draft`, `pending_approval`, `approved`, `sent`, `accepted`, `rejected`, `cancelled` |
+| status | text | да | `draft`, `pending_approval`, `approved`, `sent`, `accepted`, `rejected`, `cancelled`, `superseded` (заменено новым письмом после замены партий или переноса отгрузки) |
 | sent_at / customer_decision_at | timestamptz | нет | |
+| superseded_at / superseded_reason | timestamptz / text | нет | когда и почему письмо заменено |
 
 - **Содержание и обязательства** берутся из утверждённого шаблона ARSEO; текст здесь не определяется.
+- **Действующее письмо** (`draft`, `approved`, `sent`, `accepted`) у заказа одно на причину; заменённые, отменённые и отклонённые остаются как история.
+
+### sale_revisions — Новая (Н5)
+
+Изменения заказа после резервирования: замена партий (`rereserve`) и перенос отгрузки (`reschedule`), с обязательной причиной, автором и подробностями (`details`: партии до и после, старая и новая дата, замена письма). Записывают только функции заказа; читать можно с `sales.view`.
 - **audit_log**: create, approved, sent, customer_decision
 
 ### guarantee_letter_items — Новая (фаза 4)

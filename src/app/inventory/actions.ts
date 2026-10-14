@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
-import { publicErrorMessage } from "@/lib/errors/public-message";
+import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(data:FormData,key:string){const value=data.get(key);return typeof value==="string"?value.trim():"";}
@@ -59,8 +59,15 @@ export async function setBatchStatus(data:FormData){
     p_status:status,
     p_reason:text(data,"reason")||null,
   });
-  if(error)redirect(`${target}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось переместить товар."))}`);
+  if(error)redirect(`${target}&error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось изменить состояние партии."))}`);
   revalidatePath("/inventory");revalidatePath(`/inventory/${batchId}`);
   const label=status==="available"?"разблокирована":status==="quarantine"?"отправлена в карантин":"заблокирована";
-  redirect(`${target}&success=${encodeURIComponent(`Партия ${label}`)}`);
+  // Open orders reserved on the batch cannot be shipped from it any more; their authors were notified by the database.
+  let affected="";
+  if(status!=="available"){
+    const {data:reservations}=await supabase.from("inventory_reservations").select("sale_item:sale_items(sale:sales(sale_number,status))").eq("batch_id",batchId).eq("status","active");
+    const numbers=[...new Set((reservations??[]).flatMap((row)=>{const item=Array.isArray(row.sale_item)?row.sale_item[0]:row.sale_item;const sale=Array.isArray(item?.sale)?item?.sale[0]:item?.sale;return sale&&["draft","reserved","confirmed"].includes(sale.status)?[sale.sale_number as string]:[];}))];
+    if(numbers.length)affected=`. На ней резерв заказов ${numbers.join(", ")}: их нужно перерезервировать, авторы заказов получили уведомление`;
+  }
+  redirect(`${target}&success=${encodeURIComponent(`Партия ${label}${affected}`)}`);
 }

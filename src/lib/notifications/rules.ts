@@ -25,7 +25,7 @@ export type NotificationLink = { href: string; label: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Link to the task, stage, shipment or approved object. Only ids go into the URL, so a
+// Link to the task, stage, shipment, customer order or approved object. Only ids go into the URL, so a
 // notification can never point outside the application.
 export function notificationLink(target: NotificationTarget): NotificationLink | null {
   const entity = target.entity_id && UUID.test(target.entity_id) ? target.entity_id : null;
@@ -43,6 +43,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         return { href: `/shipments/${entity}?tab=documents#document-check`, label: "Открыть «Сверку»" };
       case "document":
         return { href: `/documents/${entity}`, label: "Открыть документ" };
+      case "sale":
+        return { href: `/sales/${entity}?tab=shipping`, label: "Открыть заказ" };
     }
   }
   // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.
