@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { createShipment } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const statusLabels:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 function localizedName(value:unknown){if(!value||typeof value!=="object")return "—";const name=value as Record<string,unknown>;return String(name.ru??name.en??"—");}
@@ -13,7 +14,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
   if(params.status)query=query.eq("status",params.status);
   const [{data:shipments,error},{data:counterparties},{data:routes},{data:warehouses},{data:currencies},{data:profiles}]=await Promise.all([
     query,
-    supabase.from("counterparties").select("id,legal_name,short_name,roles").eq("status","active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name,roles").eq("status","active").order("legal_name").order("id").range(from,to)),
     supabase.from("routes").select("id,name").eq("status","active").order("origin_country"),
     supabase.from("warehouses").select("id,name,is_virtual").eq("status","active").eq("is_virtual",false).order("code"),
     supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),

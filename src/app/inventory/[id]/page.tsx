@@ -5,6 +5,7 @@ import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { setBatchStatus } from "../actions";
+import { businessDaysRemaining, calendarDaysBetween } from "@/lib/dates/business-day";
 
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 function localName(value:unknown){if(!value||typeof value!=="object")return "—";const row=value as Record<string,unknown>;return String(row.ru??row.en??"—");}
@@ -32,8 +33,8 @@ export default async function BatchPage({params,searchParams}:{params:Promise<{i
  const{data:links}=sourceShipmentId?await supabase.from("document_links").select("document_id").eq("entity_type","shipment").eq("entity_id",sourceShipmentId).is("removed_at",null):{data:[]};
  const documentIds=[...new Set((links??[]).map(link=>link.document_id))];const{data:documents}=documentIds.length?await supabase.from("documents").select("id,title,document_number,status,document_date,valid_until,type:document_types(name_ru)").in("id",documentIds).is("archived_at",null).order("created_at",{ascending:false}):{data:[]};
  const total=(balances??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);const reserved=(balances??[]).reduce((sum,row)=>sum+Number(row.quantity_reserved??0),0);const available=total-reserved;
- const currentTime=new Date();const daysRemaining=Math.ceil((new Date(`${batch.expiry_date}T00:00:00`).getTime()-currentTime.getTime())/86400000);
- const shelfLifePercent=batch.manufacture_date?Math.max(0,Math.min(100,Math.round(100*daysRemaining/Math.max(1,(new Date(`${batch.expiry_date}T00:00:00`).getTime()-new Date(`${batch.manufacture_date}T00:00:00`).getTime())/86400000)))):null;
+ const daysRemaining=businessDaysRemaining(batch.expiry_date);
+ const shelfLifePercent=batch.manufacture_date?Math.max(0,Math.min(100,Math.round(100*daysRemaining/Math.max(1,calendarDaysBetween(batch.manufacture_date,batch.expiry_date))))):null;
  const history=[{at:batch.created_at as string,title:"Партия зарегистрирована",detail:batch.batch_number as string},...(batch.updated_at!==batch.created_at?[{at:batch.updated_at as string,title:"Карточка партии обновлена",detail:batchStatuses[batch.status]??batch.status}]:[]),...(batch.status_changed_at?[{at:batch.status_changed_at as string,title:"Изменено состояние партии",detail:batch.status_reason||batchStatuses[batch.status]||batch.status}]:[]),...(movements??[]).map(item=>({at:item.created_at as string,title:movementNames[item.movement_type]??item.movement_type,detail:`${number(item.quantity)} ${units[item.uom]??item.uom} · ${item.reference||item.reason||"без комментария"}`}))].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime());
  const product=one(batch.product);const supplier=one(sourceShipment?.supplier);
  return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="inventory"/><section className="workspace admin-workspace">

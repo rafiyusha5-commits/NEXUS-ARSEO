@@ -77,7 +77,7 @@ export function ShipmentTransportsPanel({ shipmentId, transports, receivedIds, c
           <div><strong>{date(transport.planned_loading_date) || "—"}</strong><small>план загрузки</small></div>
           <div className="transport-actions">
             {canReceive && (transport.status === "arrived" || isReceived) && <Link className={isReceived ? "ghost button-link compact" : "primary button-link compact"} href={`/shipments/${shipmentId}/receiving?transport=${transport.id}`}>{isReceived ? "Приёмка завершена" : "Принять товар"}</Link>}
-            {canEdit && !isReceived && <form action={changeShipmentTransportStatus} className="transport-status-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="transport_id" value={transport.id}/><select name="status" defaultValue={transport.status} aria-label={`Статус автомобиля №${transport.sequence_no}`}>{Object.entries(STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="ghost compact" type="submit">Сохранить</button></form>}
+            {canEdit && !isReceived && <form action={changeShipmentTransportStatus} className="transport-status-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="transport_id" value={transport.id}/><select name="status" defaultValue={transport.status} aria-label={`Статус автомобиля №${transport.sequence_no}`}>{Object.entries(STATUS).filter(([value]) => value !== "unloaded" || transport.status === "unloaded").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="ghost compact" type="submit">Сохранить</button></form>}
           </div>
         </div>
         <dl className="transport-facts">

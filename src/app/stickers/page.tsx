@@ -2,6 +2,7 @@ import Link from "next/link";
 import {AppSidebar} from "@/components/app-sidebar";
 import {requireUser} from "@/lib/auth/access";
 import {addStickerVersion,changeStickerOrderStatus,createMarkingOrder,createStickerOrder,createStickerTemplate,decideStickerVersion,recordStickerApplication,submitStickerVersion,updateMarkingOrder} from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 function one<T>(v:T|T[]|null|undefined){return Array.isArray(v)?v[0]:v??undefined;}
 function productName(v:unknown){if(!v||typeof v!=="object")return "—";const r=v as Record<string,unknown>;const n=r.name as Record<string,unknown>|undefined;return String(n?.ru??n?.en??r.internal_sku??"—");}
@@ -17,10 +18,10 @@ export default async function StickersPage({searchParams}:{searchParams:Promise<
   supabase.from("sticker_template_versions").select("*,document:documents(id,title,document_number)").order("created_at",{ascending:false}),
   supabase.from("sticker_orders").select("*,shipment:shipments(id,shipment_number),printing_house:counterparties(short_name,legal_name),items:sticker_order_items(*,product:products(internal_sku,name))").order("created_at",{ascending:false}),
   supabase.from("marking_code_orders").select("*,product:products(internal_sku,name),shipment:shipments(shipment_number),partner:counterparties(short_name,legal_name)").order("created_at",{ascending:false}),
-  supabase.from("products").select("id,internal_sku,name,requires_sticker,requires_marking").eq("status","active").order("internal_sku"),
-  supabase.from("counterparties").select("id,short_name,legal_name,roles,country").eq("status","active").order("legal_name"),
+  selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,requires_sticker,requires_marking").eq("status","active").order("internal_sku").order("id").range(from,to)),
+  selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name,roles,country").eq("status","active").order("legal_name").order("id").range(from,to)),
   supabase.from("shipments").select("id,shipment_number,status").neq("status","cancelled").order("created_at",{ascending:false}),
-  supabase.from("counterparties").select("id,short_name,legal_name").contains("roles",["printing_house"]).eq("status","active").order("legal_name"),
+  selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name").contains("roles",["printing_house"]).eq("status","active").order("legal_name").order("id").range(from,to)),
   supabase.from("documents").select("id,title,document_number,status,document_type:document_types(code)").is("archived_at",null).order("created_at",{ascending:false}).limit(200),
  ]);
  const versionByTemplate=new Map<string,VersionRow[]>();for(const v of versions??[]){const rows=versionByTemplate.get(v.sticker_template_id)??[];rows.push(v);versionByTemplate.set(v.sticker_template_id,rows);}

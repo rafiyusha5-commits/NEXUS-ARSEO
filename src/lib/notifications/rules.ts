@@ -7,6 +7,7 @@ export const notificationTypeLabel: Record<string, string> = {
   deadline: "Приближается срок",
   overdue: "Просрочка",
   stage_blocked: "Этап заблокирован",
+  order_blocked: "Заказ нельзя отгрузить",
   approval_request: "Запрос согласования",
   approval_decision: "Согласование завершено",
   status_change: "Изменение статуса",
@@ -18,7 +19,7 @@ export const notificationTypeLabel: Record<string, string> = {
 };
 
 // Types that need attention get a warning colour.
-export const URGENT_NOTIFICATION_TYPES = new Set(["overdue", "stage_blocked", "approval_request"]);
+export const URGENT_NOTIFICATION_TYPES = new Set(["overdue", "stage_blocked", "approval_request", "order_blocked"]);
 
 export type NotificationTarget = { entity_type: string | null; entity_id: string | null; shipment_id: string | null };
 export type NotificationLink = { href: string; label: string };
@@ -43,6 +44,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         return { href: `/shipments/${entity}?tab=documents#document-check`, label: "Открыть «Сверку»" };
       case "document":
         return { href: `/documents/${entity}`, label: "Открыть документ" };
+      case "sale":
+        return { href: `/sales/${entity}?tab=shipping`, label: "Открыть заказ" };
     }
   }
   // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.

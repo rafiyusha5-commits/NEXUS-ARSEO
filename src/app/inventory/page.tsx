@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { issueFifo, receiveBatch, setBatchStatus } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 const shelfStates:Record<string,string>={normal:"Норма",warning:"Менее 90 дней",critical:"Менее 30 дней",expired:"Просрочено",quarantine:"Карантин",blocked:"Заблокировано"};
@@ -16,7 +17,7 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
     supabase.from("shipment_items").select("id,uom,ordered_quantity,product:products(internal_sku,name),shipment:shipments(shipment_number,destination_warehouse_id,status)").order("created_at",{ascending:false}),
     supabase.from("warehouses").select("id,code,name,is_virtual,status").eq("status","active").eq("is_virtual",false).order("code"),
     supabase.from("warehouse_locations").select("id,warehouse_id,code,zone,status").eq("status","active").order("code"),
-    supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku"),
+    selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku").order("id").range(from,to)),
   ]);
   const total=(stock??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);
   const expiring=(stock??[]).filter(row=>["warning","critical","expired"].includes(row.shelf_life_state)).length;

@@ -58,6 +58,15 @@ create function pg_temp.kzt() returns uuid language sql stable as $$select id fr
 create function pg_temp.expense(p_note text) returns uuid language sql stable as $$select id from public.expenses where notes=p_note$$;
 create function pg_temp.calculate(p_shipment uuid) returns uuid language sql as $$select public.calculate_shipment_cost(p_shipment,pg_temp.kzt())$$;
 
+-- Explicit declaration fixture: foreign purchase costs require a confirmed declaration.
+with inserted as (
+ insert into public.documents(document_type_id,title,document_number,document_date,status,uploaded_by)
+ select dt.id,'Cost declaration '||s.shipment_number,s.shipment_number,(now() at time zone 'Asia/Almaty')::date,'approved',s.created_by
+ from public.shipments s cross join public.document_types dt where dt.code='customs_declaration' and s.id::text like 'ec%'
+ returning id,document_number
+) insert into public.document_links(document_id,entity_type,entity_id,created_by)
+ select d.id,'shipment',s.id,s.created_by from inserted d join public.shipments s on s.shipment_number=d.document_number;
+
 set role authenticated;
 select set_config('request.jwt.claim.sub','ec000000-0000-4000-8000-000000000002',false);
 select public.add_exchange_rate((select id from public.currencies where code='EUR'),pg_temp.kzt(),500,'official','Тест',current_date);

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const allowedRoles = new Set(["manufacturer", "supplier", "customer", "carrier", "broker", "printing_house", "other"]);
 const allowedLocales = new Set(["ru", "kk", "en"]);
@@ -60,7 +61,7 @@ export async function importCounterparties(formData: FormData) {
   if (missingCurrency) go("error", `В справочнике валют нет кода ${missingCurrency}.`);
 
   const countries = [...new Set(cleaned.map((row) => row.country))];
-  const { data: existing, error: existingError } = await supabase.from("counterparties").select("legal_name, country, tax_id").in("country", countries);
+  const { data: existing, error: existingError } = await selectAll((from, to) => supabase.from("counterparties").select("legal_name, country, tax_id").in("country", countries).order("id").range(from, to));
   if (existingError) go("error", publicErrorMessage(existingError,"Не удалось проверить существующих контрагентов."));
   const existingKeys = new Set((existing ?? []).flatMap((item) => [
     item.tax_id ? `tax:${item.country}:${String(item.tax_id).toLocaleLowerCase("ru-RU")}` : "",

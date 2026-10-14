@@ -3,12 +3,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createSupplier } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string}> }) {
   const { profile, roles, supabase } = await requireUser();
   const params = await searchParams;
   const [{data:suppliers,error},{data:links}] = await Promise.all([
-    supabase.from("counterparties").select("id,legal_name,short_name,country,tax_id,status").contains("roles",["manufacturer"]).order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name,country,tax_id,status").contains("roles",["manufacturer"]).order("legal_name").order("id").range(from,to)),
     supabase.from("product_suppliers").select("supplier_id,product_id,status").eq("status","active"),
   ]);
   const counts=new Map<string,number>(); for(const link of links??[]) counts.set(link.supplier_id,(counts.get(link.supplier_id)??0)+1);
