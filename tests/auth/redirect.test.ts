@@ -14,9 +14,10 @@ describe("path after the sign-in link", () => {
   });
 
   it("never leads to another site", () => {
-    for (const value of ["/\\evil.example", "/\\/evil.example", "//evil.example", "///evil.example", "https://evil.example", "evil.example",
+    for (const value of ["/\\evil.example", "/\\/evil.example", "//evil.example", "///evil.example", "/a/..//evil.example", "/.//evil.example", "/%2e//evil.example", "https://evil.example", "evil.example",
       "/\tevil", "/\n/evil.example", "\\\\evil.example", "", null, undefined]) {
       assert.equal(safeNextPath(value as string | null | undefined, ORIGIN), "/", String(value));
+      assert.equal(new URL(safeNextPath(value as string, ORIGIN), ORIGIN).origin, ORIGIN);
     }
   });
 });
@@ -27,12 +28,13 @@ describe("address for e-mail links", () => {
     assert.equal(appOrigin({ APP_ORIGIN: " https://nexus.example.kz " }, headers({})), ORIGIN);
   });
 
-  it("falls back to the host the request reached, not to Origin", () => {
-    assert.equal(appOrigin({}, headers({ origin: "https://evil.example", host: "nexus.example.kz" })), ORIGIN);
-    assert.equal(appOrigin({}, headers({ "x-forwarded-host": "nexus.example.kz", "x-forwarded-proto": "https", host: "internal:3000" })), ORIGIN);
-    assert.equal(appOrigin({}, headers({ host: "localhost:3000" })), "http://localhost:3000");
-    assert.equal(appOrigin({ APP_ORIGIN: "ftp://other.example.kz" }, headers({ host: "nexus.example.kz" })), ORIGIN, "an invalid setting is not used");
-    assert.equal(appOrigin({ APP_ORIGIN: "https://other.example.kz/path" }, headers({ host: "nexus.example.kz" })), ORIGIN, "a setting with a path is not used");
-    assert.equal(appOrigin({}, headers({ host: "evil.example/@x" })), "http://localhost:3000", "a malformed host is not used");
+  it("requires a trusted configuration in production and rejects malformed settings", () => {
+    const untrusted = headers({ host: "localhost:3000", "x-forwarded-host": "evil.example" });
+    assert.throws(() => appOrigin({ NODE_ENV: "production" }, untrusted), /APP_ORIGIN/);
+    for (const value of ["ftp://other.example", "https://other.example/path", "https://user:pass@other.example", "invalid"]) {
+      assert.throws(() => appOrigin({ APP_ORIGIN: value }, untrusted), /APP_ORIGIN/);
+    }
+    assert.equal(appOrigin({}, untrusted), "http://localhost:3000");
+    assert.throws(() => appOrigin({}, headers({ host: "evil.example" })), /APP_ORIGIN/);
   });
 });

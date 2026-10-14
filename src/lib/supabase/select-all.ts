@@ -3,7 +3,7 @@
 // the query page by page until a page comes back short.
 
 export const PAGE_SIZE = 1000;
-// A guard against a runaway list: far above any catalog of the pilot; reaching it is logged.
+// A guard against a runaway list. Never return a partial list as usable data.
 export const MAX_ROWS = 50_000;
 
 type PageResult<T, E> = { data: T[] | null; error: E | null };
@@ -18,6 +18,9 @@ export async function selectAll<T, E>(
   pageSize = PAGE_SIZE,
   maxRows = MAX_ROWS,
 ): Promise<{ data: T[] | null; error: E | null; truncated: boolean }> {
+  if (!Number.isSafeInteger(pageSize) || pageSize <= 0 || pageSize > PAGE_SIZE || !Number.isSafeInteger(maxRows) || maxRows <= 0) {
+    throw new RangeError("Invalid reference list limits");
+  }
   const rows: T[] = [];
   for (let from = 0; from < maxRows; from += pageSize) {
     const size = Math.min(pageSize, maxRows - from);
@@ -26,6 +29,8 @@ export async function selectAll<T, E>(
     rows.push(...(data ?? []));
     if ((data?.length ?? 0) < size) return { data: rows, error: null, truncated: false };
   }
-  console.error("[select-all] list reached the row limit", { maxRows });
-  return { data: rows, error: null, truncated: true };
+  const extra = await page(maxRows, maxRows);
+  if (extra.error) return { data: null, error: extra.error, truncated: false };
+  if (!extra.data?.length) return { data: rows, error: null, truncated: false };
+  throw new Error(`Справочник превышает ${maxRows} записей: полный список не загружен. Операция остановлена.`);
 }

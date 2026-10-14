@@ -6,3 +6,12 @@ export const BUSINESS_TIME_ZONE = "Asia/Almaty";
 export function businessToday(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
+
+/** Difference between calendar dates, independent of the host time zone or time of day. */
+export function calendarDaysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
+
+export function businessDaysRemaining(expiry: string, now: Date = new Date()): number {
+  return calendarDaysBetween(businessToday(now), expiry);
+}

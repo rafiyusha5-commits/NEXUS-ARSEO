@@ -74,6 +74,8 @@ describe("landed cost versions", () => {
 
 describe("rate of the purchase price in a calculation line", () => {
   it("names the rate, its day and why that day", () => {
+    assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "2026-09-24", goods_rate_basis: "customs_declaration" }), "курс 500 на дату таможенной декларации 24.09.2026");
+    assert.equal(describeGoodsRate({ goods_rate: 1, goods_rate_basis: "same_currency" }), "без конвертации");
     assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "2026-09-24", goods_rate_basis: "receipt" }), "курс 500 на дату прихода 24.09.2026");
     assert.equal(describeGoodsRate({ goods_rate: "519.75", goods_rate_date: "2026-10-09", goods_rate_basis: "loading" }), "курс 519,75 на дату загрузки 09.10.2026");
     assert.equal(describeGoodsRate({ goods_rate: 550, goods_rate_date: "2026-10-14", goods_rate_basis: "calculation" }), "оценка: курс 550 на дату расчёта 14.10.2026");

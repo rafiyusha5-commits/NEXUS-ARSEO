@@ -11,7 +11,7 @@ export function safeNextPath(requested: string | null | undefined, origin: strin
   try {
     const base = new URL(origin);
     const target = new URL(requested, base);
-    if (target.origin !== base.origin) return "/";
+    if (target.origin !== base.origin || target.pathname.startsWith("//")) return "/";
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return "/";
@@ -23,8 +23,7 @@ const HOST = /^[a-z0-9.-]+(?::\d{1,5})?$/i;
 
 /**
  * The address of the application for links in e-mails (password reset, invitations). APP_ORIGIN, when configured,
- * is used as is; the Origin header of the request is never used, it is whatever the caller sends. Without the
- * setting the address comes from the host the request reached, which the hosting proxy sets.
+ * is used as is. Production never derives an email destination from request headers.
  */
 export function appOrigin(env: Readonly<Record<string, string | undefined>>, headers: HeaderReader): string {
   const configured = env.APP_ORIGIN?.trim();
@@ -35,13 +34,13 @@ export function appOrigin(env: Readonly<Record<string, string | undefined>>, hea
         return url.origin;
       }
     } catch {
-      // An invalid setting falls back to the request below.
+      // Fail closed below; a bad setting must not delegate trust to request headers.
     }
+    throw new Error("Некорректный APP_ORIGIN: укажите адрес Nexus без пути");
   }
-  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "").split(",")[0].trim();
-  if (!HOST.test(host)) return "http://localhost:3000";
-  const forwarded = (headers.get("x-forwarded-proto") ?? "").split(",")[0].trim().toLowerCase();
+  if (env.NODE_ENV === "production") throw new Error("Для ссылок входа требуется APP_ORIGIN");
+  const host = (headers.get("host") ?? "").trim();
   const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
-  const protocol = forwarded === "http" || forwarded === "https" ? forwarded : local ? "http" : "https";
-  return `${protocol}://${host.toLowerCase()}`;
+  if (!HOST.test(host) || !local) throw new Error("Для ссылок входа требуется APP_ORIGIN");
+  return `http://${host.toLowerCase()}`;
 }

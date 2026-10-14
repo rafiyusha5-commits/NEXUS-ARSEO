@@ -24,6 +24,15 @@ insert into public.shipment_items(id,shipment_id,product_id,uom,ordered_quantity
 insert into public.inventory_batches(id,product_id,source_shipment_item_id,batch_number,expiry_date,created_by) values
  ('c7500000-0000-4000-8000-000000000001','c7200000-0000-4000-8000-000000000001','c7400000-0000-4000-8000-000000000001','FIN-BATCH','2027-12-31','c7000000-0000-4000-8000-000000000001');
 
+-- Explicit declaration fixture: foreign purchase costs require a confirmed declaration.
+with inserted as (
+ insert into public.documents(document_type_id,title,document_number,document_date,status,uploaded_by)
+ select dt.id,'Cost declaration '||s.shipment_number,s.shipment_number,(now() at time zone 'Asia/Almaty')::date,'approved',s.created_by
+ from public.shipments s cross join public.document_types dt where dt.code='customs_declaration' and s.id::text like 'c7%'
+ returning id,document_number
+) insert into public.document_links(document_id,entity_type,entity_id,created_by)
+ select d.id,'shipment',s.id,s.created_by from inserted d join public.shipments s on s.shipment_number=d.document_number;
+
 set role authenticated;
 select set_config('request.jwt.claim.sub','c7000000-0000-4000-8000-000000000001',false);
 select public.add_exchange_rate((select id from public.currencies where code='EUR'),(select id from public.currencies where code='KZT'),500,'official','Тест',current_date);

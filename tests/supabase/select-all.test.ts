@@ -38,17 +38,11 @@ describe("complete reference lists", () => {
     assert.deepEqual(result, { data: null, error: { message: "timeout" }, truncated: false });
   });
 
-  it("stops at the row limit and says so", async () => {
-    const list = source(rows(10_000));
-    const original = console.error;
-    console.error = () => {};
-    try {
-      const result = await selectAll(list.page, 1000, 2500);
-      assert.equal(result.data?.length, 2500);
-      assert.equal(result.truncated, true);
-      assert.deepEqual(list.calls, [[0, 999], [1000, 1999], [2000, 2499]]);
-    } finally {
-      console.error = original;
-    }
+  it("never exposes a partial list to imports or pages", async () => {
+    const list = source(rows(2501));
+    await assert.rejects(selectAll(list.page, 1000, 2500), /полный список не загружен/);
+    assert.deepEqual(list.calls, [[0, 999], [1000, 1999], [2000, 2499], [2500,2500]]);
+    assert.equal((await selectAll(source(rows(2500)).page, 1000, 2500)).data?.length, 2500);
+    await assert.rejects(selectAll(source([]).page, 0), RangeError);
   });
 });

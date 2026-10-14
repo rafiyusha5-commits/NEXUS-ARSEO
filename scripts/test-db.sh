@@ -180,6 +180,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278100_order_recovery_business_date.sql" >/dev/null
 # The transport status rule replaces the function of 2100, 2300 and 8100 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278200_transport_status_after_receipt.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279100_reviewed_customs_costing.sql"
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"

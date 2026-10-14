@@ -70,67 +70,73 @@ begin
 end $$;
 grant execute on function pg_temp.fails(text,text) to authenticated;
 
--- ---------- 1. each item at the rate of its own day, in a session far from Kazakhstan ----------
-set role authenticated;
-select set_config('request.jwt.claim.sub','db000000-0000-4000-8000-000000000002',false);
-set timezone='Etc/GMT+12';
-select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
-reset timezone;
-reset role;
-do $$ declare a record; b record; c record; e record; begin
- a:=pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000001',1);
- b:=pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000002',1);
- c:=pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000003',1);
- e:=pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000005',1);
- assert a.goods_rate_basis='receipt' and a.goods_rate_date=pg_temp.today()-20 and a.goods_rate=500 and a.goods_amount=10000,
-  format('A at the rate of its receipt day in Almaty (10 x 2 x 500): %s',row_to_json(a));
- assert b.goods_rate_basis='loading' and b.goods_rate_date=pg_temp.today()-5 and b.goods_rate=520 and b.goods_amount=6240,
-  format('B at the rate of the loading day (4 x 3 x 520): %s',row_to_json(b));
- assert c.goods_rate_basis='calculation' and c.goods_rate_date=pg_temp.today() and c.goods_rate=550 and c.goods_amount=2750,
-  format('C is an estimate at the rate of the business day (5 x 1 x 550): %s',row_to_json(c));
- assert e.goods_rate_basis='receipt' and e.goods_rate_date=pg_temp.today()-5 and e.goods_amount=2080,
-  format('E received without a truck receipt: the day of its receipt movement (1 x 4 x 520): %s',row_to_json(e));
-end $$;
 
--- ---------- 2. a new rate later moves only the estimate; a corrected receipt day moves the received goods ----------
-insert into public.exchange_rates(base_currency_id,quote_currency_id,rate,source,rate_date,created_by)
-values(pg_temp.cur('EUR'),pg_temp.cur('KZT'),560,'bank',pg_temp.today(),'db000000-0000-4000-8000-000000000001');
+-- A single approved declaration applies to the whole shipment. Truck/receipt dates are deliberately different.
+insert into public.documents(id,document_type_id,title,document_date,status,uploaded_by)
+select 'db800000-0000-4000-8000-000000000001',id,'Customs declaration',pg_temp.today()-20,'approved','db000000-0000-4000-8000-000000000001'
+from public.document_types where code='customs_declaration';
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+('db800000-0000-4000-8000-000000000001','shipment','db300000-0000-4000-8000-000000000001','db000000-0000-4000-8000-000000000001');
 set role authenticated;
-select set_config('request.jwt.claim.sub','db000000-0000-4000-8000-000000000002',false);
+select set_config('request.jwt.claim.sub','db000000-0000-4000-8000-000000000001',false);
 select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
 reset role;
-do $$ begin
- assert (pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000001',2)).goods_amount=10000,'received goods keep their cost';
- assert (pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000002',2)).goods_amount=6240,'loaded goods keep their cost';
- assert (pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000003',2)).goods_amount=2800,'the estimate follows the new rate';
+do $$begin
+ assert (pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000001',1)).goods_amount=10000;
+ assert (select bool_and(goods_rate_basis='customs_declaration' and goods_rate=500 and goods_rate_date=pg_temp.today()-20)
+ from public.cost_calculation_items), 'all lines use the declaration, not receipt/loading/today';
 end $$;
-update public.shipment_transport_receipts set received_at=((pg_temp.today()-40)+time '15:00') at time zone 'Asia/Almaty'
-where id='db500000-0000-4000-8000-000000000001';
+-- A date correction invalidates a draft, even when quantities and expenses are unchanged.
+update public.documents set document_date=pg_temp.today()-5 where id='db800000-0000-4000-8000-000000000001';
 set role authenticated;
-select set_config('request.jwt.claim.sub','db000000-0000-4000-8000-000000000002',false);
+select pg_temp.fails($q$select public.approve_shipment_cost((select id from public.cost_calculations where version_number=1 and shipment_id='db300000-0000-4000-8000-000000000001'))$q$,'После расчёта изменились');
 select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
 reset role;
-do $$ declare a record; begin
- a:=pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000001',3);
- assert a.goods_rate_date=pg_temp.today()-40 and a.goods_amount=9600,format('the corrected receipt day decides (10 x 2 x 480): %s',row_to_json(a));
+do $$begin
+ assert (pg_temp.line('db300000-0000-4000-8000-000000000001','db600000-0000-4000-8000-000000000001',2)).goods_amount=10400;
 end $$;
-
--- ---------- 3. a goods cost paid as an expense needs no rate; a missing rate names the currencies, day and item ----------
+-- Editing the applicable FX rate also invalidates approval.
+update public.exchange_rates set rate=521 where rate=520;
 set role authenticated;
-select set_config('request.jwt.claim.sub','db000000-0000-4000-8000-000000000002',false);
-select public.create_expense('db300000-0000-4000-8000-000000000002','goods_cost','db100000-0000-4000-8000-000000000001',9000,
- pg_temp.cur('KZT'),pg_temp.today()-3,false,null,'RD-2 оплата товара');
-select public.confirm_expense((select id from public.expenses where notes='RD-2 оплата товара'));
-select public.allocate_expense((select id from public.expenses where notes='RD-2 оплата товара'),'by_quantity',pg_temp.cur('KZT'));
-select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000002',pg_temp.cur('KZT'));
-select pg_temp.fails($$select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000003',pg_temp.cur('KZT'))$$,
- 'Нет курса RUB → KZT на \d\d\.\d\d\.\d{4} для закупочной цены RD-6');
+select pg_temp.fails($q$select public.approve_shipment_cost((select id from public.cost_calculations where version_number=2 and shipment_id='db300000-0000-4000-8000-000000000001'))$q$,'После расчёта изменились');
+select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
+select public.approve_shipment_cost((select id from public.cost_calculations where version_number=3 and shipment_id='db300000-0000-4000-8000-000000000001'));
 reset role;
-do $$ declare d record; begin
- d:=pg_temp.line('db300000-0000-4000-8000-000000000002','db600000-0000-4000-8000-000000000004',1);
- assert d.goods_rate_basis='expense' and d.goods_rate is null and d.goods_rate_date is null and d.goods_amount=9000,
-  format('the goods cost comes from the expense: %s',row_to_json(d));
+-- Unapproved and removed declarations cannot silently supply a final rate.
+update public.documents set status='under_review' where id='db800000-0000-4000-8000-000000000001';
+set role authenticated;
+select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
+select pg_temp.fails($q$select public.approve_shipment_cost((select id from public.cost_calculations where version_number=4 and shipment_id='db300000-0000-4000-8000-000000000001'))$q$,'предварительный');
+reset role;
+update public.documents set status='approved' where id='db800000-0000-4000-8000-000000000001';
+update public.document_links set removed_at=now(),removed_by='db000000-0000-4000-8000-000000000001' where document_id='db800000-0000-4000-8000-000000000001';
+do $$begin
+ assert (select basis='calculation' from private.shipment_item_rate_date('db600000-0000-4000-8000-000000000001'));
+ assert to_char(72.34,'FM990.99')='72.34';
+ assert to_char(123.45,'FM999999999990.999')='123.45';
+ assert position('FM990.##' in pg_get_functiondef('private.customer_order_blockers(uuid,date)'::regprocedure))=0;
 end $$;
-
+-- A vehicle-specific declaration wins; changing its allocation also invalidates a calculation.
+update public.document_links set removed_at=null,removed_by=null where document_id='db800000-0000-4000-8000-000000000001';
+insert into public.documents(id,document_type_id,title,document_date,status,uploaded_by)
+select 'db800000-0000-4000-8000-000000000002',id,'Vehicle customs declaration',pg_temp.today()-20,'approved','db000000-0000-4000-8000-000000000001'
+from public.document_types where code='customs_declaration';
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+('db800000-0000-4000-8000-000000000002','shipment_transport','db400000-0000-4000-8000-000000000002','db000000-0000-4000-8000-000000000001');
+do $$begin
+ assert (select rate_date=pg_temp.today()-20 from private.shipment_item_rate_date('db600000-0000-4000-8000-000000000002')), 'vehicle declaration wins';
+ assert (select rate_date=pg_temp.today()-5 from private.shipment_item_rate_date('db600000-0000-4000-8000-000000000003')), 'another vehicle keeps shipment declaration';
+end $$;
+set role authenticated;
+select public.calculate_shipment_cost('db300000-0000-4000-8000-000000000001',pg_temp.cur('KZT'));
+reset role;
+update public.shipment_items set shipment_transport_id='db400000-0000-4000-8000-000000000003' where id='db600000-0000-4000-8000-000000000002';
+set role authenticated;
+select pg_temp.fails($q$select public.approve_shipment_cost((select id from public.cost_calculations where version_number=5 and shipment_id='db300000-0000-4000-8000-000000000001'))$q$,'После расчёта изменились');
+reset role;
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+('db800000-0000-4000-8000-000000000001','shipment_transport','db400000-0000-4000-8000-000000000002','db000000-0000-4000-8000-000000000001');
+update public.shipment_items set shipment_transport_id='db400000-0000-4000-8000-000000000002' where id='db600000-0000-4000-8000-000000000002';
+select pg_temp.fails($q$select * from private.shipment_item_rate_date('db600000-0000-4000-8000-000000000002')$q$,'разными датами');
 rollback;
-\echo 'purchase_rate_date: all checks passed'
+\echo 'customs purchase rate and stale approval checks passed'
