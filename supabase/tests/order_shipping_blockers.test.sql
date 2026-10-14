@@ -63,7 +63,8 @@ do $$ declare r seen%rowtype; begin
  assert r.codes='{batch_unavailable}' and r.messages ~ 'SYNTH-FF-P, партия SYNTH-EARLY: заблокирована — Отзыв производителя',
   format('the blocked batch is named with its reason: %s',r.messages);
  select * into r from seen where step='expired';
- assert 'batch_expired'=any(r.codes) and r.messages ~ 'партия SYNTH-LATE: просрочена \(годна до',format('the expired batch: %s',r.messages);
+ assert r.codes='{batch_expired}' and r.messages ~ 'партия SYNTH-LATE: просрочена \(годна до',
+  format('the expired batch, once (its shelf life adds nothing): %s',r.messages);
  select * into r from seen where step='no_letter';
  assert r.codes='{shelf_life_letter}' and r.messages ~ 'ниже требуемых 60% — нужно действующее гарантийное письмо',
   format('the batch below the required shelf life without a letter: %s',r.messages);
@@ -73,14 +74,14 @@ end $$;
 
 -- ---------- several problems at once are all listed; the order still ships once they are fixed ----------
 update public.inventory_batches set status='quarantine',status_reason='Проверка' where id='ef400000-0000-4000-8000-000000000001';
-update public.guarantee_letters set status='cancelled' where id=(select id from tests.fulfillment_context where k='letter');
+update public.sale_items set quantity=quantity+5 where id=(select id from tests.fulfillment_context where k='item');
 set role authenticated;
 do $$ begin
- assert pg_temp.codes() @> '{batch_unavailable,shelf_life_letter}',format('both problems at once: %s',pg_temp.messages());
+ assert pg_temp.codes()='{batch_unavailable,not_reserved}',format('both problems at once: %s',pg_temp.messages());
 end $$;
 reset role;
 update public.inventory_batches set status='available',status_reason=null where id='ef400000-0000-4000-8000-000000000001';
-update public.guarantee_letters set status='approved' where id=(select id from tests.fulfillment_context where k='letter');
+update public.sale_items set quantity=quantity-5 where id=(select id from tests.fulfillment_context where k='item');
 set role authenticated;
 do $$ begin assert pg_temp.codes()='{}','fixed again'; end $$;
 select public.fulfill_customer_order(id) from tests.fulfillment_context where k='sale';

@@ -71,6 +71,8 @@ begin
         format('%s, партия %s: просрочена (годна до %s)',v_line.internal_sku,v_line.batch_number,to_char(v_line.expiry_date,'DD.MM.YYYY')),
         v_line.sale_item_id,v_line.batch_id;
     end if;
+    -- A batch on hold or expired has to be replaced anyway; its shelf life adds nothing to say.
+    if v_line.batch_status<>'available' or v_line.expiry_date<v_today then continue; end if;
     v_pct:=private.sale_shelf_life_pct(v_line.expiry_date,v_line.manufacture_date,v_line.shelf_life_days,greatest(v_today,s.planned_shipment_date));
     if v_line.required_shelf_life_pct is not null and v_pct<v_line.required_shelf_life_pct and not exists(
       select 1 from public.guarantee_letters g join public.guarantee_letter_items gi on gi.guarantee_letter_id=g.id
