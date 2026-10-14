@@ -114,6 +114,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278000_expense_cancel_costing.sql" >/dev/null
 # Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
+# The batch cost by receipts replaces the approval of 8000 above and adds the receipt trigger.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278800_batch_cost_by_receipt.sql" >/dev/null
 # Calculator barcode reconciliation only replaces guarded functions.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274500_calculator_identifier_reconciliation.sql" >/dev/null
 # Reviewed extraction values are validated and applied only through a guarded RPC.

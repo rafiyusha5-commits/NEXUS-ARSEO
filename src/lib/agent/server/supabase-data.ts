@@ -95,7 +95,7 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
         if(!id) throw new DataError();
         const args = section.rpc === "my_product_purchase_prices" ? {p_product_ids:[id]}
           : section.rpc === "my_shipment_item_purchase_prices" ? {p_shipment_id:id}
-          : section.rpc === "my_inventory_batch_costs" ? {p_product_id:id} : null;
+          : section.rpc === "my_batch_landed_costs" ? {p_product_id:id} : null;
         if(!args) throw new DataError();
         const {data}=ensure(await supabase.rpc(section.rpc,args).abortSignal(signal));
         const rows=(data as ShipmentRow[]).map(row=>section.key === "shipment_prices"?{...row,shipment_id:id}:row);
