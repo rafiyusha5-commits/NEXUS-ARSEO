@@ -112,7 +112,7 @@ export async function changeShipmentTransportStatus(formData:FormData){
   const status=text(formData,"status");
   if(!["planned","loading","in_transit","at_customs","arrived","unloaded","cancelled"].includes(status))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Некорректный статус перевозки")}`);
   const {error}=await supabase.rpc("change_shipment_transport_status",{p_transport_id:uuid(formData,"transport_id"),p_status:status});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус перевозки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось изменить статус перевозки."))}`);
   await refreshLogistAfterChange(supabase,shipmentId!);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус перевозки обновлён")}`);
 }
