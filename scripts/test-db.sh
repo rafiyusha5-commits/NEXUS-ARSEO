@@ -96,6 +96,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273700_export_document_package.sql" >/dev/null
 # Warehouse operation documents and their posting/reversal RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273800_inventory_operation_documents.sql" >/dev/null
+# Restocking depleted batches: trigger, write-off and the repair are idempotent; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277800_depleted_batch_restock.sql" >/dev/null
 # Supplier assortment and its integrity triggers are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273900_product_supplier_catalog.sql" >/dev/null
 # Import customs-stage recovery is a repeatable data correction.
@@ -108,6 +110,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
+# Expense cancellation replaces the costing functions of 2700 and 4100 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278000_expense_cancel_costing.sql" >/dev/null
 # Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
 # Calculator barcode reconciliation only replaces guarded functions.
@@ -124,6 +128,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 # Several vehicles per shipment: columns, replaceable RPCs and the review function are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
+# Received shipment items: replaces the item RPCs of 2100 and 4100 re-applied above; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277700_received_shipment_items.sql" >/dev/null
 # Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
@@ -159,6 +165,9 @@ for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
+
+echo "test: cost calculation and approval under concurrent source edits"
+node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: order fulfillment under concurrency (duplicates and cancellation)"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
