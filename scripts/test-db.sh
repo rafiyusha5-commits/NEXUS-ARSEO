@@ -162,6 +162,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278100_order_recovery_business_date.sql" >/dev/null
+# The operational summary is granted after the hardening re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278600_operational_summary.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
