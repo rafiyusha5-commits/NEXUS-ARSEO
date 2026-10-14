@@ -67,7 +67,7 @@ select 'authenticated', unnest(array[
   'public.submit_purchase_plan', 'public.review_purchase_plan', 'public.approve_purchase_plan', 'public.create_purchase_plan_shipment', 'public.archive_purchase_plan',
   'public.create_commercial_program', 'public.create_commercial_program_version', 'public.upsert_commercial_program_line', 'public.remove_commercial_program_line',
   'public.submit_commercial_program', 'public.review_commercial_program', 'public.approve_commercial_program', 'public.apply_commercial_program_to_forecast',
-  'public.create_sale_from_commercial_program', 'public.archive_commercial_program',
+  'public.create_sale_from_commercial_program', 'public.archive_commercial_program', 'public.customer_order_shipping_blockers',
   'public.my_external_document_permissions', 'public.my_external_documents', 'public.my_external_document', 'public.my_external_document_file', 'public.update_my_external_profile', 'public.register_external_document', 'public.record_external_document_access',
   'public.set_document_external_access', 'public.configure_external_client', 'public.set_external_client_access',
   'public.create_shipment_milestone', 'public.complete_shipment_milestone', 'public.cancel_shipment_milestone', 'public.my_shipment_calendar',

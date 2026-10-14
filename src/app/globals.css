@@ -254,3 +254,5 @@ input,select,textarea{border-radius:var(--radius-control)}
 @media (max-width:700px){.shelf-risk-facts{grid-template-columns:1fr 1fr}.shelf-customers li>div{max-width:100%;display:block}.shelf-customer-state{float:none;display:block;margin-top:4px}}
 /* Closed shipment notice with the reopen form */
 .shipment-closed-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.shipment-closed-notice form{display:flex;flex-wrap:wrap;gap:8px}.shipment-closed-notice input{min-width:240px}
+/* What prevents shipping a confirmed order */
+.order-blockers{display:flex;flex-direction:column;gap:6px;margin:14px 0}.order-blockers ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}.order-blockers li{color:#9f1239;font-size:14px;font-weight:600;line-height:1.45;overflow-wrap:anywhere}

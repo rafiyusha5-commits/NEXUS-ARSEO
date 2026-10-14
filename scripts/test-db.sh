@@ -163,6 +163,8 @@ echo "re-applying document migrations (idempotency check)"
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276500_shelf_life_control_agent.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
+# The list of shipping blockers is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278900_order_shipping_blockers.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
 # The operational summary is granted again after the hardening (2300) re-applied above revoked it.
