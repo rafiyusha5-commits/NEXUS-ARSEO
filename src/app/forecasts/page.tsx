@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { approveForecast,archiveForecast,createForecast,createForecastVersion,removeForecastLine,reviewForecast,saveForecastLine,submitForecast } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const statusLabel:Record<string,string>={draft:"Черновик",in_review:"На согласовании",approved:"Утверждён",superseded:"Заменён",archived:"Архив"};
 const scenarioLabel:Record<string,string>={base:"Базовый",optimistic:"Оптимистичный",pessimistic:"Пессимистичный",custom:"Особый"};
@@ -21,8 +22,8 @@ export default async function ForecastsPage({searchParams}:{searchParams:Promise
  const detail=Boolean(selected&&access.has("forecasts.detail"));
  const [linesResult,productsResult,customersResult,warehousesResult]=await Promise.all([
   detail?supabase.from("forecast_lines").select("*,product:products(internal_sku,name),customer:counterparties(legal_name,short_name),warehouse:warehouses(code,name)").eq("forecast_id",selected!.id).order("period_start"):Promise.resolve({data:[]}),
-  detail?supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku"):Promise.resolve({data:[]}),
-  detail?supabase.from("counterparties").select("id,legal_name,short_name").eq("status","active").contains("roles",["customer"]).order("legal_name"):Promise.resolve({data:[]}),
+  detail?selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku").order("id").range(from,to)):Promise.resolve({data:[]}),
+  detail?selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name").eq("status","active").contains("roles",["customer"]).order("legal_name").order("id").range(from,to)):Promise.resolve({data:[]}),
   detail?supabase.from("warehouses").select("id,code,name").eq("status","active").order("code"):Promise.resolve({data:[]}),
  ]);
  const lines=(linesResult.data??[])as Line[];const products=productsResult.data??[];const customers=customersResult.data??[];const warehouses=warehousesResult.data??[];

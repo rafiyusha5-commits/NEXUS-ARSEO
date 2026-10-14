@@ -2,6 +2,7 @@ import {AppSidebar} from "@/components/app-sidebar";
 import {requireUser} from "@/lib/auth/access";
 import {EXPENSE_STATUS_LABELS,describePlanComparison,expenseActions,expensesWithdrawnAfter,planComparison} from "@/lib/finance/expenses";
 import {addRate,allocateExpense,approveCost,calculateCost,cancelExpense,confirmExpense,createExpense,payExpense,reverseExpense} from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 function one<T>(v:T|T[]|null|undefined){return Array.isArray(v)?v[0]:v??undefined;}
 const typeLabel:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"Налог",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
@@ -22,7 +23,7 @@ export default async function FinancePage({searchParams}:{searchParams:Promise<{
   calculationsQuery,
   supabase.from("shipments").select("id,shipment_number,status").neq("status","cancelled").order("created_at",{ascending:false}),
   supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),
-  supabase.from("counterparties").select("id,short_name,legal_name,roles").eq("status","active").order("legal_name"),
+  selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name,roles").eq("status","active").order("legal_name").order("id").range(from,to)),
   supabase.from("documents").select("id,title,document_number").is("archived_at",null).order("created_at",{ascending:false}).limit(200),
  ]);
  const actions=new Set((permissions??[]) as string[]);const kzt=currencies?.find(c=>c.code==="KZT")?.id??"";
