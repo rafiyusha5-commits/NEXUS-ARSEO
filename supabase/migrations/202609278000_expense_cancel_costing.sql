@@ -103,6 +103,10 @@ declare v_id uuid;v_version integer;v_goods numeric;v_expenses numeric;v_goods_i
 begin
  if not (select private.has_permission('costing.calculate')) then raise exception 'Нет права рассчитывать себестоимость';end if;
  if not (select private.has_permission('prices.purchase.view')) then raise exception 'Нет доступа к себестоимости' using errcode='42501';end if;
+ -- Hold the input set constant for the whole calculation, including concurrent INSERTs.
+ -- Row locks alone cannot protect new expenses/items. These short transaction-level table
+ -- locks also serialize cost versions; no external calls occur while they are held.
+ lock table public.expenses, public.shipment_items, public.expense_allocations in exclusive mode;
  if exists(select 1 from public.expenses where shipment_id=p_shipment_id and not is_planned and status in ('draft','confirmed')) then
   raise exception 'Подтвердите и распределите фактические расходы поставки или отмените ошибочные';end if;
  if exists(select 1 from public.expenses e join public.expense_allocations a on a.expense_id=e.id
@@ -146,10 +150,12 @@ create or replace function public.approve_shipment_cost(p_calculation_id uuid)
 returns void language plpgsql security definer set search_path='' as $$declare c record;begin
  if not (select private.has_permission('costing.approve')) then raise exception 'Нет права утверждать себестоимость';end if;
  if not (select private.has_permission('prices.purchase.view')) then raise exception 'Нет доступа к себестоимости' using errcode='42501';end if;
+ lock table public.expenses, public.shipment_items, public.expense_allocations in exclusive mode;
  select * into c from public.cost_calculations where id=p_calculation_id and status='draft' for update;if not found then raise exception 'Расчёт не найден или уже утверждён';end if;
  if c.inputs_digest is null then raise exception 'Расчёт сделан по прежним правилам: рассчитайте новую версию';end if;
- -- Cancellation, reversal and allocation lock the expense row first, so none of them can slip in between.
- perform 1 from public.expenses where shipment_id=c.shipment_id for share;
+ -- Table locks protect both existing rows and new inputs until approval commits.
+ -- Do not take expense row locks here: writers can already own them while waiting
+ -- for the table lock, which would invert the locking order.
  if c.inputs_digest<>private.shipment_cost_inputs_digest(c.shipment_id) then
   raise exception 'После расчёта изменились расходы или позиции поставки: рассчитайте новую версию';end if;
  update public.cost_calculations set status='superseded' where shipment_id=c.shipment_id and status='approved';

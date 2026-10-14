@@ -166,6 +166,9 @@ for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
 
+echo "test: cost calculation and approval under concurrent source edits"
+node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
+
 echo "test: order fulfillment under concurrency (duplicates and cancellation)"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
 fulfill_pids=()
