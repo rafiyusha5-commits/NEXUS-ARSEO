@@ -56,3 +56,28 @@ export function describePlanComparison(comparison: PlanComparison, currency: str
   if (comparison.withoutRate > 0) parts.push(`без курса не учтено плановых расходов: ${comparison.withoutRate}`);
   return parts.join(" · ");
 }
+
+// How the purchase price of a calculation line was converted (audit 2026-10-13, finding Н9).
+export type GoodsRateBasis = "expense" | "receipt" | "loading" | "calculation";
+const GOODS_RATE_BASIS: Record<GoodsRateBasis, string> = {
+  expense: "по оплате товара",
+  receipt: "на дату прихода",
+  loading: "на дату загрузки",
+  calculation: "на дату расчёта",
+};
+
+export function describeGoodsRate(line: { goods_rate?: number | string | null; goods_rate_date?: string | null; goods_rate_basis?: string | null }): string | null {
+  const basis = line.goods_rate_basis as GoodsRateBasis | null | undefined;
+  if (!basis || !(basis in GOODS_RATE_BASIS)) return null;
+  if (basis === "expense") return GOODS_RATE_BASIS.expense;
+  const rate = Number(line.goods_rate);
+  const day = line.goods_rate_date && /^\d{4}-\d{2}-\d{2}$/.test(line.goods_rate_date) ? line.goods_rate_date.split("-").reverse().join(".") : null;
+  if (!Number.isFinite(rate) || rate <= 0 || !day) return null;
+  const text = `курс ${rate.toLocaleString("ru-RU", { maximumFractionDigits: 6 })} ${GOODS_RATE_BASIS[basis]} ${day}`;
+  return basis === "calculation" ? `оценка: ${text}` : text;
+}
+
+// A calculation is preliminary while some goods have neither arrived nor been loaded: their rate is that of the calculation day.
+export function isPreliminaryCalculation(lines: readonly { goods_rate_basis?: string | null }[] | null | undefined): boolean {
+  return (lines ?? []).some((line) => line.goods_rate_basis === "calculation");
+}
