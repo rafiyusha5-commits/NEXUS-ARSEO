@@ -158,6 +158,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
 # The list of shipping blockers is granted again after the hardening (2300) re-applied above revoked it.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278900_order_shipping_blockers.sql" >/dev/null
+# Order notifications and rescheduling replace the list function of 8900 and add the notification type after 2200.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279000_order_blocker_notifications.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
 # Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.

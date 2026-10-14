@@ -88,3 +88,15 @@ export async function returnCustomerOrderToPreparation(data: FormData) {
   revalidatePath("/sales");
   redirect(orderUrl(saleId, "Заказ возвращён к подготовке. Проверьте резервы и ОСГ, затем подтвердите заказ заново.", "success", "shipping"));
 }
+
+export async function rescheduleCustomerOrder(data: FormData) {
+  const { supabase } = await requireUser();
+  const saleId = uuid(data, "sale_id")!;
+  const { error } = await supabase.rpc("reschedule_customer_order", {
+    p_sale_id: saleId, p_date: text(data, "planned_shipment_date") || null, p_reason: text(data, "reason"),
+  });
+  if (error) redirect(orderUrl(saleId, ruleViolationMessage(error, "Не удалось перенести отгрузку."), "error", "shipping"));
+  revalidatePath(`/sales/${saleId}`);
+  revalidatePath("/sales");
+  redirect(orderUrl(saleId, "Дата отгрузки перенесена", "success", "shipping"));
+}

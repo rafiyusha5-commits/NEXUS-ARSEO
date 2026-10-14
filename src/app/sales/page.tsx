@@ -9,6 +9,8 @@ const statusLabel:Record<string,string>={draft:"Черновик",reserved:"За
 
 export default async function SalesPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
   const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
+  // Confirmed orders of this employee that can no longer ship become notifications (idempotent).
+  await supabase.rpc("refresh_my_order_notifications");
   const [{data:sales,error},{data:customers},{data:warehouses},{data:currencies},{data:contracts}]=await Promise.all([
     supabase.from("sales").select("id,sale_number,planned_shipment_date,status,created_at,customer:counterparties(short_name,legal_name),warehouse:warehouses(code,name)").order("created_at",{ascending:false}),
     supabase.from("counterparties").select("id,short_name,legal_name,min_remaining_shelf_life_pct").contains("roles",["customer"]).eq("status","active").order("legal_name"),
