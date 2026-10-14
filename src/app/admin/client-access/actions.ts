@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAccessManager } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { appOrigin } from "@/lib/auth/redirect";
 
 const value = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const checked = (form: FormData, key: string) => form.get(key) === "on";
@@ -23,7 +24,7 @@ export async function inviteExternalClient(formData: FormData) {
   const admin = createAdminClient();
   if (!admin) done("error", "Добавьте SUPABASE_SECRET_KEY в серверные переменные");
   const requestHeaders = await headers();
-  const origin = requestHeaders.get("origin") ?? "http://localhost:3000";
+  const origin = appOrigin(process.env, requestHeaders);
   const { data, error } = await admin!.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName }, redirectTo: `${origin}/auth/callback?next=/update-password` });
   if (error || !data.user) done("error", publicErrorMessage(error,"Не удалось отправить приглашение клиенту."));
   const { error: configureError } = await supabase.rpc("configure_external_client", {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
-  EXPENSE_STATUS_LABELS, describePlanComparison, expenseActions, expensesWithdrawnAfter, planComparison,
+  EXPENSE_STATUS_LABELS, describeGoodsRate, describePlanComparison, expenseActions, expensesWithdrawnAfter, isPreliminaryCalculation, planComparison,
 } from "../../src/lib/finance/expenses.ts";
 
 const SQL = readFileSync(new URL("../../supabase/migrations/202609278000_expense_cancel_costing.sql", import.meta.url), "utf8");
@@ -69,5 +69,29 @@ describe("landed cost versions", () => {
     assert.equal(describePlanComparison(planComparison({ expenses_total: 50, planned_expenses_total: 50 })!, "EUR"), "план расходов 50 EUR · факт совпал с планом");
     assert.equal(describePlanComparison(planComparison({ expenses_total: 50, planned_expenses_total: null, planned_expenses_without_rate: 2 })!, "EUR"),
       "без курса не учтено плановых расходов: 2");
+  });
+});
+
+describe("rate of the purchase price in a calculation line", () => {
+  it("names the rate, its day and why that day", () => {
+    assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "2026-09-24", goods_rate_basis: "customs_declaration" }), "курс 500 на дату таможенной декларации 24.09.2026");
+    assert.equal(describeGoodsRate({ goods_rate: 1, goods_rate_basis: "same_currency" }), "без конвертации");
+    assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "2026-09-24", goods_rate_basis: "receipt" }), "курс 500 на дату прихода 24.09.2026");
+    assert.equal(describeGoodsRate({ goods_rate: "519.75", goods_rate_date: "2026-10-09", goods_rate_basis: "loading" }), "курс 519,75 на дату загрузки 09.10.2026");
+    assert.equal(describeGoodsRate({ goods_rate: 550, goods_rate_date: "2026-10-14", goods_rate_basis: "calculation" }), "оценка: курс 550 на дату расчёта 14.10.2026");
+    assert.equal(describeGoodsRate({ goods_rate: null, goods_rate_date: null, goods_rate_basis: "expense" }), "по оплате товара");
+  });
+
+  it("says nothing for a line calculated before the rule or with a malformed value", () => {
+    assert.equal(describeGoodsRate({}), null);
+    assert.equal(describeGoodsRate({ goods_rate: 0, goods_rate_date: "2026-10-14", goods_rate_basis: "receipt" }), null);
+    assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "14.10.2026", goods_rate_basis: "receipt" }), null);
+    assert.equal(describeGoodsRate({ goods_rate: 500, goods_rate_date: "2026-10-14", goods_rate_basis: "today" }), null);
+  });
+
+  it("marks a calculation preliminary while some goods are priced at the calculation day", () => {
+    assert.equal(isPreliminaryCalculation([{ goods_rate_basis: "receipt" }, { goods_rate_basis: "calculation" }]), true);
+    assert.equal(isPreliminaryCalculation([{ goods_rate_basis: "receipt" }, { goods_rate_basis: "expense" }, { goods_rate_basis: null }]), false);
+    assert.equal(isPreliminaryCalculation(null), false);
   });
 });

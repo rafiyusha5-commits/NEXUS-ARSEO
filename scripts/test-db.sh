@@ -33,7 +33,9 @@ trap cleanup EXIT
 "${RUN[@]}" "$PGBIN/pg_ctl" -D "$WORKDIR/data" -l "$WORKDIR/server.log" \
   -o "-k $WORKDIR -p $PORT -c listen_addresses=''" -w start >/dev/null
 
-export PGOPTIONS="-c client_min_messages=warning"
+# The business day of the application is Kazakhstan's (202609278300): tests live in it too, so that their own
+# current_date is the "today" the functions use at any hour. business_date.test.sql sets other session zones itself.
+export PGOPTIONS="-c client_min_messages=warning -c timezone=Asia/Almaty"
 PSQL=(psql -h "$WORKDIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X)
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/supabase_stub.sql"
@@ -98,6 +100,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273800_inventory_operation_documents.sql" >/dev/null
 # Restocking depleted batches: trigger, write-off and the repair are idempotent; grants follow the hardening.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277800_depleted_batch_restock.sql" >/dev/null
+# Write-off and transfer only through a warehouse document: closes the direct RPCs granted by 2300 and 7800 above
+# and replaces the line RPC of 3800.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278400_inventory_direct_operations.sql" >/dev/null
 # Supplier assortment and its integrity triggers are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273900_product_supplier_catalog.sql" >/dev/null
 # Import customs-stage recovery is a repeatable data correction.
@@ -112,6 +117,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
 # Expense cancellation replaces the costing functions of 2700 and 4100 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278000_expense_cancel_costing.sql" >/dev/null
+# The purchase price at the rate of the day the goods came replaces the calculation of 8000 above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278700_purchase_rate_date.sql" >/dev/null
 # Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
 # Calculator barcode reconciliation only replaces guarded functions.
@@ -156,12 +163,25 @@ echo "re-applying document migrations (idempotency check)"
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276500_shelf_life_control_agent.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
+# The list of shipping blockers is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278900_order_shipping_blockers.sql" >/dev/null
+# Order notifications and rescheduling replace the list function of 8900 and add the notification type after 2200.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279000_order_blocker_notifications.sql" >/dev/null
 # Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
+# The operational summary is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278600_operational_summary.sql" >/dev/null
 # Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
+# The Kazakhstan business day is a setting of every function that reads current_date: re-applying older migrations
+# above re-creates those functions without it, so this one must follow them (8100 below reads no current_date).
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278300_kazakhstan_business_date.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278100_order_recovery_business_date.sql" >/dev/null
+# The transport status rule replaces the function of 2100, 2300 and 8100 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278200_transport_status_after_receipt.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279100_reviewed_customs_costing.sql"
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"

@@ -6,6 +6,7 @@ import { resolveBankLineAction } from "@/app/finance/receivables/actions";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { LINE_STATUS, MATCHED_HOW, money } from "@/lib/finance/receivables";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const day = (value: string | null | undefined) => value ? value.slice(0, 10).split("-").reverse().join(".") : "—";
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
@@ -25,7 +26,7 @@ export default async function BankPaymentsPage({ searchParams }: { searchParams:
     supabase.from("bank_statement_lines").select(SELECT).eq("status", "unmatched").order("doc_date", { ascending: false }).limit(300),
     supabase.from("bank_statement_lines").select(SELECT).neq("status", "unmatched").order("resolved_at", { ascending: false, nullsFirst: false }).limit(50),
     supabase.from("bank_statement_imports").select("id,file_name,account_number,period_from,period_to,lines_total,lines_new,lines_matched,created_at").order("created_at", { ascending: false }).limit(10),
-    supabase.from("counterparties").select("id,short_name,legal_name,tax_id").contains("roles", ["customer"]).neq("status", "archived").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name,tax_id").contains("roles", ["customer"]).neq("status", "archived").order("legal_name").order("id").range(from,to)),
     supabase.from("currencies").select("code").eq("is_active", true).order("code"),
   ]);
   const canManage = permissions["receivables.manage"];

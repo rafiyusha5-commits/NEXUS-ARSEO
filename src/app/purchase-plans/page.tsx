@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { approvePurchasePlan,archivePurchasePlan,createPurchasePlan,createPurchasePlanVersion,createShipmentFromPlan,removePurchasePlanLine,reviewPurchasePlan,savePurchasePlanLine,submitPurchasePlan } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const statusLabel:Record<string,string>={draft:"Черновик",in_review:"На согласовании",approved:"Утверждён",ordered:"Поставка создана",superseded:"Заменён",archived:"Архив"};
 const unitLabel:Record<string,string>={piece:"шт.",box:"короб",layer:"слой",pallet:"паллета",truck:"фура"};
@@ -18,11 +19,11 @@ export default async function PurchasePlansPage({searchParams}:{searchParams:Pro
  const [{data:rawPlans,error},{data:forecasts},{data:suppliers}]=await Promise.all([
   supabase.from("purchase_plans").select("*,forecast:forecasts(name,version),supplier:counterparties(legal_name,short_name)").order("created_at",{ascending:false}),
   access.has("purchase_plans.create")?supabase.from("forecasts").select("id,name,version,horizon_start,horizon_end").eq("status","approved").order("approved_at",{ascending:false}):Promise.resolve({data:[]}),
-  access.has("purchase_plans.create")?supabase.from("counterparties").select("id,legal_name,short_name").eq("status","active").overlaps("roles",["supplier","manufacturer"]).order("legal_name"):Promise.resolve({data:[]}),
+  access.has("purchase_plans.create")?selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name").eq("status","active").overlaps("roles",["supplier","manufacturer"]).order("legal_name").order("id").range(from,to)):Promise.resolve({data:[]}),
  ]);const plans=(rawPlans??[])as Plan[];const selected=plans.find(item=>item.id===query.plan)??plans[0]??null;const detail=Boolean(selected&&access.has("purchase_plans.detail"));
  const [linesResult,productsResult,routesResult,warehousesResult,currenciesResult,profilesResult]=await Promise.all([
   detail?supabase.from("purchase_plan_lines").select("*,product:products(internal_sku,name)").eq("purchase_plan_id",selected!.id).order("planned_order_date"):Promise.resolve({data:[]}),
-  detail?supabase.from("products").select("id,internal_sku,name,product_packaging(uom,units_per_parent),product_suppliers!inner(supplier_id,status)").eq("status","active").eq("product_suppliers.supplier_id",selected!.supplier_id).eq("product_suppliers.status","active").order("internal_sku"):Promise.resolve({data:[]}),
+  detail?selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,product_packaging(uom,units_per_parent),product_suppliers!inner(supplier_id,status)").eq("status","active").eq("product_suppliers.supplier_id",selected!.supplier_id).eq("product_suppliers.status","active").order("internal_sku").order("id").range(from,to)):Promise.resolve({data:[]}),
   detail?supabase.from("routes").select("id,name").eq("status","active").order("origin_country"):Promise.resolve({data:[]}),
   detail?supabase.from("warehouses").select("id,code,name").eq("status","active").eq("is_virtual",false).order("code"):Promise.resolve({data:[]}),
   detail?supabase.from("currencies").select("id,code").eq("is_active",true).order("code"):Promise.resolve({data:[]}),

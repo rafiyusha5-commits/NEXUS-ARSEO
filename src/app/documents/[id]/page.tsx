@@ -8,6 +8,7 @@ import { loadLinkOptions, resolveLinkTargets } from "@/lib/documents/link-object
 import { documentExpiry, isUuid, todayIso } from "@/lib/documents/rules.ts";
 import { canSubmitDocumentForReview } from "@/lib/documents/review-rules.ts";
 import { loadDocumentPermissions } from "@/lib/documents/supabase-gateway.ts";
+import { selectAll } from "@/lib/supabase/select-all";
 import {
   addDocumentLinkAction,
   addDocumentVersionAction,
@@ -68,7 +69,7 @@ export default async function DocumentPage({
       .eq("entity_type", "document")
       .eq("entity_id", id)
       .order("requested_at", { ascending: false }),
-    supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name").order("id").range(from,to)),
   ]);
 
   if (!document) notFound();

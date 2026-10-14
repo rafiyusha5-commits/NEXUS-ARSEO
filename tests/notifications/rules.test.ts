@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { notificationLink, notificationTypeLabel, unreadBadge } from "../../src/lib/notifications/rules.ts";
 
@@ -17,6 +17,8 @@ describe("notification links", () => {
     assert.deepEqual(notificationLink({ entity_type: "shipment_document_check", entity_id: SHIPMENT, shipment_id: SHIPMENT }),
       { href: `/shipments/${SHIPMENT}?tab=documents#document-check`, label: "Открыть «Сверку»" });
     assert.deepEqual(notificationLink({ entity_type: "shelf_life_control", entity_id: null, shipment_id: null }), { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" });
+    assert.deepEqual(notificationLink({ entity_type: "sale", entity_id: TASK, shipment_id: null }), { href: `/sales/${TASK}?tab=shipping`, label: "Открыть заказ" });
+    assert.equal(notificationLink({ entity_type: "sale", entity_id: "../admin", shipment_id: null }), null);
   });
 
   it("falls back to the shipment and to no link", () => {
@@ -33,10 +35,14 @@ describe("notification links", () => {
 
 describe("labels and badge", () => {
   it("has a label for every type allowed by the database", () => {
-    const sql = readFileSync(new URL("../../supabase/migrations/202609272200_shipment_tasks_notifications.sql", import.meta.url), "utf8");
-    const check = sql.slice(sql.indexOf("add constraint notifications_type_check"), sql.indexOf("-- The same event is stored once"));
+    // The latest migration that defines the list of types decides.
+    const dir = new URL("../../supabase/migrations/", import.meta.url);
+    const sql = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort()
+      .map((name) => readFileSync(new URL(name, dir), "utf8")).filter((text) => text.includes("add constraint notifications_type_check")).at(-1) ?? "";
+    const start = sql.indexOf("add constraint notifications_type_check");
+    const check = sql.slice(start, sql.indexOf(";", start));
     const types = [...check.matchAll(/'(\w+)'/g)].map((match) => match[1]);
-    assert.ok(types.includes("task_assigned") && types.includes("stage_blocked"));
+    assert.ok(types.includes("task_assigned") && types.includes("stage_blocked") && types.includes("order_blocked"));
     for (const type of types) assert.ok(notificationTypeLabel[type], type);
   });
 

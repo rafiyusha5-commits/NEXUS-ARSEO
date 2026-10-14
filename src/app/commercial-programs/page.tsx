@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { applyProgramToForecast,approveCommercialProgram,archiveCommercialProgram,createCommercialProgram,createCommercialProgramVersion,createSaleFromProgram,removeCommercialProgramLine,reviewCommercialProgram,saveCommercialProgramLine,submitCommercialProgram } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const kindLabel:Record<string,string>={promotion:"Промо",special_order:"Спецзаказ",low_shelf_life:"Низкий ОСГ"};
 const statusLabel:Record<string,string>={draft:"Черновик",in_review:"На согласовании",approved:"Утверждена",ordered:"Заказ создан",superseded:"Заменена",archived:"Архив"};
@@ -18,11 +19,11 @@ export default async function CommercialProgramsPage({searchParams}:{searchParam
  if(!access.has("commercial_programs.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="commercial-programs"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Фаза 7 · Планирование</p><h1>Промо и спецзаказы</h1></div></header><div className="login-error admin-message">Нет доступа к коммерческим программам.</div></section></main>;
  const [{data:rawPrograms,error},{data:customers}]=await Promise.all([
   supabase.from("commercial_programs").select("*,customer:counterparties(short_name,legal_name)").order("created_at",{ascending:false}),
-  access.has("commercial_programs.create")?supabase.from("counterparties").select("id,short_name,legal_name").contains("roles",["customer"]).eq("status","active").order("legal_name"):Promise.resolve({data:[]}),
+  access.has("commercial_programs.create")?selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name").contains("roles",["customer"]).eq("status","active").order("legal_name").order("id").range(from,to)):Promise.resolve({data:[]}),
  ]);const programs=(rawPrograms??[])as Program[];const selected=programs.find(item=>item.id===query.program)??programs[0]??null;const detail=Boolean(selected&&access.has("commercial_programs.detail"));
  const [linesResult,productsResult,stockResult,currenciesResult,forecastsResult,warehousesResult,contractsResult]=await Promise.all([
   detail?supabase.from("commercial_program_lines").select("*,product:products(internal_sku,name),currency:currencies(code),balance:inventory_balances(batch:inventory_batches(batch_number,expiry_date),warehouse:warehouses(code))").eq("commercial_program_id",selected!.id).order("created_at"):Promise.resolve({data:[]}),
-  detail?supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku"):Promise.resolve({data:[]}),
+  detail?selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku").order("id").range(from,to)):Promise.resolve({data:[]}),
   detail&&selected?.kind==="low_shelf_life"?supabase.from("inventory_fifo_status").select("balance_id,product_id,internal_sku,product_name,batch_number,expiry_date,warehouse_code,uom,quantity_available,shelf_life_percent").in("shelf_life_state",["warning","critical"]).gt("quantity_available",0).order("expiry_date"):Promise.resolve({data:[]}),
   detail?supabase.from("currencies").select("id,code").eq("is_active",true).order("code"):Promise.resolve({data:[]}),
   detail&&selected?.kind==="promotion"?supabase.from("forecasts").select("id,name,version,horizon_start,horizon_end,granularity").eq("status","draft").order("created_at",{ascending:false}):Promise.resolve({data:[]}),

@@ -48,13 +48,15 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const params = await searchParams;
   const { profile, roles, supabase } = await requireUser();
 
-  const can = await loadPermissions(supabase, ["tasks.view"] as const);
+  const can = await loadPermissions(supabase, ["tasks.view", "sales.view"] as const);
 
   // Deadline notifications of this employee; idempotent, so a reload adds nothing. Without
   // tasks.view there are no task notifications to create, and RLS hides the existing ones.
   const { error: refreshError } = can["tasks.view"]
     ? await supabase.rpc("refresh_my_deadline_notifications")
     : { error: null };
+  // Confirmed orders of this employee that can no longer ship (expired batch, shelf life below the requirement).
+  if (can["sales.view"]) await supabase.rpc("refresh_my_order_notifications");
   const [{ data: unread, error }, { data: read }] = await Promise.all([
     supabase.from("notifications").select(COLUMNS).eq("is_read", false).order("created_at", { ascending: false }).limit(200),
     supabase.from("notifications").select(COLUMNS).eq("is_read", true).order("created_at", { ascending: false }).limit(50),

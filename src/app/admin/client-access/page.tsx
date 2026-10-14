@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireAccessManager } from "@/lib/auth/access";
 import { inviteExternalClient, setExternalAccess, setExternalActive } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 type Override = { effect: string; revoked_at: string | null; permissions: { code: string } | { code: string }[] | null };
 type ClientUser = { id: string; full_name: string; email: string | null; phone: string | null; locale: string; is_active: boolean; counterparties: { legal_name: string } | { legal_name: string }[] | null; user_permission_overrides: Override[] };
@@ -10,7 +11,7 @@ export default async function ClientAccessPage({ searchParams }: { searchParams:
   const params = await searchParams;
   const { profile, roles, supabase } = await requireAccessManager();
   const [{ data: customers, error: customersError }, { data: users, error: usersError }] = await Promise.all([
-    supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name").order("id").range(from,to)),
     supabase.from("profiles").select("id,full_name,email,phone,locale,is_active,counterparties(legal_name),user_permission_overrides(effect,revoked_at,permissions(code))").eq("user_type", "external").order("full_name"),
   ]);
   const ready = !customersError && !usersError;
