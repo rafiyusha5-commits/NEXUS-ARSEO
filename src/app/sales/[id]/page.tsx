@@ -6,6 +6,7 @@ import { OperationTabs } from "@/components/operation-tabs";
 import { SaleCreditPanel, SaleCreditWarning } from "@/components/sales/sale-credit-panel";
 import { requireUser } from "@/lib/auth/access";
 import { convertQuantity, piecesPerUnit } from "@/lib/products/packaging";
+import { selectAll } from "@/lib/supabase/select-all";
 import {
   addCustomerOrderItem,
   cancelCustomerOrder,
@@ -61,7 +62,7 @@ export default async function SalePage({
 
   const [{ data: items }, { data: products }, { data: balances }, { data: letters }, { data: preparationReturns }] = await Promise.all([
     supabase.from("sale_items").select("*,product:products(internal_sku,name,brand,packaging:product_packaging(uom,units_per_parent)),reservations:inventory_reservations(id,batch_id,quantity,uom,sale_quantity,remaining_shelf_life_pct,is_fefo_override,override_reason,status,batch:inventory_batches(batch_number,expiry_date))").eq("sale_id", id).order("created_at"),
-    supabase.from("products").select("id,internal_sku,name,brand,base_uom").eq("status", "active").order("internal_sku"),
+    selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,brand,base_uom").eq("status", "active").order("internal_sku").order("id").range(from,to)),
     supabase.from("inventory_fifo_status").select("balance_id,product_id,batch_number,expiry_date,quantity_available,uom,shelf_life_percent,batch_status").eq("warehouse_id", sale.warehouse_id).gt("quantity_available", 0).order("expiry_date"),
     supabase.from("guarantee_letters").select("*,items:guarantee_letter_items(id,quantity,remaining_shelf_life_pct,required_shelf_life_pct,batch:inventory_batches(batch_number),sale_item:sale_items(product:products(internal_sku,name)))").eq("sale_id", id).order("created_at", { ascending: false }),
     supabase.from("sale_preparation_returns").select("id,reason,created_at,previous_confirmed_at").eq("sale_id", id).order("created_at", { ascending: false }),

@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { businessToday } from "@/lib/dates/business-day";
 import { createCustomerOrder } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const row=value as Record<string,unknown>;return String(row.ru??row.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
@@ -12,7 +13,7 @@ export default async function SalesPage({searchParams}:{searchParams:Promise<{er
   const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
   const [{data:sales,error},{data:customers},{data:warehouses},{data:currencies},{data:contracts}]=await Promise.all([
     supabase.from("sales").select("id,sale_number,planned_shipment_date,status,created_at,customer:counterparties(short_name,legal_name),warehouse:warehouses(code,name)").order("created_at",{ascending:false}),
-    supabase.from("counterparties").select("id,short_name,legal_name,min_remaining_shelf_life_pct").contains("roles",["customer"]).eq("status","active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name,min_remaining_shelf_life_pct").contains("roles",["customer"]).eq("status","active").order("legal_name").order("id").range(from,to)),
     supabase.from("warehouses").select("id,code,name").eq("status","active").eq("is_virtual",false).order("code"),
     supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),
     supabase.from("contracts").select("id,number,counterparty:counterparties(short_name,legal_name)").eq("status","active").eq("type","sale").order("number"),

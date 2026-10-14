@@ -5,6 +5,7 @@ import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 import { matchesProductSearch, PRODUCT_SEARCH_FIELDS, type ProductSearchField } from "@/lib/products/search";
 import Link from "next/link";
 import { createProduct } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 type Manufacturer = { id?: string; legal_name: string };
 type ProductSupplier = { status: string; supplier: Manufacturer | Manufacturer[] | null };
@@ -29,9 +30,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const { profile, roles, supabase } = await requireUser();
   const params = await searchParams;
   const [{data,error},{data: manufacturers},{data: suppliers}] = await Promise.all([
-    supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg), product_suppliers(status,supplier:counterparties!product_suppliers_supplier_id_fkey(id,legal_name))").order("internal_sku"),
-    supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name"),
-    supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg), product_suppliers(status,supplier:counterparties!product_suppliers_supplier_id_fkey(id,legal_name))").order("internal_sku").order("id").range(from,to)),
+    selectAll((from,to)=>supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name").order("id").range(from,to)),
+    selectAll((from,to)=>supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name").order("id").range(from,to)),
   ]);
   const products = ((data ?? []) as ProductRow[]).sort((a,b) => {
     const ma=manufacturerOf(a)?.legal_name ?? ""; const mb=manufacturerOf(b)?.legal_name ?? "";

@@ -1,3 +1,4 @@
+import { selectAll } from "@/lib/supabase/select-all";
 import {AppSidebar} from "@/components/app-sidebar";
 import {requireUser} from "@/lib/auth/access";
 import {businessToday} from "@/lib/dates/business-day";
@@ -24,7 +25,7 @@ export default async function FinancePage({searchParams}:{searchParams:Promise<{
   calculationsQuery,
   supabase.from("shipments").select("id,shipment_number,status").neq("status","cancelled").order("created_at",{ascending:false}),
   supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),
-  supabase.from("counterparties").select("id,short_name,legal_name,roles").eq("status","active").order("legal_name"),
+  selectAll((from,to)=>supabase.from("counterparties").select("id,short_name,legal_name,roles").eq("status","active").order("legal_name").order("id").range(from,to)),
   supabase.from("documents").select("id,title,document_number").is("archived_at",null).order("created_at",{ascending:false}).limit(200),
  ]);
  const actions=new Set((permissions??[]) as string[]);const kzt=currencies?.find(c=>c.code==="KZT")?.id??"";
