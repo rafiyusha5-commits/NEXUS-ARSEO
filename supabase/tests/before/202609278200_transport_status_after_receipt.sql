@@ -1,7 +1,7 @@
 -- Runs on the schema BEFORE 202609278200_transport_status_after_receipt.sql and proves the defects it fixes.
 -- Everything is rolled back. supabase/tests/transport_status_after_receipt.test.sql proves they are closed.
---   1. A received truck can be set back to "planned" and then "cancelled" while its stock stays.
---   2. "Unloaded" can be set by hand without a receipt, and then the truck cannot be received.
+-- 202609278100 already keeps a received truck from going back or being cancelled. What is left: "unloaded" can be
+-- set by hand without a receipt, and then the truck cannot be received.
 \set ON_ERROR_STOP 1
 begin;
 
@@ -34,19 +34,7 @@ select public.change_shipment_transport_status(t1,'arrived') from tb;
 select public.receive_shipment_transport(t1,null,jsonb_build_array(jsonb_build_object('item_id',i1,'accepted_quantity',10,
  'batch_number','TRB-LOT','expiry_date',(current_date+300)::text)),'Receiver') from tb;
 
--- 1. The received truck goes back to planned and is cancelled; the received stock stays.
-select public.change_shipment_transport_status(t1,'planned') from tb;
-select public.change_shipment_transport_status(t1,'cancelled') from tb;
-reset role;
-do $$begin
- assert (select status='cancelled' from public.shipment_transports where id=(select t1 from tb)),'before the fix a received truck can be cancelled';
- assert (select sum(b.quantity_on_hand)=10 from public.inventory_balances b join public.inventory_batches x on x.id=b.batch_id where x.batch_number='TRB-LOT'),
-  'while its 10 pieces stay in stock';
-end$$;
-
--- 2. "Unloaded" by hand, then receiving refuses the truck.
-set role authenticated;
-select set_config('request.jwt.claim.sub','c7a00000-0000-4000-8000-000000000001',false);
+-- "Unloaded" by hand, then receiving refuses the truck.
 select public.change_shipment_transport_status(t2,'unloaded') from tb;
 do $$begin
  begin

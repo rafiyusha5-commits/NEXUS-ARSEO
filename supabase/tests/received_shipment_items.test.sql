@@ -45,6 +45,9 @@ select public.receive_shipment_transport(t1,null,jsonb_build_array(jsonb_build_o
  'batch_number','RCV2-LOT','expiry_date',(current_date+300)::text)),'Receiver') from rc;
 
 -- ---------- the received item stays where it was received ----------
+select pg_temp.fails($$select public.change_shipment_transport_status((select t1 from rc),'cancelled')$$,'уже принят на склад');
+select pg_temp.fails($$select public.change_shipment_transport_status((select t1 from rc),'planned')$$,'уже принят на склад');
+select public.change_shipment_transport_status(t1,'unloaded') from rc;
 select pg_temp.fails($$select public.allocate_shipment_item((select received from rc),(select t2 from rc),10)$$,'уже принята на склад: перенести');
 select pg_temp.fails($$select public.allocate_shipment_item((select received from rc),(select t2 from rc),4)$$,'уже принята на склад: перенести');
 select pg_temp.fails($$select public.allocate_shipment_item((select received from rc),null,10)$$,'уже принята на склад: перенести');

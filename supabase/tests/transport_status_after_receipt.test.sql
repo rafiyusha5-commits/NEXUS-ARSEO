@@ -1,5 +1,5 @@
--- Audit finding Н7: the receipt fixes a truck's status (202609278200). A received truck stays "unloaded", only
--- receiving sets "unloaded", and before the receipt the status can still be corrected in either direction.
+-- Audit finding Н7: the receipt fixes a truck's status. A received truck stays "unloaded" (202609278100), only
+-- receiving sets "unloaded" (202609278200), and before the receipt the status can be corrected in either direction.
 -- supabase/tests/before/202609278200_transport_status_after_receipt.sql shows both defects before the fix.
 \set ON_ERROR_STOP 1
 begin;
@@ -44,20 +44,9 @@ select public.change_shipment_transport_status(t1,'arrived') from ts;
 select public.receive_shipment_transport(t1,null,jsonb_build_array(jsonb_build_object('item_id',i1,'accepted_quantity',10,
  'batch_number','TRS-LOT','expiry_date',(current_date+300)::text)),'Receiver') from ts;
 
--- 1. The received truck keeps its status; the same status again changes nothing.
+-- 1. The received truck keeps its status (the rule of 202609278100, kept by this function).
 select pg_temp.expect_failure(format('select public.change_shipment_transport_status(%L,%L)',t1,s),'Автомобиль уже принят на склад')
 from ts cross join unnest(array['planned','loading','in_transit','at_customs','arrived','cancelled'])s;
-reset role;
-create temporary table ts_snapshot as select status,actual_loading_date,actual_arrival_date,updated_at from public.shipment_transports where id=(select t1 from ts);
-set role authenticated;
-select set_config('request.jwt.claim.sub','c7a00000-0000-4000-8000-000000000001',false);
-select public.change_shipment_transport_status(t1,'unloaded') from ts;
-reset role;
-do $$begin
- assert (select row(t.status,t.actual_loading_date,t.actual_arrival_date,t.updated_at)=row(s.status,s.actual_loading_date,s.actual_arrival_date,s.updated_at)
-  from public.shipment_transports t cross join ts_snapshot s where t.id=(select t1 from ts)),'the received truck is untouched';
-end$$;
-
 -- 2. Only receiving sets "unloaded"; before the receipt the status is corrected freely.
 set role authenticated;
 select set_config('request.jwt.claim.sub','c7a00000-0000-4000-8000-000000000001',false);
