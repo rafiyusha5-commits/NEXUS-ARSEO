@@ -33,7 +33,9 @@ trap cleanup EXIT
 "${RUN[@]}" "$PGBIN/pg_ctl" -D "$WORKDIR/data" -l "$WORKDIR/server.log" \
   -o "-k $WORKDIR -p $PORT -c listen_addresses=''" -w start >/dev/null
 
-export PGOPTIONS="-c client_min_messages=warning"
+# The business day of the application is Kazakhstan's (202609278300): tests live in it too, so that their own
+# current_date is the "today" the functions use at any hour. business_date.test.sql sets other session zones itself.
+export PGOPTIONS="-c client_min_messages=warning -c timezone=Asia/Almaty"
 PSQL=(psql -h "$WORKDIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X)
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/supabase_stub.sql"
@@ -161,6 +163,9 @@ echo "re-applying document migrations (idempotency check)"
 # Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
+# The Kazakhstan business day is a setting of every function that reads current_date: re-applying older migrations
+# above re-creates those functions without it, so this one must follow them (8100 below reads no current_date).
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278300_kazakhstan_business_date.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278100_order_recovery_business_date.sql" >/dev/null
 # The transport status rule replaces the function of 2100, 2300 and 8100 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278200_transport_status_after_receipt.sql" >/dev/null
