@@ -11,7 +11,7 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   const linkedInvoices = refs.length === 1 ? invoices.filter(invoice => invoice.number === refs[0]) : [];
   const comparisons = current ? compareCommodities(items, currency, linkedInvoices, shipment) : [];
   const num = (n: number | null) => n === null ? "не прочитано" : n.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
-  return <div className="setup-notice">
+  return <div className="setup-notice" style={{ contain: "inline-size", minWidth: 0 }}>
     <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "Расчёт таможенных начислений"}</h4>
     <dl>{fields.map((field, index) => <div key={index}><dt>{field.label}</dt><dd><strong>{field.value}</strong></dd></div>)}</dl>
     {warnings.map((warning, index) => <p key={index}>{warning}</p>)}
