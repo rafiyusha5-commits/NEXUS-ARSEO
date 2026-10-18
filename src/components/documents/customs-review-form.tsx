@@ -11,7 +11,7 @@ export function CustomsReviewForm({ shipmentId, extractionId, versionId, record,
     <input type="hidden" name="expected_record" value={JSON.stringify(record)}/>
     <p>Подтверждается соответствие прочитанных реквизитов и товарных строк оригиналу декларации. Расхождения с заказом остаются в таблице. Количества поставки, склад, расходы и платежи не изменяются.</p>
     {reviewedAt && <p>Сверка сохранена: {new Date(reviewedAt).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" })} (Казахстан).</p>}
-    <label>Результат сверки декларации<textarea name="review_note" required minLength={10} maxLength={2000} defaultValue={typeof note === "string" ? note : ""} placeholder="Что сверено с оригиналом; какие расхождения с заказом остаются и почему"/></label>
+    <div className="doc-form"><label>Результат сверки декларации<textarea name="review_note" rows={5} required minLength={10} maxLength={2000} defaultValue={typeof note === "string" ? note : ""} placeholder="Что сверено с оригиналом; какие расхождения с заказом остаются и почему"/></label></div>
     <label className="check-label"><input type="checkbox" name="checked" required/> Реквизиты и все товарные строки сверены с оригиналом; оставшиеся расхождения описаны</label>
     <PendingSubmitButton className="primary compact" pendingText="Сохраняем сверку…">{reviewedAt ? "Сохранить уточнение сверки декларации" : "Подтвердить сверку декларации"}</PendingSubmitButton>
   </form>;
