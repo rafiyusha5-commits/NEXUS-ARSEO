@@ -121,15 +121,22 @@ export async function extractShipmentSources(
     if (!item.versionId) { summary.failed++; continue; }
     const conflicts = commonConflicts.filter(conflict => conflict.documents?.includes(item.documentId));
     const status = item.error ? "failed" : conflicts.length || item.result.data.customs_record ? "needs_review" : "extracted";
-    const { error } = await supabase.rpc("upsert_shipment_source_extraction", {
+    const { data: extractionId, error } = await supabase.rpc("upsert_shipment_source_extraction", {
       p_shipment_id: shipmentId, p_document_id: item.documentId, p_document_version_id: item.versionId,
       p_source_kind: item.sourceKind, p_status: status, p_extracted_data: item.result.data,
       p_field_evidence: item.result.evidence, p_conflicts: conflicts, p_error_message: item.error,
       p_extractor_version: EXTRACTION_VERSION,
     });
-    if (error) summary.failed++;
-    else if (status === "extracted") summary.ready++;
-    else if (status === "needs_review") summary.review++;
+    if (error || !extractionId) { summary.failed++; continue; }
+    // The RPC preserves manual confirmations and may retain an active OCR lease.
+    // Report the stored outcome, not the proposal we just parsed.
+    const { data: stored, error: storedError } = await supabase.from("shipment_source_extractions")
+      .select("status").eq("id", extractionId).single();
+    if (storedError || !stored) summary.failed++;
+    else if (stored.status === "confirmed") summary.reused++;
+    else if (stored.status === "pending") summary.processing++;
+    else if (stored.status === "extracted") summary.ready++;
+    else if (stored.status === "needs_review") summary.review++;
     else summary.failed++;
   }
 
