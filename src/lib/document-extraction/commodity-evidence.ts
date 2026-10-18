@@ -159,7 +159,17 @@ export function compareCommodities(items: CommodityLine[], currency: string | nu
         parts.push(`${label}: ${sum}${equal ? " — совпадает" : " — расхождение"}`);
         if (!equal) status = "different";
       }
-      if (positions.some(item => item.hsCode && item.hsCode !== line.hsCode)) { parts.push("ТН ВЭД отличается от карточки товара"); status = "different"; }
+      for (const code of new Set(positions.map(item => item.hsCode))) {
+        const card = code?.replace(/\s/gu, "") ?? "";
+        const declared = line.hsCode?.replace(/\s/gu, "") ?? "";
+        if (!/^\d{8}(?:\d{2})?$/u.test(card) || !/^\d{10}$/u.test(declared)) {
+          parts.push("ТН ВЭД: код отсутствует или требует проверки формата"); review();
+        } else if (card === declared) {
+          parts.push("ТН ВЭД: совпадает полностью");
+        } else if (card.length === 8 && declared.startsWith(card)) {
+          parts.push(`ТН ВЭД: первые 8 цифр совпадают (${card}); в ДТ ${declared}. В карточке нет 10-значного кода — нужна проверка детализации`); review();
+        } else { parts.push(`ТН ВЭД отличается: карточка ${card}, ДТ ${declared}`); status = "different"; }
+      }
       shipmentText = parts.join("; ");
     }
     return { line, invoice, shipment: shipmentText, invoiceMatched, orderedMatched, status };

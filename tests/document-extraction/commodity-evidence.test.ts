@@ -125,3 +125,21 @@ test("commodity evidence cannot become confirmed quantities or finance fields", 
   const safe=sanitizeConfirmedSourceData({commodity_invoice:invoice(),customs_record:parseCustomsForm(raw)});
   assert.deepEqual(safe,{});
 });
+
+test("8-digit classification prefix is incomplete evidence, not a conflict or full agreement", () => {
+  const positions = shipment(); positions[0].hsCode = "18069019";
+  const result = compare([invoice()], positions);
+  assert.equal(result.status, "review");
+  assert.match(result.shipment, /первые 8 цифр совпадают/);
+  assert.doesNotMatch(result.shipment, /ТН ВЭД отличается/);
+  positions[0].hsCode = "1806 9019 00";
+  assert.equal(compare([invoice()], positions).status, "matched");
+  for (const code of ["18063100", "1806901901"]) {
+    positions[0].hsCode = code;
+    assert.equal(compare([invoice()], positions).status, "different");
+  }
+  for (const code of [null, "", "1806", "18069019x0"]) {
+    positions[0].hsCode = code;
+    assert.equal(compare([invoice()], positions).status, "review");
+  }
+});
