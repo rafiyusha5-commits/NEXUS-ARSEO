@@ -1,7 +1,8 @@
 import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
 import { isCustomsForm, parseCustomsForm } from "./customs.ts";
+import { parseCommodityInvoice } from "./commodity-evidence.ts";
 
-export const EXTRACTION_VERSION = "rules-v4";
+export const EXTRACTION_VERSION = "rules-v5";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -252,6 +253,8 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
     }
     if (esf.items.length) data.invoice_items = esf.items;
   }
+  const commodityInvoice = kind === "invoice" ? parseCommodityInvoice(text) : null;
+  if (commodityInvoice) data.commodity_invoice = commodityInvoice;
   return { data, evidence, conflicts: [] };
 }
 

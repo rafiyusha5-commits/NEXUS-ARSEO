@@ -1,8 +1,13 @@
+import { parseDeclarationItems, type CommodityLine } from "./commodity-evidence.ts";
 // Read-only document evidence. These fields never enter shipment confirmation or finance actions.
 export type CustomsRecord = {
   kind: "declaration" | "assessment";
   fields: Array<{ label: string; value: string }>;
   warnings: string[];
+  items?: CommodityLine[];
+  currency?: string | null;
+  expectedCount?: number | null;
+  invoiceNumbers?: string[];
 };
 
 export function isCustomsForm(text: string) {
@@ -56,12 +61,26 @@ export function parseCustomsForm(raw: string): CustomsRecord | null {
     if (value !== null) put("Общая таможенная стоимость (гр. 12)", money(value));
     const invoice = header.match(/\b([A-Z]{3})\s*\|\s*(\d[\d ]*,\d{2})\s*\|\s*(\d[\d ]*,\d{2,3})\s*\|/u);
     if (invoice && /22 Валюта.*23\s+Курс валюты/u.test(header)) {
+      record.currency = invoice[1];
       put("Валюта счёта (гр. 22)", invoice[1]);
       const amount = customsAmount(invoice[2]), rate = customsAmount(invoice[3]);
       if (amount !== null) put("Сумма по счёту (гр. 22)", money(amount));
       if (rate !== null) put("Курс валюты (гр. 23)", money(rate));
     }
-    record.warnings.push("Распознаны общие реквизиты ДТ. Товарные строки и платежи по отдельным товарам автоматически не суммируются.");
+    const goods = parseDeclarationItems(raw);
+    record.items = goods.items;
+    record.invoiceNumbers = [...new Set([...raw.matchAll(/^\d+\s*\|\s*\d+\s*\|\s*04021\s*\|\s*([^|\n]+)\|/gmu)].map(match => match[1].trim()))];
+    record.expectedCount = goods.expectedCount;
+    record.warnings.push(...goods.warnings);
+    for (const [key, label, total] of [
+      ["amount", "Сумма цен товарных строк / графа 22", invoice ? customsAmount(invoice[2]) : null],
+      ["customsValue", "Сумма таможенных стоимостей / графа 12", value],
+    ] as const) {
+      const complete = goods.items.length > 0 && goods.items.length === goods.expectedCount && !goods.warnings.length && goods.items.every(item => item[key] !== null);
+      const sum = goods.items.reduce((acc, item) => acc + (item[key] ?? 0), 0);
+      put(label, complete && total !== null ? `${money(sum)} · ${Math.abs(sum - total) <= 0.011 ? "совпадает" : "РАСХОЖДЕНИЕ"}` : "Полнота сумм не подтверждена");
+    }
+    record.warnings.push("Товарные строки — результат чтения, требующий сверки. Начисления по отдельным товарам здесь не рассчитываются.");
   } else {
     put("Код таможенного органа", first.match(/Customs office:\s*\|?\s*(\d{5,8})/iu)?.[1]);
     const references = first.match(/(\d{2}\/\d{2}\/\d{4})\s+D\s+(\d+)[^\n]*?\|\s*(\d{2}\/\d{2}\/\d{4})\s+K\s+(\d+)/u);
