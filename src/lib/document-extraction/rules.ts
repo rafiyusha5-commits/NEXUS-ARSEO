@@ -1,6 +1,7 @@
 import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
+import { isCustomsForm, parseCustomsForm } from "./customs.ts";
 
-export const EXTRACTION_VERSION = "rules-v3";
+export const EXTRACTION_VERSION = "rules-v4";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -92,7 +93,7 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
   if (hintedKind !== "other") return hintedKind;
-  if (/ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ/iu.test(rawText)) return "other";
+  if (isCustomsForm(rawText)) return "other";
   if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
   if (/despatch\s+note|dispatch\s+note/iu.test(rawText)) return "specification";
   if (isElectronicInvoice(rawText)) return "invoice";
@@ -159,7 +160,8 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   const evidence: Record<string, ExtractionEvidence> = {};
   // A customs declaration needs a dedicated form parser: transport patterns
   // otherwise mistake numbered box headings and exporter names for facts.
-  if (/ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ/iu.test(text)) return { data, evidence, conflicts: [] };
+  const customs = parseCustomsForm(text);
+  if (customs) return { data: { customs_record: customs }, evidence, conflicts: [] };
   for (const pattern of patterns) {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);

@@ -118,7 +118,7 @@ export async function extractShipmentSources(
   for (const item of prepared) {
     if (!item.versionId) { summary.failed++; continue; }
     const conflicts = commonConflicts.filter(conflict => conflict.documents?.includes(item.documentId));
-    const status = item.error ? "failed" : conflicts.length ? "needs_review" : "extracted";
+    const status = item.error ? "failed" : conflicts.length || item.result.data.customs_record ? "needs_review" : "extracted";
     const { error } = await supabase.rpc("upsert_shipment_source_extraction", {
       p_shipment_id: shipmentId, p_document_id: item.documentId, p_document_version_id: item.versionId,
       p_source_kind: item.sourceKind, p_status: status, p_extracted_data: item.result.data,

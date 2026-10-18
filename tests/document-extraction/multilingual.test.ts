@@ -24,7 +24,10 @@ test("despatch note remains packing list and customs form cannot fabricate trans
   const text = "DESPATCH NOTE/ ORDER NR: WZ 12/11/2026EX\nINVOICE reference";
   assert.equal(detectShipmentSourceKind(text), "specification");
   assert.equal(extractShipmentFields(text).data.packing_list_number, "12/11/2026EX");
-  assert.deepEqual(extractShipmentFields("ДЕКЛАРАЦИЯ НА ТОВАРЫ\nВодитель: FAZER CONFECTIONARY LTD\nУсловия поставки\n16 Страна происхождения").data, {});
+  const customs = extractShipmentFields("ДЕКЛАРАЦИЯ НА ТОВАРЫ\nВодитель: FAZER CONFECTIONARY LTD\nУсловия поставки\n16 Страна происхождения").data;
+  assert.equal(customs.driver_name, undefined);
+  assert.equal(customs.incoterms, undefined);
+  assert.ok(customs.customs_record);
 });
 test("unread CMR number and ambiguous OCR characters are never guessed", () => {
   const r = proposeFromOcr({text:"MIEDZYNARODOWY SAMOCHODOWY\nINVOICE: 009/2026/2\nTOTAL: 20 Palet 1000 szt. 1 234,500\n",words:[],pageCount:1,confidence:0.93},"waybill");
