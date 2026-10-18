@@ -54,7 +54,7 @@ export function ShipmentOutcomeSections({ outcome, items }: { outcome: ShipmentO
     </section>}
 
     {outcome.documentCheck !== "hidden" && <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Агент «Сверка»</p><h2>Итог сверки документов</h2></div><span className="page-count">{outcome.documentCheck.findings.length}</span></div>
-      {outcome.documentCheck.findings.length === 0 ? <p className="empty-state">Замечаний по документам нет.</p> : <div className="report-list">{outcome.documentCheck.findings.map((finding, index) => <article key={index}><strong>{finding.severity === "error" ? "Ошибка" : "Предупреждение"}{finding.transport_no ? ` · автомобиль №${finding.transport_no}` : ""}</strong><span>{finding.message}</span>{finding.document_title && <small>{finding.document_title}</small>}</article>)}</div>}
+      {outcome.documentCheck.findings.length === 0 ? <p className="empty-state">В доступных проверенных данных замечаний нет. Это не подтверждение полноты комплекта или фактической приёмки. Непрочитанные поля и результаты OCR сверяются с оригиналами отдельно; закрытые поставки не проходят новую автоматическую сверку.</p> : <div className="report-list">{outcome.documentCheck.findings.map((finding, index) => <article key={index}><strong>{finding.severity === "error" ? "Ошибка" : "Предупреждение"}{finding.transport_no ? ` · автомобиль №${finding.transport_no}` : ""}</strong><span>{finding.message}</span>{finding.document_title && <small>{finding.document_title}</small>}</article>)}</div>}
     </section>}
   </>;
 }

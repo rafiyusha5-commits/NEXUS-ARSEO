@@ -30,7 +30,7 @@ export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipm
     {notice?.kind === "success" && <div className="login-success admin-message" role="status">{notice.message}</div>}
     <p className="form-help">Сверяет документы с карточкой поставки: госномера, вес и паллеты (допуск по весу — 2 % или 50 кг, что больше), номера договора и инвойса, обязательные документы по поставке и каждому автомобилю, сроки действия до планового прибытия. Проверка идёт после каждого распознавания и раз в день; о новых проблемах приходят уведомления в Nexus. Агент ничего не исправляет сам.</p>
     {error && <div className="setup-notice">Проверка недоступна. Если модуль ещё не подключён, примените миграцию <strong>202609276400_document_check_agent.sql</strong>.</div>}
-    {!error && !check.findings.length && <div className="doc-check-ok">Документы совпадают с карточкой поставки, обязательные документы на месте.</div>}
+    {!error && !check.findings.length && <div className="setup-notice">В доступных проверенных данных расхождений не найдено. Это не подтверждение полной проверки комплекта: непрочитанные поля и неподтверждённые результаты OCR нужно сверить с оригиналами в блоке «Результаты распознавания».</div>}
     {groups.map((group) => <div className="doc-check-group" key={group.title}><h3>{group.title}</h3><ul className="doc-check-list">{group.items.map((finding) => {
       const values = describeValues(finding);
       return <li className={`doc-check-item doc-check-item-${finding.severity}`} key={finding.key}>

@@ -42,7 +42,7 @@ export type ShipmentReport = {
   missingDocuments: MissingRequiredDocument<ReportRequirement>[];
   tasks: ReportTask[];
   canViewPrices: boolean;
-  totals: { ordered: number; confirmed: number; shipped: number; accepted: number; batches: number; movements: number; hasReceipt: boolean; reconciled: boolean };
+  totals: { ordered: number; confirmed: number | null; shipped: number | null; accepted: number; batches: number; movements: number; hasReceipt: boolean; reconciled: boolean };
 };
 
 export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: string, grantedPermissions: ReadonlySet<string>): Promise<ShipmentReport | null> {
@@ -91,8 +91,8 @@ export async function loadShipmentReport(supabase: SupabaseClient, shipmentId: s
   });
   const totals = {
     ordered: items.reduce((sum, item) => sum + Number(item.ordered_quantity ?? 0), 0),
-    confirmed: items.reduce((sum, item) => sum + Number(item.confirmed_quantity ?? item.ordered_quantity ?? 0), 0),
-    shipped: items.reduce((sum, item) => sum + Number(item.shipped_quantity ?? item.confirmed_quantity ?? item.ordered_quantity ?? 0), 0),
+    confirmed: items.some(item => item.confirmed_quantity == null) ? null : items.reduce((sum, item) => sum + Number(item.confirmed_quantity), 0),
+    shipped: items.some(item => item.shipped_quantity == null) ? null : items.reduce((sum, item) => sum + Number(item.shipped_quantity), 0),
     accepted: items.reduce((sum, item) => sum + item.accepted, 0),
     batches: items.reduce((sum, item) => sum + item.batchQuantity, 0),
     movements: receiptItems.reduce((sum, entry) => sum + Number(one(entry.movement)?.quantity ?? 0), 0),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  defaultQuantityTarget, documentUnit, itemsInDocumentScope, parseQuantityLines, proposeDocumentQuantities,
+  analyseDocumentQuantities, defaultQuantityTarget, documentUnit, itemsInDocumentScope, parseQuantityLines, proposeDocumentQuantities,
 } from "../../src/lib/shipments/document-quantities.ts";
 
 const item = (id: string, uom: string, product: Record<string, unknown>, transport: string | null = null) =>
@@ -19,7 +19,7 @@ describe("quantities from source documents", () => {
     assert.equal(documentUnit(""), null);
   });
 
-  it("matches lines by full name, SKU in the line and a unique HS code", () => {
+  it("matches full names and exact SKU tokens without using HS codes as identity", () => {
     const items = [
       item("i1", "piece", { internal_sku: "FAZ-001", name: { ru: "Шоколад молочный 100 г", en: "Milk chocolate 100 g" }, hs_code: "1806321000" }),
       item("i2", "piece", { internal_sku: "FRO-014", name: { ru: "Смузи манго" }, hs_code: "2009899700" }),
@@ -28,14 +28,64 @@ describe("quantities from source documents", () => {
     const lines = [
       { line_number: 1, product_name: "MILK CHOCOLATE 100G", hs_code: "1806321000", uom: "pcs", quantity: 960 },
       { line_number: 2, product_name: "Smoothie mango FRO-014 250ml", hs_code: "2009899700", uom: "шт", quantity: 480 },
-      { line_number: 3, product_name: "Biscuits", hs_code: "1905 31 91 00", uom: "Коробка", quantity: 40 },
     ];
     const proposals = proposeDocumentQuantities(items, lines);
     assert.deepEqual(proposals.map(p => [p.itemId, p.quantity, p.matchedBy, p.unitMismatch]), [
       ["i1", 960, "name", false],
       ["i2", 480, "sku", false],
-      ["i3", 40, "hs_code", false],
+      ["i3", null, null, false],
     ]);
+  });
+
+  it("rejects partial SKU matches and punctuation removal", () => {
+    const items = [item("a", "piece", {internal_sku:"ABC-12"})];
+    for (const product_name of ["ABC-123", "ABC12", "XABC-12", "ABC-12/3"]) {
+      const result=analyseDocumentQuantities(items,[{product_name,uom:"pcs",quantity:10}]);
+      assert.equal(result.proposals[0].quantity,null,product_name);
+      assert.equal(result.warnings.length,1);
+    }
+    assert.equal(proposeDocumentQuantities(items,[{product_name:"Chocolate (abc-12)",uom:"pcs",quantity:10}])[0].quantity,10);
+  });
+
+  it("does not accept a name conflicting with an explicit SKU", () => {
+    const items=[item("a","piece",{internal_sku:"A",name:{en:"Chocolate"}}),item("b","piece",{internal_sku:"B",name:{en:"Candy"}})];
+    const result=analyseDocumentQuantities(items,[{sku:"B",product_name:"Chocolate",uom:"pcs",quantity:10}]);
+    assert.deepEqual(result.proposals.map(p=>p.quantity),[null,null]);
+    assert.equal(result.warnings.length,1);
+    assert.equal(proposeDocumentQuantities(items,[{sku:"UNKNOWN",product_name:"Chocolate",uom:"pcs",quantity:10}])[0].quantity,null);
+  });
+
+  it("uses an exact SKU to disambiguate shared names", () => {
+    const items=[item("a","piece",{internal_sku:"A",name:{en:"Chocolate"}}),item("b","piece",{internal_sku:"B",name:{en:"Chocolate"}})];
+    // A shared name is not contrary evidence, whereas a unique other product name is.
+    const result=proposeDocumentQuantities(items,[{sku:"B",product_name:"Chocolate",uom:"pcs",quantity:10}]);
+    assert.equal(result[1].quantity,10);
+  });
+
+  it("does not silently take just one of multiple rows or lots", () => {
+    const items=[item("a","piece",{internal_sku:"A-1",name:{en:"Chocolate"}})];
+    const result=analyseDocumentQuantities(items,[{product_name:"Chocolate",uom:"pcs",quantity:10},{product_name:"A-1",uom:"pcs",quantity:20}]);
+    assert.equal(result.proposals[0].quantity,null);
+    assert.match(result.warnings.join(" "),/несколько строк/);
+  });
+
+  it("surfaces unmatched and unread rows instead of a partially complete document", () => {
+    const items=[item("a","piece",{internal_sku:"A-1"})];
+    for (const second of [{sku:"UNKNOWN",uom:"pcs",quantity:20},{sku:"A-1",uom:"pcs"}]) {
+      const result=analyseDocumentQuantities(items,[{sku:"A-1",uom:"pcs",quantity:10},second]);
+      assert.equal(result.proposals[0].quantity,null);
+      assert.equal(result.warnings.length,1);
+    }
+  });
+
+  it("never matches by a unique HS code alone", () => {
+    const result=analyseDocumentQuantities([item("a","piece",{internal_sku:"A-1",hs_code:"1806321000"})],[{product_name:"Other",hs_code:"1806321000",uom:"pcs",quantity:10}]);
+    assert.equal(result.proposals[0].quantity,null);
+    assert.equal(result.warnings.length,1);
+  });
+
+  it("treats a conflicting HS code as additional contrary evidence", () => {
+    assert.equal(proposeDocumentQuantities([item("a","piece",{internal_sku:"A-1",hs_code:"1806321000"})],[{sku:"A-1",hs_code:"9999999999",uom:"pcs",quantity:10}])[0].quantity,null);
   });
 
   it("never converts another unit and never guesses between equal candidates", () => {

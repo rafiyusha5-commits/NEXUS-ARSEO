@@ -84,7 +84,7 @@ describe("labels are never values", () => {
   it("exposes the helpers it relies on", () => {
     assert.equal(cleanFieldValue("vehicle_plate", "Марка авто"), "");
     assert.equal(cleanFieldValue("vehicle_plate", "754BA04 Марка авто"), "754BA04");
-    assert.equal(cleanFieldValue("contract_number", "Марка авто"), "Марка авто", "other fields are not touched");
+    assert.equal(cleanFieldValue("contract_number", "Марка авто"), "", "a printed label is not a document number");
     assert.equal(looksPlausible("vehicle_plate", "754 BA 04"), true);
     assert.equal(looksPlausible("vehicle_plate", "A123BC77"), true);
     assert.equal(looksPlausible("vehicle_plate", "Марка"), false);
