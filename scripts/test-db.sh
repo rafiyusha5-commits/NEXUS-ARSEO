@@ -182,6 +182,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278200_transport_status_after_receipt.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279100_reviewed_customs_costing.sql"
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279200_source_evidence_integrity.sql" >/dev/null
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -189,6 +191,9 @@ done
 
 echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
+
+echo "test: current document evidence under concurrent source edits"
+node "$ROOT/scripts/test-source-integrity-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: order fulfillment under concurrency (duplicates and cancellation)"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null

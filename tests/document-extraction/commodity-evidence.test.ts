@@ -104,13 +104,15 @@ test("split shipment quantities aggregate; original order discrepancy is retaine
 });
 test("only current accessible document version with active shipment/vehicle link is eligible", () => {
   const source={status:"extracted",document_version_id:"v1"};
-  const doc={status:"approved",archived_at:null,versions:[{id:"v1",is_current:true}],links:[{entity_type:"shipment",entity_id:"s1",removed_at:null}]};
+  const doc={status:"approved",archived_at:null,current_version:1,versions:[{id:"v1",is_current:true,version_number:1}],links:[{entity_type:"shipment",entity_id:"s1",removed_at:null}]};
   assert.equal(currentCommoditySource(source,doc,"s1",[]),true);
+  assert.equal(currentCommoditySource(source,{...doc,current_version:2},"s1",[]),false);
+  assert.equal(currentCommoditySource({...source,shipment_transport_id:"cancelled"},doc,"s1",[]),false);
   assert.equal(currentCommoditySource(source,null,"s1",[]),false);
   assert.equal(currentCommoditySource({...source,status:"failed"},doc,"s1",[]),false);
   assert.equal(currentCommoditySource(source,{...doc,status:"rejected"},"s1",[]),false);
   assert.equal(currentCommoditySource(source,{...doc,archived_at:"date"},"s1",[]),false);
-  assert.equal(currentCommoditySource(source,{...doc,versions:[{id:"v2",is_current:true}]},"s1",[]),false);
+  assert.equal(currentCommoditySource(source,{...doc,versions:[{id:"v2",is_current:true,version_number:2}]},"s1",[]),false);
   assert.equal(currentCommoditySource(source,{...doc,links:[{...doc.links[0],removed_at:"date"}]},"s1",[]),false);
   const vehicle={...doc,links:[{...doc.links[0],entity_type:"shipment_transport",entity_id:"t1"}]};
   assert.equal(currentCommoditySource(source,vehicle,"s1",["t1"]),true);

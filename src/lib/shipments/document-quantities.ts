@@ -3,7 +3,7 @@ import { normalizeProductName } from "../document-extraction/esf.ts";
 // Quantities of a shipment taken from a confirmed invoice, packing list or waybill. The recognised lines only
 // propose values: the employee checks every quantity against the original before it is written.
 
-export type DocumentLine = { line_number?: number; product_name?: string; hs_code?: string; uom?: string; quantity?: number };
+export type DocumentLine = { line_number?: number; product_name?: string; sku?: string; hs_code?: string; uom?: string; quantity?: number };
 export type QuantityItem = {
   id: string;
   uom: string;
@@ -15,7 +15,8 @@ export type QuantityProposal = {
   /** Proposed value in the unit of the shipment item; null when the employee has to enter it. */
   quantity: number | null;
   line: DocumentLine | null;
-  matchedBy: "name" | "sku" | "hs_code" | null;
+  matchedBy: "name" | "sku" | null;
+  review: string | null;
   /** The matched line is in another unit: shown as a hint, never converted silently. */
   unitMismatch: boolean;
 };
@@ -46,55 +47,60 @@ function productNames(name: unknown) {
   return Object.values(name as Record<string, unknown>).filter((value): value is string => typeof value === "string" && value.trim() !== "");
 }
 
-/**
- * Matches document lines to shipment items: by the full product name, then by the internal SKU written in the
- * line, then by an HS code that only one item and one line share. A line is used for one item at most and an
- * ambiguous match proposes nothing.
- */
+/** Exact identifiers keep punctuation: ABC-12 is not ABC-123 or ABC12. */
+const identifier = (value: string) => value.normalize("NFKC").trim().toLocaleUpperCase("en-US");
+const tokens = (value: string): string[] => identifier(value).match(/[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)*/gu) ?? [];
+
+/** Analyse the whole document before proposing anything. A commodity code is never an identity. */
+export function analyseDocumentQuantities(items: readonly QuantityItem[], lines: readonly DocumentLine[]) {
+  const claims = new Map<string, Array<{ line: DocumentLine; by: "sku" | "name" }>>();
+  const warnings: string[] = [];
+  for (const [index, line] of lines.entries()) {
+    const label = `Строка ${line.line_number ?? index + 1}`;
+    const explicitSku = identifier(line.sku ?? "");
+    const words = tokens(line.product_name ?? "");
+    const bySku = items.filter(item => {
+      const sku = identifier(item.product?.internal_sku ?? "");
+      return sku && (explicitSku ? explicitSku === sku : words.includes(sku));
+    });
+    const name = normalizeProductName(line.product_name ?? "");
+    const byName = name ? items.filter(item => productNames(item.product?.name).some(n => normalizeProductName(n) === name)) : [];
+    const candidates = explicitSku || bySku.length ? bySku : byName;
+    if (candidates.length !== 1 || (bySku.length && byName.length > 0 && !byName.some(item => item.id === bySku[0].id))) {
+      warnings.push(`${label}: товар не определён однозначно; проверьте артикул и наименование.`);
+      continue;
+    }
+    const item = candidates[0];
+    const expectedHs = (item.product?.hs_code ?? "").replace(/\D/g, "");
+    const actualHs = (line.hs_code ?? "").replace(/\D/g, "");
+    if (expectedHs && actualHs && expectedHs !== actualHs) {
+      warnings.push(`${label}: код ТН ВЭД противоречит найденному товару.`); continue;
+    }
+    if (typeof line.quantity !== "number" || !Number.isFinite(line.quantity) || line.quantity < 0) {
+      warnings.push(`${label}: количество не прочитано.`); continue;
+    }
+    const rows = claims.get(item.id) ?? [];
+    rows.push({ line, by: bySku.length ? "sku" : "name" });
+    claims.set(item.id, rows);
+  }
+  for (const item of items) {
+    if ((claims.get(item.id)?.length ?? 0) > 1) warnings.push(`Товар ${item.product?.internal_sku ?? item.id}: несколько строк; проверьте партии и полное количество по оригиналу.`);
+  }
+  const proposals: QuantityProposal[] = items.map(item => {
+    const rows = claims.get(item.id) ?? [];
+    const match = rows.length === 1 ? rows[0] : null;
+    const unitMismatch = Boolean(match && documentUnit(match.line.uom) !== item.uom);
+    const review = warnings.length ? "Есть несопоставленные или неоднозначные строки: автоматическая подстановка отключена для всего документа."
+      : unitMismatch ? "Единица отличается или не распознана: требуется ручная сверка."
+      : !match ? "Строка товара не найдена: введите количество только после сверки." : null;
+    return { itemId: item.id, quantity: match && !review ? match.line.quantity! : null,
+      line: match?.line ?? null, matchedBy: match?.by ?? null, unitMismatch, review };
+  });
+  return { proposals, warnings };
+}
+
 export function proposeDocumentQuantities(items: readonly QuantityItem[], lines: readonly DocumentLine[]): QuantityProposal[] {
-  const usable = lines.filter(line => typeof line.quantity === "number" && Number.isFinite(line.quantity) && line.quantity >= 0);
-  const matches = new Map<string, { line: DocumentLine; by: QuantityProposal["matchedBy"] }>();
-  const usedLines = new Set<DocumentLine>();
-
-  const assign = (by: NonNullable<QuantityProposal["matchedBy"]>, candidates: (item: QuantityItem) => DocumentLine[]) => {
-    const found = new Map<string, DocumentLine>();
-    const claims = new Map<DocumentLine, number>();
-    for (const item of items) {
-      if (matches.has(item.id)) continue;
-      const lineCandidates = candidates(item).filter(line => !usedLines.has(line));
-      if (lineCandidates.length !== 1) continue;
-      found.set(item.id, lineCandidates[0]);
-      claims.set(lineCandidates[0], (claims.get(lineCandidates[0]) ?? 0) + 1);
-    }
-    for (const [itemId, line] of found) {
-      if (claims.get(line) !== 1) continue;
-      matches.set(itemId, { line, by });
-      usedLines.add(line);
-    }
-  };
-
-  assign("name", item => {
-    const names = new Set(productNames(item.product?.name).map(normalizeProductName).filter(Boolean));
-    return usable.filter(line => names.has(normalizeProductName(line.product_name ?? "")));
-  });
-  assign("sku", item => {
-    const sku = normalizeProductName(item.product?.internal_sku ?? "");
-    return sku.length >= 3 ? usable.filter(line => normalizeProductName(line.product_name ?? "").includes(sku)) : [];
-  });
-  assign("hs_code", item => {
-    const hs = (item.product?.hs_code ?? "").replace(/\D/g, "");
-    if (hs.length < 6) return [];
-    const sameCode = items.filter(other => (other.product?.hs_code ?? "").replace(/\D/g, "") === hs);
-    return sameCode.length === 1 ? usable.filter(line => (line.hs_code ?? "").replace(/\D/g, "") === hs) : [];
-  });
-
-  return items.map(item => {
-    const match = matches.get(item.id);
-    if (!match) return { itemId: item.id, quantity: null, line: null, matchedBy: null, unitMismatch: false };
-    const unit = documentUnit(match.line.uom);
-    const sameUnit = unit === item.uom;
-    return { itemId: item.id, quantity: sameUnit ? Number(match.line.quantity) : null, line: match.line, matchedBy: match.by, unitMismatch: !sameUnit };
-  });
+  return analyseDocumentQuantities(items, lines).proposals;
 }
 
 /** Items a document may speak about: all of the shipment, or the cargo of the vehicle it belongs to. */

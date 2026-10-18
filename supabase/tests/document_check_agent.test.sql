@@ -336,6 +336,7 @@ end $$;
 reset role;
 set session_replication_role=replica;
 -- d3 (invoice with mismatching numbers) gets a new current version that is not recognised yet.
+update public.documents set current_version=2 where id='dc400000-0000-4000-8000-000000000003';
 update public.document_versions set is_current=false where document_id='dc400000-0000-4000-8000-000000000003';
 insert into public.document_versions(id,document_id,version_number,storage_path,original_filename,mime_type,file_size_bytes,is_current,uploaded_by)
 values('dc410003-0000-4000-8000-000000000002','dc400000-0000-4000-8000-000000000003',2,

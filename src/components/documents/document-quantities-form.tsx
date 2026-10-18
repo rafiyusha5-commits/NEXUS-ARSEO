@@ -1,7 +1,7 @@
 import { applyDocumentQuantitiesAction } from "@/app/shipments/source-document-actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import {
-  defaultQuantityTarget, itemsInDocumentScope, proposeDocumentQuantities,
+  defaultQuantityTarget, itemsInDocumentScope, analyseDocumentQuantities,
   type DocumentLine, type QuantityItem,
 } from "@/lib/shipments/document-quantities";
 
@@ -24,7 +24,8 @@ export function DocumentQuantitiesForm({ shipmentId, extractionId, sourceKind, t
   items: QuantityFormItem[]; lines: DocumentLine[]; history: QuantityHistoryRow[]; canApply: boolean;
 }) {
   const scoped = itemsInDocumentScope(items, transportId);
-  const proposals = new Map(proposeDocumentQuantities(scoped, lines).map(proposal => [proposal.itemId, proposal]));
+  const analysis = analyseDocumentQuantities(scoped, lines);
+  const proposals = new Map(analysis.proposals.map(proposal => [proposal.itemId, proposal]));
   const written = history.filter(row => row.extraction_id === extractionId);
   const target = defaultQuantityTarget(sourceKind);
   if (!scoped.length) return <p className="form-help">В поставке нет позиций{transportId ? " этого автомобиля" : ""}: количества по документу записывать некуда.</p>;
@@ -33,18 +34,19 @@ export function DocumentQuantitiesForm({ shipmentId, extractionId, sourceKind, t
     <input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="extraction_id" value={extractionId}/>
     <p className="eyebrow">Шаг 3 · Количества по документу</p>
     <p className="form-help">Сверьте количество каждой позиции с оригиналом документа. {lines.length ? "Значения, найденные в строках документа, подставлены; строки в другой единице показаны подсказкой и не пересчитываются. " : "Строки товаров в документе не распознаны: введите количества вручную. "}Пустые поля не меняются. Отчёт, приёмка, себестоимость и «Сверка» используют записанные количества вместо заказанных.</p>
+    {analysis.warnings.length > 0 && <div className="login-error" role="status"><strong>Нужна ручная сверка всего документа.</strong><ul>{analysis.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
     <div className="table-wrap"><table className="data-table"><thead><tr><th>Товар</th><th>Заказано</th><th>Подтверждено</th><th>Отгружено</th><th>По документу</th></tr></thead><tbody>
       {scoped.map(item => {
         const proposal = proposals.get(item.id);
         const product = one(item.product);
         const unit = units[item.uom] ?? item.uom;
-        const current = target === "confirmed" ? item.confirmed_quantity : item.shipped_quantity;
         return <tr key={item.id}>
           <td><strong>{product?.internal_sku}</strong> {localName(product?.name)}</td>
           <td>{number(item.ordered_quantity)} {unit}</td>
           <td>{number(item.confirmed_quantity)}</td>
           <td>{number(item.shipped_quantity)}</td>
-          <td><label className="document-quantity-input"><input aria-label={`Количество по документу, ${unit}: ${product?.internal_sku ?? ""}`} name={`qty_${item.id}`} inputMode="decimal" pattern="[0-9 ]*([.,][0-9]{1,3})?" defaultValue={proposal?.quantity ?? (current ?? "") as string | number} placeholder={`заказано ${number(item.ordered_quantity)}`}/> {unit}</label>
+          <td><label className="document-quantity-input"><input aria-label={`Количество по документу, ${unit}: ${product?.internal_sku ?? ""}`} name={`qty_${item.id}`} inputMode="decimal" pattern="[0-9 ]*([.,][0-9]{1,3})?" defaultValue={proposal?.quantity ?? ""} placeholder={`заказано ${number(item.ordered_quantity)}`}/> {unit}</label>
+            {proposal?.review && <small>{proposal.review}</small>}
             {proposal?.line && <small>{proposal.unitMismatch ? `В документе: ${number(proposal.line.quantity)} ${proposal.line.uom ?? ""} — другая единица, введите в «${unit}»` : `Строка ${proposal.line.line_number ?? ""} документа, найдена ${matchLabel[proposal.matchedBy ?? ""] ?? ""}`}</small>}
           </td>
         </tr>;

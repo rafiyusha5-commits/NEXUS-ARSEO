@@ -115,14 +115,15 @@ export function isCommodityInvoice(value: unknown): value is CommodityInvoice {
     && (v.total === null || typeof v.total === "number" && Number.isFinite(v.total))
     && Array.isArray(v.items) && v.items.every(isCommodityLine) && Array.isArray(v.warnings) && v.warnings.every(w => typeof w === "string");
 }
-export function currentCommoditySource(source: { status: string; document_version_id: string }, document: {
-  archived_at: string | null; status: string; versions: Array<{ id: string; is_current: boolean }>;
+export function currentCommoditySource(source: { status: string; document_version_id: string; shipment_transport_id?: string | null }, document: {
+  archived_at: string | null; status: string; current_version: number; versions: Array<{ id: string; is_current: boolean; version_number: number }>;
   links: Array<{ entity_type: string; entity_id: string; removed_at: string | null }>;
 } | null | undefined, shipmentId: string, transportIds: string[]) {
   return Boolean(document && !document.archived_at && document.status !== "rejected"
+    && (!source.shipment_transport_id || transportIds.includes(source.shipment_transport_id))
     && ["extracted", "needs_review", "confirmed"].includes(source.status)
     && document.versions?.filter(v => v.is_current).length === 1
-    && document.versions.some(v => v.is_current && v.id === source.document_version_id)
+    && document.versions.some(v => v.is_current && v.id === source.document_version_id && v.version_number === document.current_version)
     && document.links?.some(link => !link.removed_at && (link.entity_type === "shipment" && link.entity_id === shipmentId || link.entity_type === "shipment_transport" && transportIds.includes(link.entity_id))));
 }
 export type CommodityComparison = { line: CommodityLine; invoice: string; shipment: string; invoiceMatched: boolean; orderedMatched: boolean; status: "matched" | "different" | "review" };
