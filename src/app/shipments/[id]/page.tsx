@@ -26,7 +26,7 @@ import {
 
 const shipmentStatus:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 const stageStatus:Record<string,string>={pending:"Ожидает",in_progress:"В работе",blocked:"Заблокирован",completed:"Завершён",skipped:"Пропущен",not_applicable:"Не требуется"};
-const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"Налог",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
+const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"НДС",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const v=value as Record<string,unknown>;return String(v.ru??v.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—":value.toLocaleString("ru-RU",{maximumFractionDigits});
