@@ -1,6 +1,6 @@
 import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
 
-export const EXTRACTION_VERSION = "rules-v2";
+export const EXTRACTION_VERSION = "rules-v3";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -91,6 +91,10 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 }
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
+  if (hintedKind !== "other") return hintedKind;
+  if (/ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ/iu.test(rawText)) return "other";
+  if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
+  if (/despatch\s+note|dispatch\s+note/iu.test(rawText)) return "specification";
   if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
@@ -125,6 +129,7 @@ const LABEL_INSIDE = new RegExp(`(?<![\p{L}\p{N}])(?:${LABEL_WORDS})`, "iu");
 const LABEL_SENSITIVE = new Set(["driver_name", "driver_document", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "seals", "carrier_name"]);
 
 export function cleanFieldValue(field: string, value: string) {
+  if (field.endsWith("_number") && !/\d/u.test(value)) return "";
   if (!LABEL_SENSITIVE.has(field)) return value;
   if (LABEL_AT_START.test(value)) return "";
   const inside = LABEL_INSIDE.exec(value);
@@ -143,6 +148,7 @@ export function looksPlausible(field: string, value: string) {
 export type ExtractOptions = {
   /** The text comes from the OCR service, which may prepend its own marker lines (see NEXUS_DOCUMENT_NUMBER). */
   fromOcr?: boolean;
+  hintedKind?: string;
 };
 
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
@@ -151,6 +157,9 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   const text = rawText.replace(/\r/g, "\n").replace(/[\t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n");
   const data: Record<string, unknown> = {};
   const evidence: Record<string, ExtractionEvidence> = {};
+  // A customs declaration needs a dedicated form parser: transport patterns
+  // otherwise mistake numbered box headings and exporter names for facts.
+  if (/ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ/iu.test(text)) return { data, evidence, conflicts: [] };
   for (const pattern of patterns) {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);
@@ -203,6 +212,34 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
       break;
     }
   }
+  const add = (field: string, value: string | undefined, confidence = 0.85) => {
+    if (!value) return;
+    const cleaned = cleanFieldValue(field, clean(value));
+    if (!cleaned) return;
+    const definition = SOURCE_FIELD_DEFINITIONS.find(item => item.key === field);
+    if (!definition) return;
+    const parsed = definition.type === "number" ? Number(cleaned.replace(/\s/g, "").replace(",", ".")) : cleaned;
+    if (typeof parsed === "number" && !Number.isFinite(parsed)) return;
+    data[field] = parsed;
+    evidence[field] = { label: definition.label, value: cleaned, confidence };
+  };
+  add("invoice_number", text.match(/\bINVOICE[ \t]+(?:NO\.?|NUMBER)\)?[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9/_.-]*\d[A-Z0-9/_.-]*)/iu)?.[1]);
+  add("invoice_date", text.match(/\bINVOICE[ \t]+DATE\)?[ \t]*:?[ \t]*(\d{4}-\d{2}-\d{2})/iu)?.[1]);
+  const kind = detectShipmentSourceKind(text, options.hintedKind);
+  if (kind === "waybill") {
+    add("cmr_number", text.match(/\bCMR\s*[)\]:№#-]*\s*(\d[A-Z0-9/_.-]*)/iu)?.[1]);
+    add("pallet_count", text.match(/\bTOTAL\s*:\s*(\d+)\s*(?:Palet|Pallets?)\b/iu)?.[1]);
+    const plates = text.match(/\b([A-Z]{2,3}\d{3,5}[A-Z]{0,2})\s*\/\s*([A-Z]{2,3}\d{3,5}[A-Z]{0,2})\b/iu);
+    add("vehicle_plate", plates?.[1]?.toUpperCase(), 0.65);
+    add("trailer_plate", plates?.[2]?.toUpperCase(), 0.65);
+    // CMR total: pallet count, pieces, then gross kilograms. Require all columns.
+    add("gross_weight_kg", text.match(/\bTOTAL\s*:\s*\d+\s*Palet\s+\d+\s+szt\.?\s+(\d[\d ]*[,.]\d{3})(?:\s*\n|$)/iu)?.[1], 0.75);
+  }
+  if (kind === "specification") {
+    add("packing_list_number", text.match(/\bWZ[ \t]*[:#]?[ \t]*(\d[\d/A-Z.-]+)/iu)?.[1]);
+  }
+  add("gross_weight_kg", text.match(/\b(?:total\s+)?gross\s+weight(?:\s*\(?kg\)?)?\s*[:=]\s*(\d[\d .,]*)/iu)?.[1]);
+  add("net_weight_kg", text.match(/\b(?:total\s+)?net\s+weight(?:\s*\(?kg\)?)?\s*[:=]\s*(\d[\d .,]*)/iu)?.[1]);
   if (isElectronicInvoice(text)) {
     // The electronic invoice is a fixed form: its boxes are more reliable than free-text patterns.
     const esf = parseElectronicInvoice(text);

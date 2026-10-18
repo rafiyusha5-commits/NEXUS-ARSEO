@@ -12,6 +12,8 @@ import { extractDocumentText } from "./text";
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
 
 function sourceKind(code: string) {
+  if (code === "cmr" || code === "ttn") return "waybill";
+  if (code === "packing_list") return "specification";
   if (["invoice", "specification", "waybill", "transport_order", "vehicle_document", "driver_document"].includes(code)) return code;
   if (["supplier_contract", "customer_contract"].includes(code)) return "contract";
   return "other";
@@ -73,7 +75,7 @@ export async function extractShipmentSources(
       const bytes = new Uint8Array(await file.arrayBuffer());
       try {
         const rawText = await extractDocumentText(bytes, version.mime_type);
-        const result = extractShipmentFields(rawText);
+        const result = extractShipmentFields(rawText, { hintedKind: sourceKind(code) });
         prepared.push({ documentId: document.id, versionId: version.id, sourceKind: detectShipmentSourceKind(rawText, sourceKind(code)), result, error: Object.keys(result.data).length ? null : "Реквизиты не распознаны автоматически" });
       } catch (error) {
         if (!(error instanceof NeedsOcrError)) throw error;

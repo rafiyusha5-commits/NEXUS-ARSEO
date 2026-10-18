@@ -39,7 +39,7 @@ export type OcrProposal = {
 };
 
 export function proposeFromOcr(ocr: OcrResult, hintedKind: string): OcrProposal {
-  const result = extractShipmentFields(ocr.text, { fromOcr: true });
+  const result = extractShipmentFields(ocr.text, { fromOcr: true, hintedKind });
   const sourceKind = detectShipmentSourceKind(ocr.text, hintedKind);
   const documentConfidence = ocr.confidence;
   const lowConfidence: string[] = [];
@@ -53,6 +53,7 @@ export function proposeFromOcr(ocr: OcrResult, hintedKind: string): OcrProposal 
   if (!Object.keys(result.data).length) {
     return { sourceKind, result, status: "failed", lowConfidence, confidence: documentConfidence, error: "Текст прочитан, но реквизиты не найдены: проверьте качество скана или введите данные вручную" };
   }
-  const uncertain = lowConfidence.length > 0 || (documentConfidence !== null && documentConfidence < LOW_CONFIDENCE);
-  return { sourceKind, result, status: uncertain ? "needs_review" : "extracted", lowConfidence, confidence: documentConfidence, error: null };
+  const missingCmrNumber = sourceKind === "waybill" && /cmr|samochodowy/iu.test(ocr.text) && !result.data.cmr_number;
+  const uncertain = missingCmrNumber || lowConfidence.length > 0 || (documentConfidence !== null && documentConfidence < LOW_CONFIDENCE);
+  return { sourceKind, result, status: uncertain ? "needs_review" : "extracted", lowConfidence, confidence: documentConfidence, error: missingCmrNumber ? "Номер CMR не прочитан. Сверьте номер и остальные реквизиты с оригиналом." : null };
 }
