@@ -184,6 +184,7 @@ echo "re-applying document migrations (idempotency check)"
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279200_source_evidence_integrity.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279300_confirmed_invoice_evidence_refresh.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279400_customs_evidence_review.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

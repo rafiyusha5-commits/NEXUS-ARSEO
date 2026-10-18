@@ -75,6 +75,29 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }
 
+// Acknowledge the exact declaration shown on the page. No editable quantities or finance values.
+export async function confirmShipmentCustomsAction(formData: FormData) {
+  const shipmentId = value(formData, "shipment_id");
+  const extractionId = value(formData, "extraction_id");
+  const versionId = value(formData, "document_version_id");
+  if (![shipmentId, extractionId, versionId].every(id => UUID.test(id))) redirect("/shipments?error=Некорректные данные");
+  if (value(formData, "checked") !== "on") redirect(back(shipmentId, "error", "Подтвердите сверку с оригиналом декларации"));
+  const note = value(formData, "review_note");
+  if (note.length < 10 || note.length > 2000) redirect(back(shipmentId, "error", "Опишите результат сверки (10–2000 символов)"));
+  let record: unknown;
+  try { record = JSON.parse(value(formData, "expected_record")); }
+  catch { redirect(back(shipmentId, "error", "Данные страницы устарели. Обновите страницу")); }
+  const { supabase } = await requireUser();
+  const { error } = await supabase.rpc("review_shipment_customs_evidence", {
+    p_shipment_id: shipmentId, p_extraction_id: extractionId, p_document_version_id: versionId,
+    p_expected_record: record, p_review_note: note,
+  });
+  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось сохранить сверку декларации.")));
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back(shipmentId, "success", "Сверка декларации с оригиналом подтверждена. Расхождения с заказом сохранены; склад и финансы не изменены"));
+}
+
 // Binds an unconfirmed document or OCR proposal to one vehicle (or back to the whole shipment). Nothing is guessed.
 export async function assignSourceTransportAction(formData: FormData) {
   const shipmentId = value(formData, "shipment_id");
