@@ -99,6 +99,8 @@ do $$ declare p jsonb:=pg_temp.bank('multi','PAIR-A'); v jsonb; r jsonb;begin
  v:=public.preview_receivables_import(p);
  r:=public.confirm_receivables_import('b9500000-0000-4000-8000-000000000010',p,v->>'fingerprint');
  assert (r->>'new')::int=0 and (r->>'duplicates')::int=2,'row order and formatting do not create payments';
+ p:=pg_temp.bank('currency-case','PAIR-A')||'{"currency":" kzt "}';v:=public.preview_receivables_import(p);
+ assert v->'rows'->0->>'status'='duplicate','currency spelling cannot bypass operation uniqueness';
  p:=pg_temp.bank('currency','PAIR-A')||'{"currency":"USD"}';v:=public.preview_receivables_import(p);
  r:=public.confirm_receivables_import('b9500000-0000-4000-8000-000000000011',p,v->>'fingerprint');
  assert (r->>'new')::int=1,'currencies are not collapsed into one identity';

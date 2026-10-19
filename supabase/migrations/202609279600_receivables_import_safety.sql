@@ -79,6 +79,7 @@ begin
    old:=null; balance:=null;
    currency:=coalesce(r->>'currency',p->>'currency');
    cur:=private.currency_by_code(currency);
+   currency:=private.currency_code(cur);
    if jsonb_typeof(r->'amount') is distinct from 'number' then raise exception 'Строка %: сумма должна быть числом',n; end if;
    amount:=(r->>'amount')::numeric;
    if amount<>round(amount,2) or abs(amount)>=100000000000000 then raise exception 'Строка %: недопустимая точность или сумма',n; end if;
@@ -86,15 +87,15 @@ begin
      dt:=(r->>'doc_date')::date;
      if dt is null or amount<=0 then raise exception 'Строка %: нет даты или положительной суммы',n; end if;
      account:=upper(regexp_replace(coalesce(r->>'recipient_account',p->>'account',''),'\s','','g'));
-     if account='' then issue:='Не указан счёт получателя'; end if;
-     if account is distinct from upper(regexp_replace(coalesce(p->>'account',''),'\s','','g')) or currency is distinct from p->>'currency' then
+     if account !~ '^[A-Z0-9]{1,64}$' then issue:='Не указан или некорректен счёт получателя'; end if;
+     if account is distinct from upper(regexp_replace(coalesce(p->>'account',''),'\s','','g')) or currency is distinct from upper(btrim(p->>'currency')) then
        issue:='Поддерживается один счёт и одна валюта в банковском пакете';
      end if;
      -- A payment order number is NOT a bank operation ID. No automatic fallback to date/amount/customer.
      if nullif(btrim(r->>'operation_id'),'') is null then issue:='Нужен устойчивый идентификатор операции из банка';
      elsif r->>'identity_source' not in ('bank','manual') or r->>'identity_source' is null then issue:='Укажите источник идентификатора';
      elsif r->>'identity_source'='manual' and length(btrim(coalesce(r->>'reason','')))<5 then issue:='Укажите причину ручного различения операции';
-     else key:=private.receivables_import_hash(jsonb_build_array(account,currency,btrim(r->>'operation_id'))); end if;
+     else key:=private.receivables_import_hash(jsonb_build_array(account,cur,btrim(r->>'operation_id'))); end if;
      if key=any(seen) then issue:='Идентификатор повторяется внутри файла: проверьте исходные строки'; end if;
      seen:=array_append(seen,key);
      select * into old from public.bank_statement_lines where operation_key=key;
