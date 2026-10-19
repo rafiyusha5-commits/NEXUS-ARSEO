@@ -53,6 +53,7 @@ select 'authenticated', unnest(array[
   'public.search_drive_catalog', 'public.my_permissions', 'public.operational_summary', 'public.reassign_task', 'public.receive_inventory_batch', 'public.receive_shipment_transport',
   'public.run_logist', 'public.accept_logist_proposal', 'public.reject_logist_proposal',
   'public.record_listing_card_decision', 'public.refresh_my_deadline_notifications', 'public.register_document',
+  'private.shipment_drive_allowed', 'public.bind_shipment_drive_folder', 'public.scan_shipment_drive_folder', 'public.import_shipment_drive_file',
   'public.register_document_template', 'public.set_document_template_active', 'public.set_inventory_batch_status',
   'public.reserve_customer_order_item_fefo', 'public.reserve_customer_order_item_override', 'public.set_task_status', 'public.submit_document_for_review', 'public.submit_listing_card',
   'public.update_shipment_item', 'public.apply_shipment_document_quantities',

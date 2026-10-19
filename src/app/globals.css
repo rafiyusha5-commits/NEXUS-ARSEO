@@ -268,3 +268,6 @@ input,select,textarea{border-radius:var(--radius-control)}
 .evidence-outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin:16px 0}
 .evidence-outcomes section{min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);overflow-wrap:anywhere}
 .evidence-outcomes h4{margin:0 0 10px}.evidence-outcomes p{line-height:1.5}.evidence-outcomes ul{padding-left:20px}
+
+/* Drive proposals remain separate from confirmed document data. */
+.shipment-drive-panel{min-width:0}.shipment-drive-panel .form-grid{display:grid;grid-template-columns:1fr;gap:12px;max-width:700px}.shipment-drive-panel label{display:grid;gap:6px}.shipment-drive-panel input:not([type=checkbox]),.shipment-drive-panel select{width:100%;min-width:0;box-sizing:border-box;min-height:44px;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit}.shipment-drive-panel input[type=checkbox]{width:20px;height:20px}.shipment-drive-panel button{min-height:44px;white-space:normal}.shipment-drive-panel progress{max-width:100%}.shipment-drive-file{padding:18px 0;border-top:1px solid var(--line);min-width:0}.shipment-drive-file small{display:block;color:var(--muted);margin-top:6px}.shipment-drive-panel p{overflow-wrap:anywhere}

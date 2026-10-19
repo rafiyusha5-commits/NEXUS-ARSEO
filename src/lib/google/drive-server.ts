@@ -18,3 +18,7 @@ async function token(signal: AbortSignal): Promise<string> {
   cached = { value: data.access_token, until: Date.now() + 3500000 }; return cached.value;
 }
 export const driveArchive = new DriveReadonly(token);
+
+// Separately approved 2026 shipments root; the assistant archive root stays unchanged.
+export const SHIPMENT_DRIVE_ROOT = "1ffI_2N0F9Gy3N8r5XgNRv-hipmCl1ele";
+export function shipmentDrive() { return new DriveReadonly(token, fetch, SHIPMENT_DRIVE_ROOT); }
