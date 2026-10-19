@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { piecesPerUnit } from "@/lib/products/packaging";
 import { previewReservationReplacement, commitReservationReplacement } from "@/app/sales/replacement-actions";
 import { candidateWarning, replacementUnits as units, type Allocation, type ReplacementPreview } from "@/lib/sales/reservation-replacement";
 
@@ -70,8 +71,10 @@ export function ReservationReplacement({ saleId }: { saleId: string }) {
           {selected[item.id] && <><h4>Новое распределение · в единицах заказа</h4><div className="replacement-options">
             {preview.snapshot.balances.filter(b => b.product_id === item.product_id).map(b => {
               const warning = candidateWarning(b, item, preview.snapshot.order);
+              const packaging = preview.snapshot.packaging.filter(p => p.product_id === item.product_id).map(p => ({ uom: p.uom, units_per_parent: p.units }));
+              const missingPackaging = b.uom !== item.uom && (piecesPerUnit(b.uom, packaging) === null || piecesPerUnit(item.uom, packaging) === null);
               const own = preview.snapshot.reservations.filter(r => r.item_id === item.id && r.balance_id === b.id).reduce((s, r) => s + Number(r.quantity), 0);
-              return <label key={b.id} className="replacement-option"><span><strong>{b.batch_number}</strong><small>До {b.expiry} · ОСГ {b.pct}% / требуется {item.required_pct ?? "не задано"}%</small><small>Свободно {b.free} {units[b.uom]} · ваш текущий резерв {own} {units[b.uom]}</small>{warning && <small className="danger-text">{warning}</small>}</span><span>Количество, {units[item.uom]}<input aria-label={`${item.sku}, ${b.batch_number}, количество`} type="number" min="0" step="0.001" value={amounts[`${item.id}:${b.id}`] ?? ""} onChange={e => setAmounts({ ...amounts, [`${item.id}:${b.id}`]: e.target.value })} disabled={b.status !== "available" || b.expiry < (preview.snapshot.order.date > preview.snapshot.order.today ? preview.snapshot.order.date : preview.snapshot.order.today)}/></span></label>;
+              return <label key={b.id} className="replacement-option"><span><strong>{b.batch_number}</strong><small>До {b.expiry} · ОСГ {b.pct}% / требуется {item.required_pct ?? "не задано"}%</small><small>Свободно {b.free} {units[b.uom]} · ваш текущий резерв {own} {units[b.uom]}</small>{warning && <small className="danger-text">{warning}</small>}{missingPackaging && <small className="danger-text">Не задана упаковка для пересчёта единиц</small>}</span><span>Количество, {units[item.uom]}<input aria-label={`${item.sku}, ${b.batch_number}, количество`} type="number" min="0" step="0.001" value={amounts[`${item.id}:${b.id}`] ?? ""} onChange={e => setAmounts({ ...amounts, [`${item.id}:${b.id}`]: e.target.value })} disabled={missingPackaging || b.status !== "available" || b.expiry < (preview.snapshot.order.date > preview.snapshot.order.today ? preview.snapshot.order.date : preview.snapshot.order.today)}/></span></label>;
             })}
           </div></>}
         </article>)}

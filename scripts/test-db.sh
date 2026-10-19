@@ -193,8 +193,9 @@ for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
 
-echo "test: cost calculation and approval under concurrent source edits"
+echo "test: confirmed-order reservation replacement under concurrency"
 node "$ROOT/scripts/test-reservation-replacement-concurrency.mjs" "${PSQL[@]}"
+echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: current document evidence under concurrent source edits"

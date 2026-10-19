@@ -5,6 +5,7 @@ export type ReplacementSnapshot = {
   items: { id: string; product_id: string; sku: string; quantity: number; uom: string; required_pct: number | null }[];
   reservations: { id: string; item_id: string; balance_id: string; batch_number: string; quantity: number; uom: string; sale_quantity: number }[];
   balances: { id: string; product_id: string; batch_number: string; status: string; expiry: string; uom: string; free: number; pct: number }[];
+  packaging: { product_id: string; uom: string; units: number }[];
 };
 export type ReplacementPreview = { snapshot: ReplacementSnapshot; plan: AllocationView[] | null };
 export const replacementPermissions = ["sales.view", "sales.manage", "sales.reserve", "sales.override_fefo", "inventory.view", "products.view"];

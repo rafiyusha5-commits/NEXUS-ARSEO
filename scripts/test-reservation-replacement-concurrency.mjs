@@ -31,7 +31,9 @@ let index = 0;
 async function setup() {
   const prefix = `d${++index}`;
   const context = `tests.rr_context_${prefix}`, planFn = `tests.rr_plan_${prefix}`;
-  await run(fixture.replaceAll('ee', prefix).replaceAll('tests.rr_context', context).replaceAll('tests.rr_plan', planFn));
+  await run(fixture.replace(/ee(?=[0-9a-f]{6}-)/g, prefix)
+    .replaceAll('replacement@example.invalid', `replacement-${prefix}@example.invalid`)
+    .replaceAll('RR', `RR-${prefix}`).replaceAll('tests.rr_context', context).replaceAll('tests.rr_plan', planFn));
   const actor = `${prefix}000000-0000-4000-8000-000000000001`;
   const second = `${prefix}000000-0000-4000-8000-000000000002`;
   await run(`insert into auth.users(id,email,raw_user_meta_data) values('${second}','${prefix}@example.invalid','{"full_name":"Synthetic second employee"}');
