@@ -62,7 +62,7 @@ select 'authenticated', unnest(array[
   'public.create_forecast', 'public.create_forecast_version', 'public.upsert_forecast_line', 'public.remove_forecast_line',
   'public.submit_forecast', 'public.review_forecast', 'public.approve_forecast', 'public.archive_forecast',
   'public.customer_receivables', 'public.customer_statement', 'public.customer_credit_check', 'public.record_sale_credit_decision', 'public.set_customer_credit_terms',
-  'public.import_opening_balances', 'public.import_bank_statement', 'public.resolve_bank_line', 'public.add_customer_balance_adjustment', 'public.record_reconciliation_act',
+  'public.preview_receivables_import', 'public.confirm_receivables_import', 'public.resolve_bank_line', 'public.add_customer_balance_adjustment', 'public.record_reconciliation_act',
   'public.create_purchase_plan', 'public.create_purchase_plan_version', 'public.upsert_purchase_plan_line', 'public.remove_purchase_plan_line',
   'public.submit_purchase_plan', 'public.review_purchase_plan', 'public.approve_purchase_plan', 'public.create_purchase_plan_shipment', 'public.archive_purchase_plan',
   'public.create_commercial_program', 'public.create_commercial_program_version', 'public.upsert_commercial_program_line', 'public.remove_commercial_program_line',

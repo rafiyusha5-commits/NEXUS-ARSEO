@@ -36,9 +36,8 @@ describe("opening balances from the 1С report", () => {
     assert.deepEqual(parsed.rows, [{ rowNumber: 2, name: "ТОО \"Дельта\"", bin: "123", contract: null, currency: "EUR", amount: -10.5, due_date: "2026-10-15" }]);
   });
 
-  it("without an end-of-period label uses the last debit/credit pair", () => {
-    const parsed = parseOpeningBalances([["Контрагент", "Дебет", "Кредит", "Дебет", "Кредит"], ["А", 5, 0, 7, 2]]);
-    assert.equal(parsed.rows[0].amount, 5);
+  it("without an end-of-period label refuses to guess the last pair", () => {
+    assert.throws(() => parseOpeningBalances([["Контрагент", "Дебет", "Кредит", "Дебет", "Кредит"], ["А", 5, 0, 7, 2]]), /Неоднозначные/);
   });
 
   it("refuses a file without the needed columns", () => {

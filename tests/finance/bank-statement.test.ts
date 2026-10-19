@@ -29,16 +29,15 @@ describe("1С bank statement", () => {
     assert.equal(parsed.documents, 3);
     assert.equal(parsed.outgoing, 1);
     assert.deepEqual(parsed.incoming, [{
+      rowNumber: 1, recipient_account: "KZ00551F000000000001", operation_id: null, identity_source: "bank",
       doc_number: "15", doc_date: "2026-09-05", amount: 150000.5, payer_name: "ТОО «Покупатель»", payer_bin: "123456789012",
       payer_account: "KZ110000000000000002", purpose: "Оплата по счёту SO-2026-000123 без НДС",
     }]);
     assert.deepEqual(parsed.problems, ["Документ 3 (№ 17): нет даты или дата некорректна"]);
   });
 
-  it("without our accounts in the header, takes documents with a receipt date and no debit date", () => {
-    const parsed = parseBankStatement(statement.split("\r\n").filter(line => !line.startsWith("РасчСчет=")).join("\n"));
-    assert.equal(parsed.incoming.length, 1);
-    assert.equal(parsed.outgoing, 2);
+  it("without our accounts in the header refuses to guess incoming direction", () => {
+    assert.throws(() => parseBankStatement(statement.split("\r\n").filter(line => !line.startsWith("РасчСчет=")).join("\n")), /нет счёта/);
   });
 
   it("reads Windows-1251 and UTF-8 files", () => {

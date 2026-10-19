@@ -185,6 +185,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279200_source_evidence_integrity.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279300_confirmed_invoice_evidence_refresh.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279400_customs_evidence_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279600_receivables_import_safety.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -273,3 +274,4 @@ if [[ "$claimed" != "1" || "$refused" != "9" ]]; then
 fi
 
 echo "database tests passed"
+node "$ROOT/scripts/test-receivables-import-concurrency.mjs" "${PSQL[@]}"
