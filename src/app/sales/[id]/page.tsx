@@ -63,7 +63,7 @@ export default async function SalePage({
   const { data: fulfillmentPermissions } = await supabase.rpc("my_permissions", { p_codes: [...replacementPermissions, "inventory.move", "guarantee_letters.manage"] });
   const canReplace = replacementPermissions.every(code => (fulfillmentPermissions ?? []).includes(code));
   const { data: replacements } = await selectAll((from, to) => supabase.from("sale_reservation_replacements")
-    .select("id,created_at,created_by,reason,previous_allocation,new_allocation").eq("sale_id", id).order("created_at").order("id").range(from, to));
+    .select("id,created_at,created_by,reason,previous_allocation,new_allocation,actor:profiles(full_name)").eq("sale_id", id).order("created_at").order("id").range(from, to));
   const canFulfill = ["sales.manage", "inventory.move"].every(code => (fulfillmentPermissions ?? []).includes(code));
   // What the shipment would stop at, all at once (customer_order_shipping_blockers); only a confirmed order has it.
   const { data: blockers, error: blockersError } = sale.status === "confirmed" ? await supabase.rpc("customer_order_shipping_blockers", { p_sale_id: id }) : { data: [], error: null };
@@ -108,7 +108,7 @@ export default async function SalePage({
       const next = event.new_allocation as Row[];
       const old = (event.previous_allocation as Row[]).filter(row => next.some(n => n.item_id === row.item_id));
       const describe = (rows: Row[]) => rows.map(r => `${r.batch_number}: ${r.quantity} ${replacementUnits[r.uom] ?? r.uom}`).join("; ");
-      return { at: event.created_at as string, title: "Заменены зарезервированные партии", detail: `${event.reason}. Было: ${describe(old)}. Стало: ${describe(next)}. Сотрудник: ${event.created_by}` };
+      return { at: event.created_at as string, title: "Заменены зарезервированные партии", detail: `${event.reason}. Было: ${describe(old)}. Стало: ${describe(next)}. Сотрудник: ${one(event.actor)?.full_name ?? event.created_by}` };
     }),
     ...(preparationReturns ?? []).map(event => ({ at: event.created_at as string, title: "Заказ возвращён к подготовке", detail: event.reason as string })),
     ...(dateChanges ?? []).map(event => ({ at: event.changed_at as string, title: `Отгрузка перенесена: ${formatDate(event.previous_date)} → ${formatDate(event.new_date)}`, detail: event.reason as string })),

@@ -13,6 +13,11 @@ begin
 end $$;
 create temp table rr_before as select id,quantity_on_hand,quantity_reserved from public.inventory_balances;
 create temp table rr_sale_before as select * from public.sales where id=(select id from tests.rr_context where k='sale');
+create temp table rr_business_before as select
+ (select jsonb_agg(to_jsonb(i) order by id) from public.sale_items i) as items,
+ (select jsonb_agg(to_jsonb(b) order by id) from public.inventory_batches b) as batches,
+ (select jsonb_agg(to_jsonb(c) order by id) from public.cost_calculations c) as costs,
+ (select jsonb_agg(to_jsonb(e) order by id) from public.expenses e) as expenses;
 create temp table rr_snapshot(snap jsonb);
 grant all on rr_snapshot to authenticated;
 set local role authenticated;
@@ -139,6 +144,10 @@ reset role;
 do $$begin
  assert (select count(*)=1 from public.sale_reservation_replacements),'one immutable event';
  assert not exists(select 1 from public.inventory_balances b join rr_before old using(id) where b.quantity_on_hand<>old.quantity_on_hand),'no physical stock changes';
+ assert (select items is not distinct from (select jsonb_agg(to_jsonb(i) order by id) from public.sale_items i)
+  and batches is not distinct from (select jsonb_agg(to_jsonb(b) order by id) from public.inventory_batches b)
+  and costs is not distinct from (select jsonb_agg(to_jsonb(c) order by id) from public.cost_calculations c)
+  and expenses is not distinct from (select jsonb_agg(to_jsonb(e) order by id) from public.expenses e) from rr_business_before),'no item prices, batch costs or finance changes';
  assert not exists(select 1 from public.inventory_movements where sale_id=(select id from tests.rr_context where k='sale'));
  assert (select s.status='confirmed' and s.confirmed_at=old.confirmed_at and s.confirmed_by=old.confirmed_by from public.sales s join rr_sale_before old using(id));
  assert (select count(*)=2 and sum(quantity)=20 and sum(sale_quantity)=2 from public.inventory_reservations where sale_item_id=(select id from tests.rr_context where k='item') and status='active');

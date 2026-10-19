@@ -50,7 +50,8 @@ no physical changes and subsequent standard fulfillment. Dates are fixed in 2099
 
 Real concurrency harness: independent psql connections; `pg_stat_activity` proves a lock wait before asserting
 the outcome. Two employees on one order; duplicate request; two orders competing for the last 20 pieces;
-replacement before/after fulfillment; cancellation before replacement; batch block before/after replacement.
+replacement before/after fulfillment; cancellation before/after replacement; batch block before/after replacement;
+personal deny committed while waiting for the order lock. Ten explicitly synchronized scenarios.
 These are actual transactions, not mock promises or PGlite concurrency claims.
 
 ## Limits / handoff
