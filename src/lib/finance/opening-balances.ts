@@ -65,7 +65,15 @@ export function parseOpeningBalances(matrix: Cell[][], defaultCurrency = "KZT"):
   const contractColumn = find(value => value.includes("договор"));
   const currencyColumn = find(value => value.includes("валюта"));
   const dueColumn = find(value => value.includes("срок"));
-  const balanceColumn = find(value => /^(сальдо|остаток|задолженность|долг)/.test(value) && !/дебет|кредит/.test(value));
+  const balances = header.map((value, index) => /^(сальдо|остаток|задолженность|долг)/.test(value) && !/дебет|кредит/.test(value) ? index : -1).filter(index => index >= 0);
+  const closingBalances = balances.filter(index => isEnd(label(index)));
+  if (closingBalances.length > 1 || (balances.length > 1 && closingBalances.length !== 1)) {
+    throw new Error("Неоднозначные колонки сумм: нужен единственный явно указанный остаток на конец периода.");
+  }
+  const balanceColumn = closingBalances[0] ?? balances[0] ?? -1;
+  if (balanceColumn >= 0 && /начал|начальн|оборот/.test(label(balanceColumn)) && !isEnd(label(balanceColumn))) {
+    throw new Error("Найден только начальный остаток: нужен остаток на конец периода.");
+  }
   const debits = header.map((value, index) => value.includes("дебет") ? index : -1).filter(index => index >= 0);
   const credits = header.map((value, index) => value.includes("кредит") ? index : -1).filter(index => index >= 0);
   const endDebit = debits.find(index => isEnd(label(index))) ?? debits.at(-1);

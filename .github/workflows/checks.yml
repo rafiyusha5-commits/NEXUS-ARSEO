@@ -118,6 +118,28 @@ jobs:
         # повторное применение и выполняет SQL-тесты. Рабочая база не используется и не изменяется.
         run: pnpm run test:db
 
+  pilot-docker:
+    name: pilot-docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - name: Prepare PostgreSQL 16 and Node 24 test image
+        run: |
+          docker pull postgres:16
+          docker build -f scripts/Dockerfile.db-test -t nexus-db-test:pg16-node24 scripts
+      - name: Isolated Docker runners, including full SQL and concurrency helpers
+        run: |
+          node scripts/test-db-docker.mjs
+          node scripts/test-shipment-pilot.mjs
+          node scripts/test-shipment-pilot.mjs --all-sql
+
   audit:
     name: audit
     runs-on: ubuntu-24.04

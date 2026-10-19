@@ -9,6 +9,7 @@ import { checkPilotReport } from '../tests/pilot/report.check.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const name = `nexus-pilot-${randomUUID()}`;
+const allSql = process.argv.includes('--all-sql');
 assert.ok(process.argv.slice(2).every(arg => arg === '--all-sql'), 'Only --all-sql is supported; remote database arguments are forbidden');
 function docker(args, input) {
   const r = spawnSync('docker', args, { input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 180000 });
@@ -19,12 +20,12 @@ const psql = text => docker(['exec', '-i', name, 'psql', '-X', '-qAt', '-U', 'po
 let created = false;
 try {
   docker(['run', '--pull=never', '--detach', '--name', name, '--network=none',
-    '--tmpfs', '/var/lib/postgresql/data:rw', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:16']);
+    '--tmpfs', '/var/lib/postgresql/data:rw', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', allSql ? 'nexus-db-test:pg16-node24' : 'postgres:16']);
   created = true;
   docker(['exec', name, 'sh', '-c', 'for i in $(seq 1 30); do pg_isready -U postgres >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1']);
   const version = psql('show server_version_num;').trim();
   assert.ok(Number(version) >= 160000 && Number(version) < 170000, `PostgreSQL 16 required, got ${version}`);
-  if (process.argv.includes('--all-sql')) {
+  if (allSql) {
     docker(['exec', name, 'mkdir', '/pilot']);
     // Copy only SQL and the existing test runner, never .env, keys or user files.
     docker(['cp', resolve(root, 'supabase'), `${name}:/pilot/supabase`]);
@@ -32,6 +33,10 @@ try {
     docker(['exec', name, 'mkdir', '/pilot/docs']);
     docker(['cp', resolve(root, 'docs/reference-import.example.json'), `${name}:/pilot/docs/reference-import.example.json`]);
     docker(['cp', resolve(root, 'scripts/test-db.sh'), `${name}:/pilot/scripts/test-db.sh`]);
+    for (const file of readdirSync(resolve(root, 'scripts')).filter(n => /^test-.*\.mjs$/.test(n))) {
+      docker(['cp', resolve(root, 'scripts', file), `${name}:/pilot/scripts/${file}`]);
+    }
+    docker(['exec', name, 'node', '--version']);
     // Windows checkout may use CRLF; normalize only the disposable container copy.
     docker(['exec', name, 'sed', '-i', 's/\r$//', '/pilot/scripts/test-db.sh']);
     console.log(docker(['exec', name, 'bash', '/pilot/scripts/test-db.sh']));

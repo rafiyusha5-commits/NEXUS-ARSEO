@@ -1,7 +1,9 @@
 import { compareCommodities, isCommodityLine, type CommodityInvoice, type ShipmentCommodity } from "@/lib/document-extraction/commodity-evidence";
 import { evidenceOutcome } from "@/lib/document-check/evidence-outcome";
+import { comparePackingQuantities, type PackingEvidence } from "@/lib/document-extraction/packing-evidence";
+import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 
-export function CustomsEvidence({ value, invoices = [], shipment = [], current = false, reviewed = false }: { value: unknown; invoices?: CommodityInvoice[]; shipment?: ShipmentCommodity[]; current?: boolean; reviewed?: boolean }) {
+export function CustomsEvidence({ value, invoices = [], shipment = [], current = false, reviewed = false, packing = [], readiness }: { value: unknown; invoices?: CommodityInvoice[]; shipment?: ShipmentCommodity[]; current?: boolean; reviewed?: boolean; packing?: PackingEvidence[]; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
   if (!value || typeof value !== "object" || !("fields" in value) || !Array.isArray(value.fields)) return null;
   if (!current) return <p className="login-error">Сверка недоступна: проверьте текущую версию, доступ и действующую привязку документа. Сохранённые реквизиты не показаны.</p>;
   const fields = value.fields.filter((field): field is { label: string; value: string } => Boolean(field && typeof field.label === "string" && typeof field.value === "string"));
@@ -11,7 +13,12 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   const refs = "invoiceNumbers" in value && Array.isArray(value.invoiceNumbers) ? value.invoiceNumbers.filter((n): n is string => typeof n === "string") : [];
   const linkedInvoices = refs.length === 1 ? invoices.filter(invoice => invoice.number === refs[0]) : [];
   const comparisons = current ? compareCommodities(items, currency, linkedInvoices, shipment) : [];
-  const outcome = evidenceOutcome(comparisons, current, reviewed, warnings);
+  const validationWarnings = "validationWarnings" in value && Array.isArray(value.validationWarnings) ? value.validationWarnings.filter((w): w is string => typeof w === "string") : warnings;
+  const extraInvoiceItems = linkedInvoices.length !== 1 || linkedInvoices[0].items.some(line => !items.some(item => item.sku === line.sku));
+  const incomplete = !("expectedCount" in value) || value.expectedCount !== items.length || extraInvoiceItems;
+  const outcome = evidenceOutcome(comparisons, current, reviewed, [...validationWarnings, ...(incomplete ? ["Неполный состав строк"] : [])]);
+  const packingRefs = "packingNumbers" in value && Array.isArray(value.packingNumbers) ? value.packingNumbers.filter((n): n is string => typeof n === "string") : [];
+  const packingOutcome = comparePackingQuantities(items, packingRefs, packing);
   const num = (n: number | null) => n === null ? "не прочитано" : n.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
   return <div className="setup-notice" style={{ contain: "inline-size", minWidth: 0 }}>
     <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "Расчёт таможенных начислений"}</h4>
@@ -21,9 +28,15 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
         <section><h4>1. Проверка чтения</h4><p>{outcome.reading}.</p><p>Подтверждение чтения не означает совпадение с заказом или фактическую приёмку.</p></section>
         <section><h4>2. Согласованность данных</h4><p>{outcome.comparison}.</p>
           {outcome.differences.length > 0 && <><strong>Отличие от первоначального заказа</strong><ul>{outcome.differences.map((text, index) => <li key={index}>{text}</li>)}</ul><p>Причина неизвестна. Это не признание складской недостачи.</p></>}
-          <p>Упаковочный лист этой построчной проверкой не охвачен. Итог по реквизитам показан отдельно в блоке «Сверка».</p>
+          <p>{packingOutcome.message}.</p>
+          {packingOutcome.differences.length > 0 && <ul>{packingOutcome.differences.map(text => <li key={text}>{text}</li>)}</ul>}
+          <p>Ссылка на упаковочный лист в графе 44: {packingRefs.join(", ") || "не прочитана"}. Сравнение количества не подтверждает приёмку. Итог по реквизитам показан в блоке «Сверка».</p>
         </section>
-        <section><h4>3. Готовность нового комплекта</h4><p>Здесь не установлена. Проверяется отдельно для выбранного шаблона и автомобиля перед формированием. Подтверждение чтения не заменяет эту проверку.</p></section>
+        <section><h4>3. Готовность нового комплекта</h4>
+          <p>{!readiness ? "Нет доступного предварительного расчёта готовности" : readiness.ready ? "Общие обязательные реквизиты заполнены" : `Не заполнено обязательных реквизитов: ${readiness.requiredMissing}`}.</p>
+          {readiness && !readiness.ready && <ul>{readiness.items.filter(item => item.required && !item.ready).map(item => <li key={item.key}>{item.label}</li>)}</ul>}
+          <p>Используется та же проверка, что в блоке «Готовность документов перевозки». Окончательная проверка выполняется для выбранного шаблона и автомобиля перед формированием. Подтверждение чтения её не заменяет.</p>
+        </section>
       </div>}
     {items.length > 0 && <>
       <h4>Товарные строки ДТ: {items.length}. Сверка с инвойсом и поставкой</h4>

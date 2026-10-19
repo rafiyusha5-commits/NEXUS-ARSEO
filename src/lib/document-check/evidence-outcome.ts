@@ -6,7 +6,7 @@ export function evidenceOutcome(comparisons: CommodityComparison[], current: boo
   const differences = comparisons.flatMap(row => row.orderedDelta === null || row.orderedDelta === 0 ? [] : [
     `${row.line.sku ?? "Строка"}: ${row.orderedDelta > 0 ? "+" : ""}${row.orderedDelta.toLocaleString("ru-RU", { maximumFractionDigits: 6 })} ${row.line.unit ?? ""} к заказу`,
   ]);
-  const complete = comparisons.length > 0 && warnings.length === 0;
+  const complete = comparisons.length > 0 && warnings.length === 0 && comparisons.every(row => row.line.warnings.length === 0);
   return {
     reading: reviewed ? "Чтение декларации подтверждено сотрудником" : "Чтение декларации ещё не подтверждено",
     comparison: complete && comparisons.every(row => row.invoiceMatched)

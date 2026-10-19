@@ -35,7 +35,7 @@ type Scan = OcrDocument & { code: string };
 export async function extractShipmentSources(
   supabase: SupabaseClient,
   shipmentId: string,
-  options: { documentId?: string; force?: boolean } = {},
+  options: { documentId?: string; force?: boolean; customsRevision?: { extractionId: string; versionId: string; updatedAt: string; requestId: string; reason: string } } = {},
 ): Promise<ShipmentExtractionSummary> {
   const { data: transports, error: transportError, count: transportCount } = await supabase.from("shipment_transports").select("id", { count: "exact" }).eq("shipment_id", shipmentId).neq("status", "cancelled");
   if (transportError || transportCount !== transports?.length) throw new Error("Не удалось прочитать полный список автомобилей");
@@ -90,6 +90,20 @@ export async function extractShipmentSources(
 
   // Phase 2: OCR. Nothing leaves the server unless a provider is configured; the pipeline validates the
   // file first and claims an idempotent job in the database before the provider is called.
+  if (options.customsRevision) {
+    const item = prepared[0];
+    const revision = options.customsRevision;
+    if (!options.documentId || scans.length || prepared.length !== 1 || item.error || item.versionId !== revision.versionId || !item.result.data.customs_record) {
+      throw new Error("Новую редакцию текстовой декларации прочитать не удалось. Сохранённые подтверждения не изменены");
+    }
+    const { error } = await supabase.rpc("revise_shipment_customs_evidence", {
+      p_shipment_id: shipmentId, p_extraction_id: revision.extractionId, p_document_version_id: revision.versionId,
+      p_expected_updated_at: revision.updatedAt, p_request_id: revision.requestId,
+      p_record: item.result.data.customs_record, p_reason: revision.reason,
+    });
+    if (error) throw error;
+    return { ready: 0, review: 1, failed: 0, total: 1, processing: 0, deferred: 0, reused: 0 };
+  }
   const config = loadOcrConfig();
   const deps: PipelineDeps = {
     db: supabase, provider: createOcrProvider(config), limits: config.limits, now: Date.now,

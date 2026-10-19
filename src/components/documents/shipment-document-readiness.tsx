@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 
-export function ShipmentDocumentReadiness({ shipmentId, data, confirmedSourceFields }: { shipmentId: string; data: Record<string, unknown>; confirmedSourceFields: string[] }) {
-  const readiness = buildShipmentDocumentReadiness(data, confirmedSourceFields);
+export function ShipmentDocumentReadiness({ shipmentId, data, confirmedSourceFields, result }: { shipmentId: string; data: Record<string, unknown>; confirmedSourceFields: string[]; result?: ReturnType<typeof buildShipmentDocumentReadiness> }) {
+  const readiness = result ?? buildShipmentDocumentReadiness(data, confirmedSourceFields);
   const groups = [...new Set(readiness.items.map(item => item.group))];
   const done = readiness.items.filter(item => item.ready).length;
   return <section className="panel admin-section document-readiness">

@@ -48,4 +48,14 @@ assert.equal(await run("select count(*) from public.bank_statement_lines l join 
 const opening=file=>({kind:'opening',file_name:`${file}.csv`,file_sha256:sha(file),as_of:'2026-01-01',rows:[{name:'Import Race Synthetic',bin:'990000001078',currency:'KZT',amount:500}]});
 await race(opening('balance-a'),opening('balance-b'),false);
 assert.equal(await run("select count(*) from public.customer_opening_balances where customer_id='b9700000-0000-4000-8f78-000000000001'"),'1');
-console.log('receivables concurrency: same/renamed file, overlapping operation + refreshed retry, distinct equal payments, opening conflict passed');
+const currentBalance = async () => run("select id from public.customer_opening_balances where customer_id='b9700000-0000-4000-8f78-000000000001' and superseded_at is null");
+let oldId = await currentBalance();
+const corrected = {...opening('balance-a'), as_of:'2026-01-02'};
+corrected.rows = corrected.rows.map(row=>({...row,replace_id:oldId,reason:'Correct original date after source review'}));
+await race(corrected,{...corrected,file_name:'renamed-correction.csv'},true);
+assert.equal(await run("select count(*) from public.customer_opening_balances where customer_id='b9700000-0000-4000-8f78-000000000001'"),'2','concurrent retries created one revision');
+oldId = await currentBalance();
+const next = {...corrected,as_of:'2026-01-03',rows:corrected.rows.map(row=>({...row,replace_id:oldId,reason:'Second reviewed correction'}))};
+await race(next,{...next,as_of:'2026-01-04'},false);
+assert.equal(await run("select count(*) from public.customer_opening_balances where customer_id='b9700000-0000-4000-8f78-000000000001'"),'3','losing correction wrote nothing');
+console.log('receivables concurrency: retries, overlapping operations, opening conflict, same-file corrections and competing revisions passed');

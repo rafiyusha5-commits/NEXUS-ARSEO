@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
@@ -64,6 +65,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const generationTemplates=(templates??[]).filter(template=>{const current=one(template.current)?.mime_type;const partyMatches=!template.counterparty_id||(template.flow_direction==="input"?template.counterparty_id===shipment.supplier_id:template.counterparty_id===shipment.customer_id);return partyMatches&&["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(current));});
   let generationPreview:Awaited<ReturnType<typeof loadGenerationPreview>>|null=null;
   if(generationTemplates.length){try{generationPreview=await loadGenerationPreview(supabase,generationTemplates[0].id,id,false);}catch{generationPreview=null;}}
+  const documentReadiness=generationPreview?buildShipmentDocumentReadiness(generationPreview.data,generationPreview.confirmedSourceFields):null;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поставка · {shipment.type}</p><h1>{shipment.shipment_number}</h1></div><div className="topbar-actions"><span className={`status shipment-${shipment.status}`}>{shipmentStatus[shipment.status]??shipment.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}/report`}>Отчёт</Link><Link className="ghost button-link" href={`/tasks?view=all&shipment=${shipment.id}`}>Задачи поставки</Link><Link className="ghost button-link" href="/shipments">К реестру</Link></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
@@ -128,8 +130,8 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       <ShipmentTransportsPanel shipmentId={shipment.id} transports={transports??[]} receivedIds={[...receivedTransports]} canEdit={canEdit} canReceive={!!permissions["inventory.receive"]} loadLines={loadSummary.lines}/>
     <>
     <ShipmentDocumentCheckPanel shipmentId={shipment.id} notice={notices.check_error?{kind:"error",message:notices.check_error}:notices.check_success?{kind:"success",message:notices.check_success}:undefined}/>
-    <ShipmentSourceDocumentsPanel shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
-    {generationPreview&&<ShipmentDocumentReadiness shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
+    <ShipmentSourceDocumentsPanel readiness={documentReadiness} shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
+    {generationPreview&&<ShipmentDocumentReadiness result={documentReadiness??undefined} shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
     {permissions["templates.generate"]&&permissions["documents.create"]&&<section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Выходной комплект</p><h2>Сформировать документы перевозки</h2></div><span className="page-count">{generationTemplates.length}</span></div><p className="form-help">Система использует подтверждённые данные из загруженных инвойсов, договор-заявок и транспортных документов.</p><div className="compact-list">{generationTemplates.map(template=>{const type=one(template.type);return <div className="doc-link-row" key={template.id}><div><strong>{template.name}</strong><small>{type?.name_ru??"Документ"} · {template.flow_direction==="input"?"от поставщика":"для покупателя"}</small></div><Link className="primary button-link compact" href={`/templates/${template.id}/generate?shipment=${shipment.id}`}>Сформировать</Link></div>})}{!generationTemplates.length&&<div className="empty-state">Нет подходящих утверждённых DOCX/XLSX-шаблонов для этой поставки.</div>}</div></section>}
     <ShipmentDocumentsPanel shipmentId={shipment.id}/>
     </>

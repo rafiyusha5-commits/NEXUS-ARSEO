@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { CustomsEvidence } from "./customs-evidence";
 import { CustomsReviewForm } from "./customs-review-form";
+import { CustomsRevisionForm } from "./customs-revision-form";
+import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
+import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { currentCommoditySource, isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
 import { createClient } from "@/lib/supabase/server";
 import { loadPermissions } from "@/lib/permissions";
@@ -34,7 +37,7 @@ const sourceLabel: Record<string, string> = {
   driver_document: "Документы водителя", waybill: "Накладная", other: "Прочий источник",
 };
 
-export async function ShipmentSourceDocumentsPanel({ shipmentId, notice }: { shipmentId: string; notice?: { kind: "error" | "success"; message: string } }) {
+export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness }: { shipmentId: string; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
   const supabase = await createClient();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update"] as const);
   if (!permissions["documents.view"]) return null;
@@ -58,12 +61,13 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice }: { shi
   const rows = (data ?? []) as Array<{
     id: string; document_id: string; document_version_id: string; shipment_transport_id: string | null; source_kind: string; status: string; extracted_data: Record<string, unknown>;field_evidence:Record<string,{confidence?:number}>;confirmed_data:Record<string,unknown>;
     extraction_method: string; ocr_provider: string | null; ocr_provider_version: string | null; ocr_confidence: number | null; ocr_page_count: number | null; processing_ms: number | null; attempt_count: number;
-    reviewed_at: string | null; conflicts: unknown[]; error_message: string | null; document: CommodityDocument | CommodityDocument[] | null;
+    updated_at: string; reviewed_at: string | null; conflicts: unknown[]; error_message: string | null; document: CommodityDocument | CommodityDocument[] | null;
   }>;
   type CommodityDocument = { title: string; original_filename: string | null; archived_at: string | null; status: string; current_version: number; versions: Array<{ id: string; is_current: boolean; version_number: number }>; links: Array<{ entity_type: string; entity_id: string; removed_at: string | null }> };
   const completeComparison = !itemsError && !error && !transportsError && transportCount === vehicles.length && !historyError && historyCount === (quantityHistory ?? []).length && itemCount === quantityItems.length && sourceCount === rows.length;
   const current = (row: typeof rows[number]) => completeComparison && currentCommoditySource(row, one(row.document), shipmentId, vehicles.map(vehicle => vehicle.id));
   const invoices = rows.filter(row => row.source_kind === "invoice" && current(row)).map(row => row.extracted_data?.commodity_invoice).filter(isCommodityInvoice);
+  const packing = rows.filter(row => row.source_kind === "specification" && current(row)).map(row => row.extracted_data?.packing_evidence).filter(isPackingEvidence);
   const quantity = (value: unknown) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
   const shipmentCommodities = quantityItems.filter(item => !item.shipment_transport_id || vehicleById.has(item.shipment_transport_id)).map(item => ({
     sku: item.product?.internal_sku ?? null, unit: item.uom, hsCode: item.product?.hs_code ?? null,
@@ -94,10 +98,11 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice }: { shi
       {row.extraction_method==="ocr"&&permissions["source_documents.extract"]&&(row.status==="failed"||(["extracted","needs_review","confirmed"].includes(row.status)&&permissions["source_documents.review"]))&&<form action={retryShipmentSourceOcrAction} className="source-review-actions"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="document_id" value={row.document_id}/><PendingSubmitButton className="ghost compact" pendingText="Распознаём… подождите">{row.status==="failed"?`Повторить распознавание${row.attempt_count>0?` (попыток: ${row.attempt_count})`:""}`:row.status==="confirmed"?"Отменить подтверждение и распознать заново":"Сбросить результат и распознать заново"}</PendingSubmitButton></form>}
       {conflicts>0&&<div className="login-error source-conflicts"><strong>Обнаружены расхождения между документами.</strong> Проверьте выделенные значения и оставьте правильные.</div>}
       {Array.isArray(row.extracted_data?.invoice_items)&&row.extracted_data.invoice_items.length>0&&<div className="table-wrap"><table className="data-table"><caption>Строки инвойса: подтверждаются вместе с документом и сверяются с позициями поставки</caption><thead><tr><th>№</th><th>Наименование</th><th>ТН ВЭД</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead><tbody>{(row.extracted_data.invoice_items as Array<{line_number:number;product_name:string;hs_code:string;uom:string;quantity:number;unit_price:number;line_total:number}>).map(line=><tr key={line.line_number}><td>{line.line_number}</td><td>{line.product_name}</td><td>{line.hs_code}</td><td>{line.quantity} {line.uom}</td><td>{line.unit_price}</td><td>{line.line_total}</td></tr>)}</tbody></table></div>}
-      {Boolean(row.extracted_data?.customs_record)&&<CustomsEvidence value={row.extracted_data.customs_record} invoices={invoices} shipment={shipmentCommodities} current={current(row)} reviewed={row.status==="confirmed"&&Boolean(row.reviewed_at)}/>}
+      {Boolean(row.extracted_data?.customs_record)&&<CustomsEvidence value={row.extracted_data.customs_record} invoices={invoices} packing={packing} readiness={readiness} shipment={shipmentCommodities} current={current(row)} reviewed={row.status==="confirmed"&&Boolean(row.reviewed_at)}/>}
       {sourceCurrent&&permissions["source_documents.review"]&&Boolean(row.extracted_data?.customs_record)&&row.extracted_data.customs_record!==null&&typeof row.extracted_data.customs_record==="object"&&"kind" in row.extracted_data.customs_record&&row.extracted_data.customs_record.kind==="declaration"&&<>
         <Link className="ghost button-link compact" href={`/documents/${row.document_id}/download?version=${row.document_version_id}`}>Открыть оригинал декларации</Link>
         <CustomsReviewForm shipmentId={shipmentId} extractionId={row.id} versionId={row.document_version_id} record={row.extracted_data.customs_record} note={row.confirmed_data?.customs_review_note} reviewedAt={row.status==="confirmed"?row.reviewed_at:null}/>
+        {row.extraction_method==="text_layer"&&permissions["source_documents.extract"]&&<CustomsRevisionForm shipmentId={shipmentId} documentId={row.document_id} extractionId={row.id} versionId={row.document_version_id} updatedAt={row.updated_at}/>}
       </>}
       {sourceCurrent&&row.source_kind==="invoice"&&row.extraction_method==="text_layer"&&row.status==="confirmed"&&permissions["source_documents.extract"]&&permissions["source_documents.review"]&&<form action={retryShipmentSourceOcrAction} className="source-review-actions"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="document_id" value={row.document_id}/><PendingSubmitButton className="ghost compact" pendingText="Обновляем строки…">Обновить строки инвойса, сохранив подтверждения</PendingSubmitButton></form>}
       {isCommodityInvoice(row.extracted_data?.commodity_invoice)&&<p>Для сверки с декларацией прочитано строк инвойса: {row.extracted_data.commodity_invoice.items.length}. {row.extracted_data.commodity_invoice.warnings.join(" ")} Эти строки не записываются автоматически в количества поставки. {row.status==="confirmed"&&"Ручные подтверждения реквизитов сохранены; товарные строки являются отдельным результатом чтения."}</p>}

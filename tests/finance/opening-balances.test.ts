@@ -3,6 +3,15 @@ import { describe, it } from "node:test";
 import { normalizeOpeningRows, parseCsv, parseOpeningBalances } from "../../src/lib/finance/opening-balances.ts";
 
 describe("opening balances from the 1С report", () => {
+  it("chooses the signed closing balance instead of the opening balance", () => {
+    assert.equal(parseOpeningBalances([["Контрагент", "Сальдо на начало", "Сальдо на конец"], ["А", 100, 250]]).rows[0].amount, 250);
+    assert.equal(parseOpeningBalances([["Контрагент", "Остаток на конец", "Остаток на начало"], ["А", -25, 100]]).rows[0].amount, -25);
+  });
+  it("rejects ambiguous signed balances and opening-only reports", () => {
+    for (const headers of [["Сальдо", "Остаток"], ["Сальдо на конец", "Остаток на конец"], ["Сальдо на начало"]]) {
+      assert.throws(() => parseOpeningBalances([["Контрагент", ...headers], ["А", 100, 250]]), /остаток|остатки|колонки/);
+    }
+  });
   it("takes the closing debit minus credit when the report has several pairs", () => {
     // Period labels are merged cells above «Дебет»/«Кредит»; «Контрагент» is in the same row as the pairs.
     const parsed = parseOpeningBalances([

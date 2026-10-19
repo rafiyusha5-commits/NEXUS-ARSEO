@@ -39,14 +39,21 @@ export async function checkPilotReport(snapshot) {
   assert.equal(report.totals.reconciled, true);
   assert.equal(report.items.reduce((n, i) => n + i.discrepancy, 0), -3);
   assert.equal(report.transports.length, 2);
-  assert.equal(report.documents.length, 2);
+  assert.equal(report.documents.length, 3);
   assert.equal(report.receipts.length, 2);
   assert.ok(report.items.every(i => Number(i.unit_price) > 0));
   const cmr = snapshot.documents.find(d => d.id === 'ee200000-0000-4000-8000-000000000001').document_type_id;
   assert.ok(snapshot.document_requirements.some(r => r.document_type_id === cmr && r.applies_to === 'shipment_transport' && r.is_mandatory));
-  assert.equal(snapshot.document_links.length, 2, 'CMR on vehicle 1 plus shipment invoice');
-  assert.ok(report.missingDocuments.some(r => r.requirement.document_type_id === cmr && r.transport?.sequence_no === 2),
-    'current report preserves missing CMR on vehicle 2');
+  assert.equal(snapshot.document_links.length, 3, 'CMR on each vehicle plus shipment invoice');
+  assert.ok(!report.missingDocuments.some(r => r.requirement.document_type_id === cmr), 'completed scenario includes both CMRs');
+  const completeDocuments = snapshot.documents;
+  const completeLinks = snapshot.document_links;
+  try {
+    snapshot.documents = completeDocuments.filter(d => d.id !== 'ee200000-0000-4000-8000-000000000003');
+    snapshot.document_links = completeLinks.filter(l => l.document_id !== 'ee200000-0000-4000-8000-000000000003');
+    const missing = await loadShipmentReport(client, snapshot.shipments[0].id, new Set());
+    assert.ok(missing.missingDocuments.some(r => r.requirement.document_type_id === cmr && r.transport?.sequence_no === 2), 'negative case: missing second CMR is visible');
+  } finally { snapshot.documents = completeDocuments; snapshot.document_links = completeLinks; }
   assert.equal(report.totals.confirmed, 150);
   assert.equal(report.totals.shipped, 150);
   assert.equal(report.shipment.status, 'closed');
@@ -54,5 +61,5 @@ export async function checkPilotReport(snapshot) {
   assert.ok(hidden.items.every(i => i.unit_price === null));
   assert.equal(priceCalls, 1, 'no purchase-price RPC without permission');
   console.log('PASS actual report loader: 150 ordered / 147 accepted, batches and receipts; price redaction');
-  console.log('PASS missing CMR of vehicle 2 remains visible after closure');
+  console.log('PASS both CMRs in completed scenario; missing CMR detected in separate negative case');
 }

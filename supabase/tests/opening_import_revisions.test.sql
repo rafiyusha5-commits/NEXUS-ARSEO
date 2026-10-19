@@ -1,0 +1,36 @@
+\set ON_ERROR_STOP 1
+begin;
+insert into auth.users(id,email) values ('b9800000-0000-4000-8000-000000000001','revision@example.invalid');
+insert into public.user_roles(user_id,role_id) select 'b9800000-0000-4000-8000-000000000001',id from public.app_roles where code='accountant';
+insert into public.counterparties(id,roles,legal_name,country,tax_id) values ('b9800000-0000-4000-8000-000000000002',array['customer'],'Synthetic date correction','KZ','990000009801');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','b9800000-0000-4000-8000-000000000001',true);
+do $$ declare p jsonb; original jsonb; v jsonb; oldid uuid; new_id uuid; r jsonb; r0 jsonb; failed boolean; begin
+ p:='{"kind":"opening","file_name":"date.csv","file_sha256":"9898989898989898989898989898989898989898989898989898989898989898","as_of":"2026-01-01","rows":[{"name":"Synthetic date correction","bin":"990000009801","currency":"KZT","amount":100}],"problems":[]}';
+ original:=p;
+ v:=public.preview_receivables_import(p);
+ r0:=public.confirm_receivables_import('b9800000-0000-4000-8000-000000000003',p,v->>'fingerprint');
+ select id into oldid from public.customer_opening_balances where customer_id='b9800000-0000-4000-8000-000000000002' and superseded_at is null;
+ p:=p||'{"as_of":"2026-01-02"}';
+ v:=public.preview_receivables_import(p);
+ assert not (v->>'can_confirm')::boolean,'date correction requires explicit replacement';
+ failed:=false;
+ begin perform public.confirm_receivables_import('b9800000-0000-4000-8000-000000000004',p,v->>'fingerprint'); exception when others then failed:=true; end;
+ assert failed,'unconfirmed correction accepted';
+ p:=jsonb_set(p,'{rows,0}',p#>'{rows,0}'||jsonb_build_object('replace_id',oldid,'reason','Correct the entered date after checking source'));
+ v:=public.preview_receivables_import(p);
+ assert (v->>'can_confirm')::boolean,'explicit correction preview blocked';
+ r:=public.confirm_receivables_import('b9800000-0000-4000-8000-000000000004',p,v->>'fingerprint');
+ assert r=public.confirm_receivables_import('b9800000-0000-4000-8000-000000000004',p,v->>'fingerprint'),'revision retry differs';
+ assert r=public.confirm_receivables_import('b9800000-0000-4000-8000-000000000005',p||'{"file_name":"renamed.csv"}',v->>'fingerprint'),'renamed correction duplicated';
+ select id into new_id from public.customer_opening_balances where customer_id='b9800000-0000-4000-8000-000000000002' and superseded_at is null;
+ assert oldid<>new_id and (select as_of=date '2026-01-02' and amount=100 from public.customer_opening_balances where id=new_id),'new balance wrong';
+ assert (select superseded_at is not null and as_of=date '2026-01-01' from public.customer_opening_balances where id=oldid),'history lost';
+ assert r0=public.confirm_receivables_import('b9800000-0000-4000-8000-000000000006',original,'old preview'),'old replay should return receipt without reverting correction';
+ assert (select count(*)=2 from public.customer_opening_balances where customer_id='b9800000-0000-4000-8000-000000000002'),'duplicate balance';
+ assert (select count(*)=2 from public.receivables_import_batches where file_sha256=p->>'file_sha256'),'revision receipts lost';
+ failed:=false;
+ begin perform public.confirm_receivables_import('b9800000-0000-4000-8000-000000000004',original,'old'); exception when others then failed:=true; end;
+ assert failed,'request ID reused for different payload';
+end $$;
+rollback;

@@ -47,7 +47,7 @@ export function ImportReview({ payload }: { payload: ImportPayload }) {
     {review && <>
       <p className="form-help">Суммы ниже относятся ко всем строкам файла, включая повторы. Повторы не создают новых оплат.</p>
       <div className="operation-facts">{review.totals.map(t => <div key={t.currency}><small>{t.count} строк · {t.currency}</small><strong>{money(t.amount,t.currency)}</strong></div>)}</div>
-      {review.existing_batch_id && <p className="setup-notice">Этот файл уже подтверждён. Повтор возвращает результат сохранённого пакета.</p>}
+      {review.existing_batch_id && <p className="setup-notice">Этот файл уже подтверждён. Неизменённый повтор не создаёт записей.{payload.kind === "opening" && " Для исправления даты или данных подтвердите замену каждого действующего сальдо с причиной: новая редакция сохранит прежние записи в истории."}</p>}
       <p>Новых: {review.rows.filter(r => r.status === "new").length}. Ранее загруженных: {review.rows.filter(r => r.status === "duplicate").length}. Требуют проверки: {review.rows.filter(r => r.status === "error").length}.</p>
       <div className="table-wrap"><table className="data-table"><thead><tr><th>Строка</th><th>Результат</th><th>Покупатель / основание</th><th>Сумма</th><th>Ручное решение</th></tr></thead><tbody>
         {review.rows.map((row,i) => <tr key={row.ordinal}>

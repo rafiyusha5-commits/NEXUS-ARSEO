@@ -216,6 +216,17 @@ do $$begin
  assert (select sum(quantity_on_hand) filter(where b.uom='piece')=77 and sum(quantity_on_hand) filter(where b.uom='box')=1 and sum(quantity_reserved)=0 from public.inventory_balances b join public.inventory_batches x on x.id=b.batch_id where x.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),'stock after return: 77 pieces plus one 10-piece box, never add unlike units';
 end$$;
 -- Closing is a real last-stage operation, not the old PR9 expectation of premature closure.
+-- The missing-CMR negative case above is separate from the completed scenario: supply CMR for vehicle 2.
+insert into storage.objects(bucket_id,name,owner_id,metadata) values
+ ('nexus-documents','documents/ee200000-0000-4000-8000-000000000003/cccccccccccccccccccccccccccccccc-cmr2.pdf','ee000000-0000-4000-8000-000000000001','{"size":64,"mimetype":"application/pdf"}');
+select public.register_document('ee200000-0000-4000-8000-000000000003',(select id from public.document_types where code='cmr'),
+ 'Synthetic Pilot CMR 2','documents/ee200000-0000-4000-8000-000000000003/cccccccccccccccccccccccccccccccc-cmr2.pdf','cmr2.pdf',
+ 'PILOT-CMR-2',null,'2099-01-01',null,null,null,null,repeat('c',64),
+ jsonb_build_array(jsonb_build_object('entity_type','shipment_transport','entity_id',pg_temp.pilot_id('t2'))));
+do $$begin
+ assert not exists(select 1 from jsonb_array_elements(public.shipment_document_check(pg_temp.pilot_id('shipment'))->'findings') f
+  where f->>'code'='document_missing' and f->>'field'='cmr'),'CMRs incomplete before closing';
+end$$;
 do $$declare task_stage record; begin
  for task_stage in select r.id from public.shipment_stage_runs r join public.shipment_stages s on s.id=r.stage_id
  where r.shipment_id=pg_temp.pilot_id('shipment') and s.code<>'closed' and r.status not in ('completed','skipped','not_applicable') order by s.sequence_order,r.id loop
@@ -232,8 +243,8 @@ select 'PILOT_RESULT='||jsonb_build_object('ordered',150,'received_including_dam
  'reserved',(select sum(b.quantity_reserved) from public.inventory_balances b join public.inventory_batches x on x.id=b.batch_id where x.product_id in (pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
  'sale_status',(select status from public.sales where id=pg_temp.pilot_id('sale')),
  'shipment_status',(select status from public.shipments where id=pg_temp.pilot_id('shipment')),
- 'known_defects','[]'::jsonb,
- 'documents',(select count(*) from public.documents where id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002')))::text;
+ 'coverage','Synthetic operations and CMR completeness; not proof that all document/business warnings are absent',
+ 'documents',(select count(*) from public.documents where id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002','ee200000-0000-4000-8000-000000000003')))::text;
 reset role;
 -- The actual report loader receives this DB snapshot through a local PostgREST-shaped adapter.
 select 'PILOT_REPORT='||jsonb_build_object(
@@ -245,8 +256,8 @@ select 'PILOT_REPORT='||jsonb_build_object(
  'shipment_transport_receipts',(select jsonb_agg(to_jsonb(r)||jsonb_build_object('items',
   (select jsonb_agg(to_jsonb(i)||jsonb_build_object('batch',to_jsonb(b),'movement',jsonb_build_object('quantity',m.quantity))) from public.shipment_transport_receipt_items i
    left join public.inventory_batches b on b.id=i.inventory_batch_id left join public.inventory_movements m on m.id=i.inventory_movement_id where i.receipt_id=r.id))) from public.shipment_transport_receipts r where r.shipment_id=pg_temp.pilot_id('shipment')),
- 'documents',(select jsonb_agg(to_jsonb(d)) from public.documents d where id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002')),
- 'document_links',(select jsonb_agg(to_jsonb(l)) from public.document_links l where document_id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002')),
+ 'documents',(select jsonb_agg(to_jsonb(d)) from public.documents d where id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002','ee200000-0000-4000-8000-000000000003')),
+ 'document_links',(select jsonb_agg(to_jsonb(l)) from public.document_links l where document_id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002','ee200000-0000-4000-8000-000000000003')),
  'document_requirements',(select jsonb_agg(to_jsonb(r)) from public.document_requirements r where is_active),
  'tasks',(select coalesce(jsonb_agg(to_jsonb(t)),'[]'::jsonb) from public.tasks t where shipment_id=pg_temp.pilot_id('shipment')))::text;
 rollback;

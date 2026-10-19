@@ -8,6 +8,8 @@ export type CustomsRecord = {
   currency?: string | null;
   expectedCount?: number | null;
   invoiceNumbers?: string[];
+  packingNumbers?: string[];
+  validationWarnings?: string[];
 };
 
 export function isCustomsForm(text: string) {
@@ -71,6 +73,8 @@ export function parseCustomsForm(raw: string): CustomsRecord | null {
     record.items = goods.items;
     record.invoiceNumbers = [...new Set([...raw.matchAll(/^\d+\s*\|\s*\d+\s*\|\s*04021\s*\|\s*([^|\n]+)\|/gmu)].map(match => match[1].trim()))];
     record.expectedCount = goods.expectedCount;
+    record.packingNumbers = [...new Set([...raw.matchAll(/^\d+\s*\|\s*\d+\s*\|\s*04131\s*\|\s*([^|\n]+)\|/gmu)].map(match => match[1].trim()))];
+    record.validationWarnings = [...goods.warnings];
     record.warnings.push(...goods.warnings);
     for (const [key, label, total] of [
       ["amount", "Сумма цен товарных строк / графа 22", invoice ? customsAmount(invoice[2]) : null],
@@ -78,6 +82,7 @@ export function parseCustomsForm(raw: string): CustomsRecord | null {
     ] as const) {
       const complete = goods.items.length > 0 && goods.items.length === goods.expectedCount && !goods.warnings.length && goods.items.every(item => item[key] !== null);
       const sum = goods.items.reduce((acc, item) => acc + (item[key] ?? 0), 0);
+      if (!complete || total === null || Math.abs(sum - total) > 0.011) record.validationWarnings.push(`${label}: итог не подтверждён`);
       put(label, complete && total !== null ? `${money(sum)} · ${Math.abs(sum - total) <= 0.011 ? "совпадает" : "РАСХОЖДЕНИЕ"}` : "Полнота сумм не подтверждена");
     }
     record.warnings.push("Товарные строки — результат чтения, требующий сверки. Начисления по отдельным товарам здесь не рассчитываются.");

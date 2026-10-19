@@ -189,6 +189,10 @@ echo "re-applying document migrations (idempotency check)"
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279500_reservation_replacement.sql" >/dev/null
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279700_customs_review_validation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279800_opening_import_revisions.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279900_customs_evidence_revision.sql" >/dev/null
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
