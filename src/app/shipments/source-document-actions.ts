@@ -75,6 +75,27 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }
 
+export async function reviseShipmentCustomsAction(formData: FormData) {
+  const shipmentId = value(formData, "shipment_id"), documentId = value(formData, "document_id");
+  const extractionId = value(formData, "extraction_id"), versionId = value(formData, "document_version_id"), requestId = value(formData, "request_id");
+  const updatedAt = value(formData, "expected_updated_at"), reason = value(formData, "reason");
+  if (![shipmentId, documentId, extractionId, versionId, requestId].every(id => UUID.test(id))) redirect("/shipments?error=Некорректные данные");
+  if (value(formData, "checked") !== "on" || reason.length < 10 || reason.length > 2000 || !Number.isFinite(Date.parse(updatedAt)))
+    redirect(back(shipmentId, "error", "Подтвердите новую редакцию и укажите причину (10–2000 символов)"));
+  const { supabase } = await requireUser();
+  const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.view", "shipments.view"] as const);
+  if (!Object.values(permissions).every(Boolean)) redirect(back(shipmentId, "error", "Недостаточно прав для новой редакции"));
+  // Bind the selected file to the extraction before reading; the RPC repeats version/link checks under locks.
+  const { data: source, error: sourceError } = await supabase.from("shipment_source_extractions").select("document_id")
+    .eq("id", extractionId).eq("shipment_id", shipmentId).single();
+  if (sourceError || source?.document_id !== documentId) redirect(back(shipmentId, "error", "Источник изменился. Обновите страницу"));
+  try { await extractShipmentSources(supabase, shipmentId, { documentId, customsRevision: { extractionId, versionId, updatedAt, requestId, reason } }); }
+  catch (error) { redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось создать новую редакцию."))); }
+  await runDocumentCheckAfterRecognition(supabase, shipmentId);
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back(shipmentId, "success", "Создана новая редакция декларации. Сверьте и подтвердите её заново. Прежняя сверка сохранена в истории, ручные реквизиты сохранены; поставка, склад и финансы не изменены"));
+}
+
 // Acknowledge the exact declaration shown on the page. No editable quantities or finance values.
 export async function confirmShipmentCustomsAction(formData: FormData) {
   const shipmentId = value(formData, "shipment_id");

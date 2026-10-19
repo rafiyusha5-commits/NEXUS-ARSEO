@@ -7,6 +7,10 @@
 // names here and a test with an anonymised copy.
 
 export type BankPayment = {
+  operation_id?: string | null;
+  identity_source?: "bank";
+  recipient_account?: string;
+  rowNumber?: number;
   doc_number: string | null;
   doc_date: string;
   amount: number;
@@ -61,7 +65,8 @@ export function parseStatementAmount(value: string | number | null | undefined):
   if (typeof value === "number") return Number.isFinite(value) && Math.round(value * 100) / 100 === value ? value : null;
   const text = (value ?? "").replace(/[\s ]/g, "").replace(",", ".");
   if (!/^-?\d+(\.\d{1,2})?$/.test(text)) return null;
-  return Number(text);
+  const amount = Number(text);
+  return Number.isFinite(amount) && Math.abs(amount) < 100000000000000 ? amount : null;
 }
 
 function pick(fields: Map<string, string>, names: string[]) {
@@ -81,7 +86,7 @@ function purposeOf(fields: Map<string, string>) {
 
 export function parseBankStatement(source: string): ParsedStatement {
   const lines = source.split(/\r\n|\r|\n/);
-  if (!lines.some(line => line.trim() === "1CClientBankExchange")) {
+  if (lines.find(line => line.trim())?.trim() !== "1CClientBankExchange") {
     throw new Error("Это не выписка в формате 1С: в начале файла нет строки «1CClientBankExchange».");
   }
   const header = new Map<string, string>();
@@ -92,7 +97,10 @@ export function parseBankStatement(source: string): ParsedStatement {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    if (line.startsWith("СекцияДокумент")) { current = new Map(); section = "document"; continue; }
+    if (line.startsWith("СекцияДокумент")) {
+      if (current) throw new Error("Файл оборван: вложенная секция документа.");
+      current = new Map(); section = "document"; continue;
+    }
     if (line === "КонецДокумента") { if (current) documents.push(current); current = null; section = null; continue; }
     if (line === "СекцияРасчСчет") { section = "account"; continue; }
     if (line === "КонецРасчСчет") { section = null; continue; }
@@ -105,8 +113,18 @@ export function parseBankStatement(source: string): ParsedStatement {
     if (!header.has(key)) header.set(key, value);
   }
   if (current) throw new Error("Файл оборван: последний документ не закрыт строкой «КонецДокумента».");
+  if (!accounts.size || !lines.some(line => line.trim() === "КонецФайла")) throw new Error("Неполная выписка: нет счёта или строки «КонецФайла».");
 
   const problems: string[] = [];
+  const currencies = new Set<string>();
+  for (const fields of [header, ...documents]) {
+    const raw = (fields.get("Валюта") ?? fields.get("КодВалюты") ?? "").trim().toUpperCase();
+    if (raw) {
+      const code = /^[A-Z]{3}$/.test(raw) ? raw : CURRENCY_BY_NUMBER[raw];
+      if (code) currencies.add(code); else problems.push(`Неизвестная валюта: ${raw}`);
+    }
+  }
+  if (currencies.size > 1) problems.push("Многовалютная выписка не поддерживается: выгрузите каждый счёт и валюту отдельно");
   const incoming: BankPayment[] = [];
   let outgoing = 0;
   documents.forEach((fields, index) => {
@@ -116,12 +134,20 @@ export function parseBankStatement(source: string): ParsedStatement {
     const isIncoming = accounts.size
       ? accounts.has(recipient) && !accounts.has(payerAccount)
       : Boolean(fields.get("ДатаПоступило")?.trim()) && !fields.get("ДатаСписано")?.trim();
-    if (!isIncoming) { outgoing++; return; }
+    if (!isIncoming) {
+      if (!accounts.has(payerAccount) && !accounts.has(recipient)) problems.push(`${label}: не определено направление платежа по счетам`);
+      else outgoing++;
+      return;
+    }
     const date = parseStatementDate(fields.get("ДатаПоступило")) ?? parseStatementDate(fields.get("Дата"));
     const amount = parseStatementAmount(fields.get("Сумма"));
     if (!date) { problems.push(`${label}: нет даты или дата некорректна`); return; }
     if (amount === null || amount <= 0) { problems.push(`${label}: сумма некорректна`); return; }
     incoming.push({
+      rowNumber: index + 1,
+      recipient_account: recipient,
+      operation_id: pick(fields, ["ИдентификаторОперации"]),
+      identity_source: "bank",
       doc_number: fields.get("Номер")?.trim() || null,
       doc_date: date,
       amount,
@@ -133,8 +159,7 @@ export function parseBankStatement(source: string): ParsedStatement {
   });
   if (incoming.length > MAX_PAYMENTS) throw new Error(`В одной выписке допускается не более ${MAX_PAYMENTS} поступлений.`);
 
-  const rawCurrency = (header.get("Валюта") ?? header.get("КодВалюты") ?? "").trim().toUpperCase();
-  const currency = /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : CURRENCY_BY_NUMBER[rawCurrency] ?? null;
+  const currency = currencies.size === 1 ? [...currencies][0] : null;
   return {
     accounts: [...accounts],
     periodFrom: parseStatementDate(header.get("ДатаНачала")),

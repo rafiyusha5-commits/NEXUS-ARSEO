@@ -3,6 +3,15 @@ import { describe, it } from "node:test";
 import { normalizeOpeningRows, parseCsv, parseOpeningBalances } from "../../src/lib/finance/opening-balances.ts";
 
 describe("opening balances from the 1С report", () => {
+  it("chooses the signed closing balance instead of the opening balance", () => {
+    assert.equal(parseOpeningBalances([["Контрагент", "Сальдо на начало", "Сальдо на конец"], ["А", 100, 250]]).rows[0].amount, 250);
+    assert.equal(parseOpeningBalances([["Контрагент", "Остаток на конец", "Остаток на начало"], ["А", -25, 100]]).rows[0].amount, -25);
+  });
+  it("rejects ambiguous signed balances and opening-only reports", () => {
+    for (const headers of [["Сальдо", "Остаток"], ["Сальдо на конец", "Остаток на конец"], ["Сальдо на начало"]]) {
+      assert.throws(() => parseOpeningBalances([["Контрагент", ...headers], ["А", 100, 250]]), /остаток|остатки|колонки/);
+    }
+  });
   it("takes the closing debit minus credit when the report has several pairs", () => {
     // Period labels are merged cells above «Дебет»/«Кредит»; «Контрагент» is in the same row as the pairs.
     const parsed = parseOpeningBalances([
@@ -36,9 +45,8 @@ describe("opening balances from the 1С report", () => {
     assert.deepEqual(parsed.rows, [{ rowNumber: 2, name: "ТОО \"Дельта\"", bin: "123", contract: null, currency: "EUR", amount: -10.5, due_date: "2026-10-15" }]);
   });
 
-  it("without an end-of-period label uses the last debit/credit pair", () => {
-    const parsed = parseOpeningBalances([["Контрагент", "Дебет", "Кредит", "Дебет", "Кредит"], ["А", 5, 0, 7, 2]]);
-    assert.equal(parsed.rows[0].amount, 5);
+  it("without an end-of-period label refuses to guess the last pair", () => {
+    assert.throws(() => parseOpeningBalances([["Контрагент", "Дебет", "Кредит", "Дебет", "Кредит"], ["А", 5, 0, 7, 2]]), /Неоднозначные/);
   });
 
   it("refuses a file without the needed columns", () => {

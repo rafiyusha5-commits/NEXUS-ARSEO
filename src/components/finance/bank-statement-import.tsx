@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { importBankStatementAction } from "@/app/finance/receivables/actions";
-import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { useRef, useState } from "react";
+import { ImportReview } from "@/components/finance/import-review";
 import { decodeStatement, parseBankStatement, type ParsedStatement } from "@/lib/finance/bank-statement";
 import { money } from "@/lib/finance/receivables";
 
@@ -16,23 +15,28 @@ const day = (value: string | null) => value ? value.split("-").reverse().join(".
 export function BankStatementImport({ currencies }: { currencies: string[] }) {
   const [parsed, setParsed] = useState<ParsedStatement | null>(null);
   const [file, setFile] = useState<{ name: string; sha: string } | null>(null);
-  const [currency, setCurrency] = useState("KZT");
+  const [currency, setCurrency] = useState("");
   const [problem, setProblem] = useState("");
+  const loadSequence = useRef(0);
   async function load(selected?: File) {
-    setParsed(null); setFile(null); setProblem("");
+    const sequence = ++loadSequence.current;
+    setParsed(null); setFile(null); setProblem(""); setCurrency("");
     if (!selected) return;
     try {
       const buffer = await selected.arrayBuffer();
       const result = parseBankStatement(decodeStatement(new Uint8Array(buffer)));
-      setFile({ name: selected.name, sha: await sha256(buffer) });
+      const sha = await sha256(buffer);
+      if (sequence !== loadSequence.current) return;
+      setFile({ name: selected.name, sha });
       setParsed(result);
       if (result.currency && currencies.includes(result.currency)) setCurrency(result.currency);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setProblem(error instanceof Error ? error.message : "Не удалось прочитать файл.");
     }
   }
   const total = (parsed?.incoming ?? []).reduce((sum, payment) => sum + payment.amount, 0);
-  return <form action={importBankStatementAction} className="bank-import">
+  return <div className="bank-import">
     <label className="wide-field">Файл выписки для 1С (kl_to_1c.txt)<input type="file" accept=".txt,text/plain" onChange={event => load(event.target.files?.[0])}/></label>
     <p className="form-help">В интернет-банке выберите выгрузку выписки «для 1С». Файл читается на этом компьютере, в Nexus попадают только поступления: дата, сумма, плательщик, БИН и назначение. Повторно загруженные платежи пропускаются.</p>
     {problem && <div className="login-error admin-message">{problem}</div>}
@@ -45,14 +49,14 @@ export function BankStatementImport({ currencies }: { currencies: string[] }) {
       </div>
       {parsed.problems.length > 0 && <div className="setup-notice">Не прочитаны: {parsed.problems.slice(0, 5).join("; ")}{parsed.problems.length > 5 ? "…" : ""}</div>}
       <div className="table-wrap"><table className="data-table"><thead><tr><th>Дата</th><th>№</th><th>Плательщик</th><th>Сумма</th><th>Назначение</th></tr></thead><tbody>
-        {parsed.incoming.slice(0, 10).map((payment, index) => <tr key={index}><td>{day(payment.doc_date)}</td><td>{payment.doc_number ?? "—"}</td><td>{payment.payer_name ?? "—"}<small>{payment.payer_bin ? `БИН ${payment.payer_bin}` : ""}</small></td><td>{money(payment.amount)}</td><td>{payment.purpose ?? "—"}</td></tr>)}
+        {parsed.incoming.map((payment, index) => <tr key={index}><td>{day(payment.doc_date)}</td><td>{payment.doc_number ?? "—"}</td><td>{payment.payer_name ?? "—"}<small>{payment.payer_bin ? `БИН ${payment.payer_bin}` : ""}</small></td><td>{money(payment.amount)}</td><td>{payment.purpose ?? "—"}</td></tr>)}
       </tbody></table></div>
-      {parsed.incoming.length > 10 && <p className="form-help">Показаны первые 10 из {parsed.incoming.length}.</p>}
       <input type="hidden" name="file_name" value={file.name}/><input type="hidden" name="file_sha256" value={file.sha}/>
       <input type="hidden" name="account" value={parsed.accounts[0] ?? ""}/><input type="hidden" name="period_from" value={parsed.periodFrom ?? ""}/><input type="hidden" name="period_to" value={parsed.periodTo ?? ""}/>
       <input type="hidden" name="payments" value={JSON.stringify(parsed.incoming)}/>
-      <div className="inline-form"><label>Валюта счёта<select name="currency" value={currency} onChange={event => setCurrency(event.target.value)}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select></label>
-        {parsed.incoming.length > 0 ? <PendingSubmitButton className="primary" pendingText="Загрузка…">Загрузить поступления</PendingSubmitButton> : <p className="form-help">В выписке нет поступлений на наш счёт.</p>}</div>
+      <div className="inline-form"><label>Валюта счёта<select name="currency" value={currency} onChange={event => setCurrency(event.target.value)}><option value="">Укажите валюту по выписке</option>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select></label></div>
+      {currency && parsed.accounts.length === 1 && parsed.incoming.length > 0 && <ImportReview key={`${file.sha}:${currency}`} payload={{ kind:"bank",file_name:file.name,file_sha256:file.sha,currency,account:parsed.accounts[0],period_from:parsed.periodFrom,period_to:parsed.periodTo,rows:parsed.incoming.map(row => ({...row})),problems:parsed.problems }}/ >}
+      {parsed.accounts.length !== 1 && <p role="alert">Нужна выписка одного счёта и одной валюты. Многосчётный файл не загружается.</p>}
     </>}
-  </form>;
+  </div>;
 }

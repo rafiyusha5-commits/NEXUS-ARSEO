@@ -1,0 +1,6 @@
+# Build once: docker build -f scripts/Dockerfile.db-test -t nexus-db-test:pg16-node24 scripts
+# Matching Debian versions keep the Node runtime ABI compatible. No application files or credentials.
+FROM node:24-bookworm-slim AS runtime
+FROM postgres:16-bookworm
+COPY --from=runtime /usr/local/bin/node /usr/local/bin/node
+RUN node --version && postgres --version

@@ -5,6 +5,15 @@
 \set ON_ERROR_STOP 1
 begin;
 
+-- Test-only fixture adapters for the unchanged historical ledger arithmetic below.
+-- Production authenticated EXECUTE on these old writers is revoked. New import entry points,
+-- rights, explicit replacement and idempotency are exercised in receivables_import_safety.test.sql.
+create function pg_temp.ledger_fixture_bank(text,text,text,date,date,text,jsonb) returns jsonb
+language sql security definer set search_path='' as $$ select public.import_bank_statement($1,$2,$3,$4,$5,$6,$7) $$;
+create function pg_temp.ledger_fixture_opening(date,jsonb,text default null) returns jsonb
+language sql security definer set search_path='' as $$ select public.import_opening_balances($1,$2,$3) $$;
+grant execute on function pg_temp.ledger_fixture_bank(text,text,text,date,date,text,jsonb),pg_temp.ledger_fixture_opening(date,jsonb,text) to authenticated;
+
 insert into auth.users(id,email,raw_user_meta_data) values
  ('ef000000-0000-4000-8000-000000000001','recv-director@test.local','{"full_name":"Receivables Director"}'),
  ('ef000000-0000-4000-8000-000000000002','recv-sales@test.local','{"full_name":"Receivables Sales"}'),
@@ -59,16 +68,16 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000002',false);
 select pg_temp.fails($$select public.customer_receivables()$$,'Нет доступа к дебиторской');
 select pg_temp.fails($$select public.customer_statement('ef100000-0000-4000-8000-000000000002')$$,'Нет доступа к дебиторской');
-select pg_temp.fails($$select public.import_opening_balances(current_date,'[{"bin":"123456789012","amount":1}]')$$,'Нет права вести');
-select pg_temp.fails($$select public.import_bank_statement('x.txt',repeat('a',64),null,null,null,'KZT','[]')$$,'Нет права вести');
+select pg_temp.fails($$select pg_temp.ledger_fixture_opening(current_date,'[{"bin":"123456789012","amount":1}]')$$,'Нет права вести');
+select pg_temp.fails($$select pg_temp.ledger_fixture_bank('x.txt',repeat('a',64),null,null,null,'KZT','[]')$$,'Нет права вести');
 select pg_temp.fails($$insert into public.customer_balance_adjustments(customer_id,currency_id,entry_date,amount,reason) values('ef100000-0000-4000-8000-000000000002',(select id from public.currencies where code='KZT'),current_date,1,'x')$$,'permission denied');
 
 -- ---------- opening balance from the 1С report ----------
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000003',false);
 select public.set_customer_credit_terms('ef100000-0000-4000-8000-000000000002',null,null,10);
-select pg_temp.fails($$select public.import_opening_balances(current_date+1,'[{"bin":"123456789012","amount":1}]')$$,'будущем');
-select pg_temp.fails($$select public.import_opening_balances(current_date,'[{"bin":"123456789012","amount":"1"}]')$$,'числом');
-do $$ declare r jsonb := public.import_opening_balances(current_date-40,
+select pg_temp.fails($$select pg_temp.ledger_fixture_opening(current_date+1,'[{"bin":"123456789012","amount":1}]')$$,'будущем');
+select pg_temp.fails($$select pg_temp.ledger_fixture_opening(current_date,'[{"bin":"123456789012","amount":"1"}]')$$,'числом');
+do $$ declare r jsonb := pg_temp.ledger_fixture_opening(current_date-40,
   '[{"bin":"123456789012","amount":1000,"contract":"Д-1"},{"name":"ТОО «Дебитор»","amount":500,"contract":"Д-2"},
     {"name":"Нет такого","bin":"000","amount":5},{"name":"тоо «старый долг»","amount":300}]'::jsonb,'Взаиморасчёты.xlsx');
 begin
@@ -85,7 +94,7 @@ do $$ begin
  assert (pg_temp.aging('ef100000-0000-4000-8000-000000000003')->>'overdue_31_60')::numeric=300,'old debt 31-60';
 end $$;
 -- A newer report replaces the old row, it does not add up.
-select public.import_opening_balances(current_date-100,'[{"bin":"210987654321","amount":300}]');
+select pg_temp.ledger_fixture_opening(current_date-100,'[{"bin":"210987654321","amount":300}]');
 do $$ begin
  assert (select count(*)=1 from public.customer_opening_balances where customer_id='ef100000-0000-4000-8000-000000000003' and superseded_at is null),'one active row';
  assert (select count(*)=1 from public.customer_opening_balances where customer_id='ef100000-0000-4000-8000-000000000003' and superseded_by is not null),'old row superseded';
@@ -93,7 +102,7 @@ do $$ begin
 end $$;
 
 -- ---------- bank statement ----------
-do $$ declare r jsonb := public.import_bank_statement('kl_to_1c.txt',pg_temp.sha('statement-1'),'KZ00FREEDOM',current_date-60,current_date-1,'KZT',
+do $$ declare r jsonb := pg_temp.ledger_fixture_bank('kl_to_1c.txt',pg_temp.sha('statement-1'),'KZ00FREEDOM',current_date-60,current_date-1,'KZT',
   jsonb_build_array(
     jsonb_build_object('doc_number','11','doc_date',current_date-45,'amount',999,'payer_bin','123456789012','payer_name','ТОО Дебитор','purpose','Оплата'),
     jsonb_build_object('doc_number','12','doc_date',current_date-20,'amount',400,'payer_bin','123456789012','payer_name','ТОО Дебитор','purpose','Оплата по договору Д-1'),
@@ -101,7 +110,7 @@ do $$ declare r jsonb := public.import_bank_statement('kl_to_1c.txt',pg_temp.sha
 begin
  assert (r->>'new')::int=3 and (r->>'matched')::int=2 and (r->>'duplicates')::int=0,'3 new, 2 matched by BIN: '||r::text;
 end $$;
-select pg_temp.fails($$select public.import_bank_statement('again.txt',pg_temp.sha('statement-1'),'KZ00FREEDOM',null,null,'KZT','[]')$$,'уже загружена');
+select pg_temp.fails($$select pg_temp.ledger_fixture_bank('again.txt',pg_temp.sha('statement-1'),'KZ00FREEDOM',null,null,'KZT','[]')$$,'уже загружена');
 do $$ begin
  assert (select matched_how='auto_bin' and status='matched' from public.bank_statement_lines where doc_number='12'),'matched by BIN';
  assert (select status='unmatched' from public.bank_statement_lines where doc_number='13'),'unknown payer stays unmatched';
@@ -152,7 +161,7 @@ do $$ declare e jsonb; begin
 end $$;
 
 -- A payment by the order number from an unknown account, and an overlapping statement.
-do $$ declare r jsonb := public.import_bank_statement('kl_to_1c (2).txt',pg_temp.sha('statement-2'),'KZ00FREEDOM',current_date-30,current_date,'KZT',
+do $$ declare r jsonb := pg_temp.ledger_fixture_bank('kl_to_1c (2).txt',pg_temp.sha('statement-2'),'KZ00FREEDOM',current_date-30,current_date,'KZT',
   jsonb_build_array(
     jsonb_build_object('doc_number','12','doc_date',current_date-20,'amount',400,'payer_bin','123456789012','payer_name','ТОО Дебитор','purpose','Оплата по договору Д-1'),
     jsonb_build_object('doc_number','21','doc_date',current_date-1,'amount',1100,'payer_bin','999999999999','payer_name','ТОО Плательщик за третье лицо',
@@ -199,7 +208,7 @@ do $$ declare r jsonb := public.record_reconciliation_act('ef100000-0000-4000-80
 end $$;
 
 -- ---------- advance in another currency ----------
-select public.import_bank_statement('eur.txt',pg_temp.sha('statement-eur'),'KZ00FREEDOMEUR',null,null,'EUR',
+select pg_temp.ledger_fixture_bank('eur.txt',pg_temp.sha('statement-eur'),'KZ00FREEDOMEUR',null,null,'EUR',
   jsonb_build_array(jsonb_build_object('doc_number','1','doc_date',current_date,'amount',50,'payer_bin','210987654321','purpose','Предоплата')));
 do $$ begin
  assert (pg_temp.aging('ef100000-0000-4000-8000-000000000003','EUR')->>'balance')::numeric=-50,'an advance';

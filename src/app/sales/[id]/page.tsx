@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CustomerReturnsPanel } from "@/components/sales/customer-returns-panel";
+import { ReservationReplacement } from "@/components/sales/reservation-replacement";
+import { replacementPermissions, replacementUnits } from "@/lib/sales/reservation-replacement";
 import { OperationTabs } from "@/components/operation-tabs";
 import { SaleCreditPanel, SaleCreditWarning } from "@/components/sales/sale-credit-panel";
 import { requireUser } from "@/lib/auth/access";
@@ -58,7 +60,10 @@ export default async function SalePage({
     .eq("id", id)
     .maybeSingle();
   if (!sale) notFound();
-  const { data: fulfillmentPermissions } = await supabase.rpc("my_permissions", { p_codes: ["sales.manage", "inventory.move", "sales.view", "sales.reserve", "guarantee_letters.manage"] });
+  const { data: fulfillmentPermissions } = await supabase.rpc("my_permissions", { p_codes: [...replacementPermissions, "inventory.move", "guarantee_letters.manage"] });
+  const canReplace = replacementPermissions.every(code => (fulfillmentPermissions ?? []).includes(code));
+  const { data: replacements } = await selectAll((from, to) => supabase.from("sale_reservation_replacements")
+    .select("id,created_at,created_by,reason,previous_allocation,new_allocation,actor:profiles(full_name)").eq("sale_id", id).order("created_at").order("id").range(from, to));
   const canFulfill = ["sales.manage", "inventory.move"].every(code => (fulfillmentPermissions ?? []).includes(code));
   // What the shipment would stop at, all at once (customer_order_shipping_blockers); only a confirmed order has it.
   const { data: blockers, error: blockersError } = sale.status === "confirmed" ? await supabase.rpc("customer_order_shipping_blockers", { p_sale_id: id }) : { data: [], error: null };
@@ -98,6 +103,13 @@ export default async function SalePage({
     { label: "Товар отгружен", complete: sale.status === "shipped", current: sale.status === "shipped" },
   ];
   const history = [
+    ...(replacements ?? []).map(event => {
+      type Row = { item_id: string; batch_number: string; quantity: number; uom: string };
+      const next = event.new_allocation as Row[];
+      const old = (event.previous_allocation as Row[]).filter(row => next.some(n => n.item_id === row.item_id));
+      const describe = (rows: Row[]) => rows.map(r => `${r.batch_number}: ${r.quantity} ${replacementUnits[r.uom] ?? r.uom}`).join("; ");
+      return { at: event.created_at as string, title: "Заменены зарезервированные партии", detail: `${event.reason}. Было: ${describe(old)}. Стало: ${describe(next)}. Сотрудник: ${one(event.actor)?.full_name ?? event.created_by}` };
+    }),
     ...(preparationReturns ?? []).map(event => ({ at: event.created_at as string, title: "Заказ возвращён к подготовке", detail: event.reason as string })),
     ...(dateChanges ?? []).map(event => ({ at: event.changed_at as string, title: `Отгрузка перенесена: ${formatDate(event.previous_date)} → ${formatDate(event.new_date)}`, detail: event.reason as string })),
     { at: sale.created_at as string, title: "Заказ создан", detail: sale.sale_number as string },
@@ -144,6 +156,7 @@ export default async function SalePage({
         {sale.status === "confirmed" && <div className="order-blockers"><p className="eyebrow">Что мешает отгрузке</p>{blockersError ? <p className="form-help">Не удалось проверить заказ перед отгрузкой.</p> : (blockers ?? []).length ? <ul>{(blockers as { code: string; message: string }[]).map((blocker, index) => <li key={`${blocker.code}-${index}`}>{blocker.message}</li>)}</ul> : <p className="form-help">Препятствий нет: заказ можно отгружать.</p>}</div>}
         {canReschedule && <details className="order-reschedule"><summary>Перенести отгрузку · сейчас {formatDate(sale.planned_shipment_date)}</summary><form action={rescheduleCustomerOrder} className="inline-action"><input type="hidden" name="sale_id" value={id}/><label>Новая дата<input name="planned_shipment_date" type="date" required min={businessToday}/></label><label>Причина<input name="reason" required placeholder="Почему переносится отгрузка"/></label><button className="secondary" type="submit">Перенести</button></form>{sale.status === "confirmed" && <p className="form-help">Подтверждённый заказ переносится, только если на новую дату партии ещё годны и хватает остаточного срока или действующего гарантийного письма. Иначе верните заказ к подготовке.</p>}</details>}
         {sale.status === "confirmed" && canReturnToPreparation && <form action={returnCustomerOrderToPreparation} className="inline-action"><input type="hidden" name="sale_id" value={id}/><p className="form-help">Если партия заблокирована, просрочена или ОСГ снизился, верните заказ к подготовке. Номер, товары и резервы сохранятся. Действующие гарантийные письма будут отменены с сохранением истории; после проверки потребуется новое подтверждение заказа.</p><input name="reason" required maxLength={500} aria-label="Причина возврата к подготовке" placeholder="Причина возврата к подготовке"/><button className="secondary" type="submit">Вернуть к подготовке</button></form>}
+        {sale.status === "confirmed" && canReplace && <ReservationReplacement saleId={id}/>}
         {sale.status === "confirmed" && canFulfill && <form action={fulfillCustomerOrder}><input type="hidden" name="sale_id" value={id}/><p className="form-help">Будут списаны все зарезервированные партии заказа. Требуются права управления продажами и складского движения.</p><button className="primary" type="submit">Отгрузить заказ полностью</button></form>}
         {sale.status === "shipped" && <p className="form-help">Отгрузка выполнена {formatDateTime(sale.shipped_at)}. <Link href="/inventory/movements">Журнал складских движений</Link></p>}
         {sale.status === "shipped" && (items ?? []).flatMap(item => (item.reservations ?? [])

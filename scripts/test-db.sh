@@ -185,12 +185,21 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279200_source_evidence_integrity.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279300_confirmed_invoice_evidence_refresh.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279400_customs_evidence_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279600_receivables_import_safety.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279500_reservation_replacement.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279700_customs_review_validation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279800_opening_import_revisions.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279900_customs_evidence_revision.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
 
+echo "test: confirmed-order reservation replacement under concurrency"
+node "$ROOT/scripts/test-reservation-replacement-concurrency.mjs" "${PSQL[@]}"
 echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 
@@ -273,3 +282,4 @@ if [[ "$claimed" != "1" || "$refused" != "9" ]]; then
 fi
 
 echo "database tests passed"
+node "$ROOT/scripts/test-receivables-import-concurrency.mjs" "${PSQL[@]}"

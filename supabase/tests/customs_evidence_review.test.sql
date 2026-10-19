@@ -66,6 +66,11 @@ create temporary table before_review as select
  (select jsonb_agg(to_jsonb(i) order by id) from public.shipment_items i) items,
  (select jsonb_agg(to_jsonb(s) order by id) from public.shipments s) shipments,
  (select count(*) from public.inventory_movements) movements;
+create temporary table review_business_snapshot as select
+ (select jsonb_agg(to_jsonb(b) order by id) from public.inventory_balances b) balances,
+ (select jsonb_agg(to_jsonb(r) order by id) from public.inventory_reservations r) reservations,
+ (select jsonb_agg(to_jsonb(e) order by id) from public.expenses e) expenses,
+ (select jsonb_agg(to_jsonb(c) order by id) from public.cost_calculations c) costs;
 set role authenticated;
 select pg_temp.review_customs();
 reset role;
@@ -79,6 +84,8 @@ do $$declare e public.shipment_source_extractions%rowtype; begin
  or (select movements from before_review)<>(select count(*) from public.inventory_movements) then raise exception 'Review wrote business data'; end if;
 end $$;
 create temporary table confirmed_review as select * from public.shipment_source_extractions where id='eb603000-0000-4000-8000-000000000001';
+create temporary table review_audit_snapshot as select count(*) as entries from public.audit_log
+ where entity_type='shipment_source_extractions' and entity_id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
 select pg_temp.review_customs();
 select public.upsert_shipment_source_extraction('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','other','needs_review','{"customs_record":{"kind":"declaration"}}');
@@ -88,5 +95,26 @@ do $$begin
  is distinct from (select to_jsonb(e) from confirmed_review e) then raise exception 'Retry/recognition overwrote manual review'; end if;
  if has_function_privilege('anon','public.review_shipment_customs_evidence(uuid,uuid,uuid,jsonb,text)','EXECUTE')
  or has_function_privilege('service_role','public.review_shipment_customs_evidence(uuid,uuid,uuid,jsonb,text)','EXECUTE') then raise exception 'Unexpected RPC grant'; end if;
+end $$;
+-- Replay adds no audit event; changing the review note retains the previous evidence in the audit.
+do $$begin
+ assert (select entries from review_audit_snapshot)=(select count(*) from public.audit_log
+  where entity_type='shipment_source_extractions' and entity_id='eb603000-0000-4000-8000-000000000001'),'duplicate review audit';
+ assert exists(select 1 from public.audit_log where entity_type='shipment_source_extractions'
+  and entity_id='eb603000-0000-4000-8000-000000000001' and actor_user_id='eb000000-0000-4000-8000-000000000001'
+  and after_data->>'status'='confirmed' and after_data->>'reviewed_at' is not null),'review audit missing author/time';
+end $$;
+set role authenticated;
+select pg_temp.review_customs(null,'Повторная ручная проверка: отличие от заказа сохраняется');
+reset role;
+do $$begin
+ assert exists(select 1 from public.audit_log where entity_type='shipment_source_extractions'
+  and entity_id='eb603000-0000-4000-8000-000000000001'
+  and before_data#>>'{confirmed_data,customs_review_note}'='Оригинал проверен; расхождение с заказом сохранено'
+  and after_data#>>'{confirmed_data,customs_review_note}'='Повторная ручная проверка: отличие от заказа сохраняется'),'note history lost';
+ assert (select balances from review_business_snapshot) is not distinct from (select jsonb_agg(to_jsonb(b) order by id) from public.inventory_balances b),'balances changed';
+ assert (select reservations from review_business_snapshot) is not distinct from (select jsonb_agg(to_jsonb(r) order by id) from public.inventory_reservations r),'reservations changed';
+ assert (select expenses from review_business_snapshot) is not distinct from (select jsonb_agg(to_jsonb(e) order by id) from public.expenses e),'expenses changed';
+ assert (select costs from review_business_snapshot) is not distinct from (select jsonb_agg(to_jsonb(c) order by id) from public.cost_calculations c),'costs changed';
 end $$;
 rollback;

@@ -6,7 +6,7 @@
 // whose header (or the merged header above it) mentions the end of the period, else the last pair. Rows with
 // totals are skipped. The real report has not been seen yet: when it arrives, adjust the aliases and add a test.
 
-import { parseStatementAmount } from "./bank-statement.ts";
+import { parseStatementAmount, parseStatementDate } from "./bank-statement.ts";
 
 export type Cell = string | number | boolean | Date | null;
 export type OpeningRow = {
@@ -18,7 +18,7 @@ export type OpeningRow = {
   amount: number;
   due_date: string | null;
 };
-export type ParsedOpening = { rows: OpeningRow[]; problems: string[] };
+export type ParsedOpening = { rows: OpeningRow[]; problems: string[]; excluded: { rowNumber: number; name: string; reason: string }[] };
 
 const MAX_ROWS = 2000;
 const normalize = (value: Cell) => String(value ?? "").trim().toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/\s+/g, " ");
@@ -30,7 +30,7 @@ const isEnd = (label: string) => /конец|конеч|на \d{2}\.\d{2}\.\d{4}
 
 function amountOf(value: Cell): number | null {
   if (value === null || value === "" || value === undefined) return 0;
-  if (typeof value === "number") return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+  if (typeof value === "number") return parseStatementAmount(value);
   const cleaned = String(value).replace(/[\s ]/g, "");
   if (!cleaned) return 0;
   return parseStatementAmount(cleaned);
@@ -39,9 +39,8 @@ function amountOf(value: Cell): number | null {
 function dateOf(value: Cell): string | null {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const textValue = textOf(value);
-  const dotted = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(textValue);
-  if (dotted) return `${dotted[3]}-${dotted[2]}-${dotted[1]}`;
-  return /^\d{4}-\d{2}-\d{2}$/.test(textValue) ? textValue : null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) return parseStatementDate(textValue.split("-").reverse().join("."));
+  return parseStatementDate(textValue);
 }
 
 export function parseOpeningBalances(matrix: Cell[][], defaultCurrency = "KZT"): ParsedOpening {
@@ -59,38 +58,60 @@ export function parseOpeningBalances(matrix: Cell[][], defaultCurrency = "KZT"):
   const label = (index: number) => `${above[index] ?? ""} ${header[index] ?? ""}`.trim();
   const find = (test: (value: string) => boolean) => header.findIndex(test);
   const dataStart = nameRow + (split ? 2 : 1);
+  if (header.some(value => /уровень|родитель|группиров/.test(value))) throw new Error("Иерархический отчёт не поддерживается: нужен плоский отчёт без вложенных итогов.");
 
   const nameColumn = find(isName);
   const binColumn = find(isBin);
   const contractColumn = find(value => value.includes("договор"));
   const currencyColumn = find(value => value.includes("валюта"));
   const dueColumn = find(value => value.includes("срок"));
-  const balanceColumn = find(value => /^(сальдо|остаток|задолженность|долг)/.test(value) && !/дебет|кредит/.test(value));
+  const balances = header.map((value, index) => /^(сальдо|остаток|задолженность|долг)/.test(value) && !/дебет|кредит/.test(value) ? index : -1).filter(index => index >= 0);
+  const closingBalances = balances.filter(index => isEnd(label(index)));
+  if (closingBalances.length > 1 || (balances.length > 1 && closingBalances.length !== 1)) {
+    throw new Error("Неоднозначные колонки сумм: нужен единственный явно указанный остаток на конец периода.");
+  }
+  const balanceColumn = closingBalances[0] ?? balances[0] ?? -1;
+  if (balanceColumn >= 0 && /начал|начальн|оборот/.test(label(balanceColumn)) && !isEnd(label(balanceColumn))) {
+    throw new Error("Найден только начальный остаток: нужен остаток на конец периода.");
+  }
   const debits = header.map((value, index) => value.includes("дебет") ? index : -1).filter(index => index >= 0);
   const credits = header.map((value, index) => value.includes("кредит") ? index : -1).filter(index => index >= 0);
   const endDebit = debits.find(index => isEnd(label(index))) ?? debits.at(-1);
   const endCredit = credits.find(index => isEnd(label(index))) ?? credits.at(-1);
+  if ((debits.length > 1 && !debits.some(index => isEnd(label(index)))) ||
+      (credits.length > 1 && !credits.some(index => isEnd(label(index))))) {
+    throw new Error("Неоднозначные колонки сумм: нужен явно указанный конец периода.");
+  }
   if (balanceColumn < 0 && endDebit === undefined && endCredit === undefined) {
     throw new Error("Не найдены колонки с суммой: «Сальдо» или «Дебет»/«Кредит».");
   }
 
   const rows: OpeningRow[] = [];
   const problems: string[] = [];
+  const excluded: ParsedOpening["excluded"] = [];
   matrix.slice(dataStart).forEach((row, offset) => {
     const rowNumber = dataStart + offset + 1;
     const name = textOf(row[nameColumn] ?? null);
-    if (!name || /^(итого|всего)/i.test(name)) return;
+    if (/^(итого|всего)\s*:?$/i.test(name)) {
+      excluded.push({ rowNumber, name, reason: "Явно обозначенный итог; не является самостоятельным сальдо" }); return;
+    }
+    if (!name) {
+      if (row.some(cell => textOf(cell))) problems.push(`Строка ${rowNumber}: нет покупателя; вложенная структура не поддерживается`);
+      return;
+    }
     let amount: number | null;
-    if (balanceColumn >= 0) amount = amountOf(row[balanceColumn] ?? null);
+    if (balanceColumn >= 0) amount = textOf(row[balanceColumn] ?? null) ? amountOf(row[balanceColumn] ?? null) : null;
     else {
       const debit = endDebit === undefined ? 0 : amountOf(row[endDebit] ?? null);
       const credit = endCredit === undefined ? 0 : amountOf(row[endCredit] ?? null);
       amount = debit === null || credit === null ? null : Math.round((debit - credit) * 100) / 100;
+      if (!textOf(row[endDebit ?? -1] ?? null) && !textOf(row[endCredit ?? -1] ?? null)) amount = null;
     }
     if (amount === null) { problems.push(`Строка ${rowNumber}: сумма не распознана`); return; }
     const currency = (currencyColumn >= 0 ? textOf(row[currencyColumn] ?? null).toUpperCase() : "") || defaultCurrency;
     const normalizedCurrency = currency === "ТГ" || currency === "ТЕНГЕ" || currency === "KZT" ? "KZT" : currency;
     if (!/^[A-Z]{3}$/.test(normalizedCurrency)) { problems.push(`Строка ${rowNumber}: валюта «${currency}» не распознана`); return; }
+    if (dueColumn >= 0 && textOf(row[dueColumn] ?? null) && !dateOf(row[dueColumn] ?? null)) { problems.push(`Строка ${rowNumber}: неверная дата срока оплаты`); return; }
     rows.push({
       rowNumber, name,
       bin: binColumn >= 0 ? textOf(row[binColumn] ?? null).replace(/\D/g, "") || null : null,
@@ -100,7 +121,13 @@ export function parseOpeningBalances(matrix: Cell[][], defaultCurrency = "KZT"):
     });
   });
   if (rows.length > MAX_ROWS) throw new Error(`В одном отчёте допускается не более ${MAX_ROWS} строк.`);
-  return { rows, problems };
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.bin || row.name.toLocaleLowerCase("ru-RU")}:${row.currency}`;
+    if (seen.has(key)) problems.push(`Строка ${row.rowNumber}: повтор покупателя и валюты; итоги и договоры нельзя складывать без определения структуры`);
+    seen.add(key);
+  }
+  return { rows, problems, excluded };
 }
 
 // CSV saved from 1С or Excel. The separator is the one found most in the first line: Russian Excel uses «;»
@@ -117,10 +144,12 @@ export function parseCsv(source: string): Cell[][] {
     else if (char === delimiter && !quoted) { row.push(cell); cell = ""; }
     else if ((char === "\n" || char === "\r") && !quoted) {
       if (char === "\r" && source[i + 1] === "\n") i++;
-      row.push(cell); if (row.some(value => value.trim())) rows.push(row); row = []; cell = "";
+      row.push(cell); rows.push(row); row = []; cell = "";
     } else cell += char;
   }
+  if (quoted) throw new Error("CSV оборван: не закрыта кавычка.");
   row.push(cell); if (row.some(value => value.trim())) rows.push(row);
+  while (rows.length && rows.at(-1)!.every(value => !String(value ?? "").trim())) rows.pop();
   return rows;
 }
 
