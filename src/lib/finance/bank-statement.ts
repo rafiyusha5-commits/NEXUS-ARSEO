@@ -134,7 +134,11 @@ export function parseBankStatement(source: string): ParsedStatement {
     const isIncoming = accounts.size
       ? accounts.has(recipient) && !accounts.has(payerAccount)
       : Boolean(fields.get("ДатаПоступило")?.trim()) && !fields.get("ДатаСписано")?.trim();
-    if (!isIncoming) { outgoing++; return; }
+    if (!isIncoming) {
+      if (!accounts.has(payerAccount) && !accounts.has(recipient)) problems.push(`${label}: не определено направление платежа по счетам`);
+      else outgoing++;
+      return;
+    }
     const date = parseStatementDate(fields.get("ДатаПоступило")) ?? parseStatementDate(fields.get("Дата"));
     const amount = parseStatementAmount(fields.get("Сумма"));
     if (!date) { problems.push(`${label}: нет даты или дата некорректна`); return; }

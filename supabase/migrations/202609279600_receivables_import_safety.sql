@@ -87,6 +87,9 @@ begin
      if dt is null or amount<=0 then raise exception 'Строка %: нет даты или положительной суммы',n; end if;
      account:=upper(regexp_replace(coalesce(r->>'recipient_account',p->>'account',''),'\s','','g'));
      if account='' then issue:='Не указан счёт получателя'; end if;
+     if account is distinct from upper(regexp_replace(coalesce(p->>'account',''),'\s','','g')) or currency is distinct from p->>'currency' then
+       issue:='Поддерживается один счёт и одна валюта в банковском пакете';
+     end if;
      -- A payment order number is NOT a bank operation ID. No automatic fallback to date/amount/customer.
      if nullif(btrim(r->>'operation_id'),'') is null then issue:='Нужен устойчивый идентификатор операции из банка';
      elsif r->>'identity_source' not in ('bank','manual') or r->>'identity_source' is null then issue:='Укажите источник идентификатора';
@@ -96,7 +99,7 @@ begin
      seen:=array_append(seen,key);
      select * into old from public.bank_statement_lines where operation_key=key;
      if old.id is not null and (old.amount<>amount or old.doc_date<>dt or old.currency_id<>cur
-        or coalesce(old.payer_account,'')<>upper(regexp_replace(coalesce(r->>'payer_account',''),'\s','','g'))) then
+        or upper(regexp_replace(coalesce(old.payer_account,''),'\s','','g'))<>upper(regexp_replace(coalesce(r->>'payer_account',''),'\s','','g'))) then
        issue:='Идентификатор уже существует с другими реквизитами';
      end if;
      -- Legacy rows have no trustworthy stable identity. Never silently import across that boundary.
@@ -197,6 +200,18 @@ begin
  result:=jsonb_build_object('batch_id',p_request_id);
  insert into public.receivables_import_batches(id,kind,file_sha256,payload_hash,source,result)
  values(p_request_id,p_payload->>'kind',p_payload->>'file_sha256',h,p_payload,result);
+ if p_payload->>'kind'='bank' then
+   select jsonb_agg((x->'source_row')||jsonb_build_object('_verified_operation_key',x->>'operation_key',
+     'payer_account',upper(regexp_replace(coalesce(x->'source_row'->>'payer_account',''),'\s','','g'))) order by (x->>'ordinal')::int)
+   into normalized from jsonb_array_elements(plan->'rows') x where x->>'status'='new';
+   if normalized is not null then
+     -- One existing bank import record for this file, not one artificial file per payment.
+     result:=public.import_bank_statement(p_payload->>'file_name',p_payload->>'file_sha256',
+       upper(regexp_replace(p_payload->>'account','\s','','g')),nullif(p_payload->>'period_from','')::date,
+       nullif(p_payload->>'period_to','')::date,p_payload->>'currency',normalized);
+     bank_import:=(result->>'import_id')::uuid;
+   end if;
+ end if;
  for e in select value from jsonb_array_elements(plan->'rows') loop
    r:=e->'source_row'; v_id:=null; c:=(e->>'customer_id')::uuid; cur:=private.currency_by_code(e->>'currency');
    if p_payload->>'kind'='bank' then
@@ -205,13 +220,7 @@ begin
        update public.bank_statement_lines set operation_key=e->>'operation_key' where bank_statement_lines.id=v_id and operation_key is null;
        duplicate_count:=duplicate_count+1;
      else
-       -- Reuse the existing writer with one guarded row. An internal unique file key prevents its old content hash from deciding identity.
-       normalized:=r||jsonb_build_object('_verified_operation_key',e->>'operation_key','payer_account',upper(regexp_replace(coalesce(r->>'payer_account',''),'\s','','g')));
-       result:=public.import_bank_statement(p_payload->>'file_name',private.receivables_import_hash(jsonb_build_array(p_request_id,e->>'ordinal')),
-         upper(regexp_replace(coalesce(r->>'recipient_account',p_payload->>'account'),'\s','','g')),
-         nullif(p_payload->>'period_from','')::date,nullif(p_payload->>'period_to','')::date,e->>'currency',jsonb_build_array(normalized));
-       bank_import:=(result->>'import_id')::uuid;
-       select l.id into v_id from public.bank_statement_lines l where import_id=bank_import;
+       select l.id into v_id from public.bank_statement_lines l where import_id=bank_import and line_key=e->>'operation_key';
        if v_id is null then raise exception 'Похожий платёж найден старым механизмом: требуется проверка, запись отменена'; end if;
        update public.bank_statement_lines set operation_key=e->>'operation_key',
          line_key=e->>'operation_key',customer_id=c,sale_id=(e->>'sale_id')::uuid,

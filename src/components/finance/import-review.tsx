@@ -45,6 +45,7 @@ export function ImportReview({ payload }: { payload: ImportPayload }) {
     {message && <p role="status" className="setup-notice">{message}</p>}
     <button type="button" className="secondary" disabled={busy || done || payload.problems.length > 0} onClick={preview}>Проверить с базой / обновить варианты</button>
     {review && <>
+      <p className="form-help">Суммы ниже относятся ко всем строкам файла, включая повторы. Повторы не создают новых оплат.</p>
       <div className="operation-facts">{review.totals.map(t => <div key={t.currency}><small>{t.count} строк · {t.currency}</small><strong>{money(t.amount,t.currency)}</strong></div>)}</div>
       {review.existing_batch_id && <p className="setup-notice">Этот файл уже подтверждён. Повтор возвращает результат сохранённого пакета.</p>}
       <p>Новых: {review.rows.filter(r => r.status === "new").length}. Ранее загруженных: {review.rows.filter(r => r.status === "duplicate").length}. Требуют проверки: {review.rows.filter(r => r.status === "error").length}.</p>

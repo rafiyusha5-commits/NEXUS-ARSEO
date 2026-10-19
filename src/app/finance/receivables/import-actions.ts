@@ -18,5 +18,6 @@ export async function confirmImport(requestId: string, payload: ImportPayload, f
   });
   if (error) return { error: error.message };
   revalidatePath("/finance/receivables");
+  revalidatePath("/finance/bank");
   return { message: `Пакет ${data.batch_id}: новых строк ${data.new}, ранее загруженных ${data.duplicates}.` };
 }

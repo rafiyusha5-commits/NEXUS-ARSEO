@@ -84,7 +84,7 @@ export function parseOpeningBalances(matrix: Cell[][], defaultCurrency = "KZT"):
   matrix.slice(dataStart).forEach((row, offset) => {
     const rowNumber = dataStart + offset + 1;
     const name = textOf(row[nameColumn] ?? null);
-    if (/^(итого|всего)(?:\s|:|$)/i.test(name)) {
+    if (/^(итого|всего)\s*:?$/i.test(name)) {
       excluded.push({ rowNumber, name, reason: "Явно обозначенный итог; не является самостоятельным сальдо" }); return;
     }
     if (!name) {
@@ -136,11 +136,12 @@ export function parseCsv(source: string): Cell[][] {
     else if (char === delimiter && !quoted) { row.push(cell); cell = ""; }
     else if ((char === "\n" || char === "\r") && !quoted) {
       if (char === "\r" && source[i + 1] === "\n") i++;
-      row.push(cell); if (row.some(value => value.trim())) rows.push(row); row = []; cell = "";
+      row.push(cell); rows.push(row); row = []; cell = "";
     } else cell += char;
   }
   if (quoted) throw new Error("CSV оборван: не закрыта кавычка.");
   row.push(cell); if (row.some(value => value.trim())) rows.push(row);
+  while (rows.length && rows.at(-1)!.every(value => !String(value ?? "").trim())) rows.pop();
   return rows;
 }
 

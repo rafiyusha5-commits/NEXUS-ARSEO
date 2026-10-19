@@ -5,6 +5,17 @@
 \set ON_ERROR_STOP 1
 begin;
 
+-- This accounting-history scenario now uses the real preview/explicit replacement workflow.
+create function pg_temp.review_import(d date,rows jsonb) returns jsonb language plpgsql as $$
+declare p jsonb; v jsonb; prior uuid; begin
+ select id into prior from public.customer_opening_balances where customer_id='ef100000-0000-4000-8000-000000000002' and superseded_at is null;
+ p:=jsonb_build_object('kind','opening','file_name','synthetic.csv','file_sha256',encode(sha256(convert_to(d::text||rows::text,'UTF8')),'hex'),
+  'as_of',d,'rows',jsonb_build_array(rows->0||jsonb_build_object('currency','KZT','replace_id',prior,'reason','Synthetic reviewed correction')));
+ v:=public.preview_receivables_import(p);
+ return public.confirm_receivables_import(gen_random_uuid(),p,v->>'fingerprint');
+end $$;
+grant execute on function pg_temp.review_import(date,jsonb) to authenticated;
+
 insert into auth.users(id,email,raw_user_meta_data) values
  ('ef000000-0000-4000-8000-000000000001','recv-director@test.local','{"full_name":"Receivables Director"}'),
  ('ef000000-0000-4000-8000-000000000002','recv-sales@test.local','{"full_name":"Receivables Sales"}'),
@@ -56,8 +67,8 @@ insert into public.inventory_balances(id,batch_id,warehouse_id,uom,quantity_on_h
 
 set role authenticated;
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false);
-select public.import_opening_balances(current_date-30,'[{"bin":"123456789012","amount":100}]');
-select public.import_opening_balances(current_date-10,'[{"bin":"123456789012","amount":200}]');
+select pg_temp.review_import(current_date-30,'[{"bin":"123456789012","amount":100}]');
+select pg_temp.review_import(current_date-10,'[{"bin":"123456789012","amount":200}]');
 select public.record_reconciliation_act('ef100000-0000-4000-8000-000000000002','KZT',current_date-20,100,'review reproduction');
 select as_of,act_balance,nexus_balance from public.customer_reconciliation_acts;
 
@@ -66,7 +77,7 @@ do $$ begin
  assert (select nexus_balance=100 from public.customer_reconciliation_acts), 'Historical act uses the older opening balance';
 end $$;
 -- Re-import the same past date: the latest import replaces the active balance, as before this fix.
-select public.import_opening_balances(current_date-30,'[{"bin":"123456789012","amount":125}]');
+select pg_temp.review_import(current_date-30,'[{"bin":"123456789012","amount":125}]');
 select public.record_reconciliation_act('ef100000-0000-4000-8000-000000000002','KZT',current_date-19,125,'corrected opening');
 select public.record_reconciliation_act('ef100000-0000-4000-8000-000000000002','KZT',current_date,125,'current opening');
 do $$ begin
