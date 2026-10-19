@@ -117,6 +117,9 @@ begin
          elsif r->>'legacy_decision' is distinct from 'different' then issue:='Укажите: прежний платёж или отдельная операция'; end if;
        end if;
      end if;
+     if r->>'legacy_decision'='same' and (old.id is null or old.id::text is distinct from r->>'legacy_id') then
+       issue:='Выбранный прежний платёж изменился: обновите решение, новая оплата не создаётся';
+     end if;
      select count(*),(array_agg(id order by id))[1] into bn,bc from public.counterparties
        where 'customer'=any(roles) and nullif(regexp_replace(coalesce(r->>'payer_bin',''),'\D','','g'),'') is not null
        and regexp_replace(coalesce(tax_id,''),'\D','','g')=regexp_replace(r->>'payer_bin','\D','','g');
@@ -185,14 +188,16 @@ begin
  -- All financial import commits share this lock. No interleaving of overlap checks, identity assignment or opening replacement.
  perform pg_advisory_xact_lock(726831,1);
  h:=private.receivables_import_hash(p_payload-'file_name');
- select * into prior from public.receivables_import_batches where id=p_request_id
-   or (kind=p_payload->>'kind' and file_sha256=p_payload->>'file_sha256') order by id limit 1;
+ select * into prior from public.receivables_import_batches where id=p_request_id;
+ if prior.id is null then
+   select * into prior from public.receivables_import_batches where kind=p_payload->>'kind' and file_sha256=p_payload->>'file_sha256';
+ end if;
  if prior.id is not null then
    if prior.payload_hash<>h then raise exception 'Файл или запрос уже подтверждён с другими данными: откройте историю импорта'; end if;
    return prior.result;
  end if;
  -- Freeze matching inputs and manual resolutions while using the exact preview plan. Locks also cover legacy privileged imports.
- lock table public.counterparties,public.sales in share mode;
+ lock table public.counterparties,public.sales,public.currencies in share mode;
  lock table public.bank_statement_imports,public.bank_statement_lines,public.customer_opening_balances in share row exclusive mode;
  plan:=private.receivables_import_plan(p_payload);
  if not (plan->>'can_confirm')::boolean then raise exception 'Есть ошибки или неразрешённые конфликты: обновите предпросмотр'; end if;
@@ -237,6 +242,9 @@ begin
    end if;
  end loop;
  result:=jsonb_build_object('batch_id',p_request_id,'new',new_count,'duplicates',duplicate_count,'total',jsonb_array_length(plan->'rows'));
+ if bank_import is not null then
+   update public.bank_statement_imports set lines_total=jsonb_array_length(plan->'rows'),lines_new=new_count where bank_statement_imports.id=bank_import;
+ end if;
  update public.receivables_import_batches set result=ctx.result where receivables_import_batches.id=p_request_id;
  return result;
 end $$;

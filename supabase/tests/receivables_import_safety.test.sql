@@ -71,6 +71,21 @@ do $$ declare p jsonb:=pg_temp.bank('one'); v jsonb; r jsonb; r2 jsonb; opening 
  v:=public.preview_receivables_import(opening); assert not (v->>'can_confirm')::boolean,'parent and children not summed';
 end $$;
 reset role;
+-- Previously imported rows have no stable identity. Manual linking must never turn into "new"
+-- when a competing decision has already assigned another identity to that legacy row.
+select public.import_bank_statement('legacy.txt',repeat('a',64),'KZLEGACY',null,null,'KZT',
+ '[{"doc_number":"legacy","doc_date":"2026-01-05","amount":100,"payer_bin":"990000000011","payer_account":"KZPAYER","purpose":"Legacy synthetic"}]');
+set local role authenticated;
+do $$ declare p jsonb:=pg_temp.bank('legacy-review','LEGACY-ID')||'{"account":"KZLEGACY"}'; v jsonb; legacy uuid; begin
+ select id into legacy from public.bank_statement_lines where doc_number='legacy';
+ v:=public.preview_receivables_import(p);assert not (v->>'can_confirm')::boolean,'legacy requires explicit choice';
+ p:=jsonb_set(p,'{rows,0}',p->'rows'->0||jsonb_build_object('legacy_decision','same','legacy_id',legacy,'reason','Verified legacy payment'));
+ v:=public.preview_receivables_import(p);assert (v->>'can_confirm')::boolean,v::text;
+ perform public.confirm_receivables_import('b9500000-0000-4000-8000-000000000008',p,v->>'fingerprint');
+ p:=jsonb_set(p||jsonb_build_object('file_sha256',repeat('b',64)),'{rows,0,operation_id}','"OTHER-LEGACY-ID"');
+ v:=public.preview_receivables_import(p);assert not (v->>'can_confirm')::boolean,'stale same-payment choice never becomes new payment';
+end $$;
+reset role;
 insert into public.counterparties(id,roles,legal_name,country,tax_id) values
  ('b9400000-0000-4000-8000-000000000003',array['customer'],'Синтетический дубль БИН','KZ','9900 0000 0011');
 set local role authenticated;
