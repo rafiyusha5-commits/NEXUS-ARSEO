@@ -68,7 +68,7 @@ do $$ declare p jsonb:=pg_temp.bank('one'); v jsonb; r jsonb; r2 jsonb; opening 
  assert (select count(*)=5 from public.receivables_import_sources),'including duplicate observations with source row';
  assert (select count(*)=5 from public.receivables_import_batches where created_by=auth.uid()),'actor attribution';
  opening:=jsonb_set(opening,'{rows}',jsonb_build_array(opening->'rows'->0,opening->'rows'->0));
- v:=public.preview_receivables_import(opening); assert not (v->>'can_confirm')::boolean,'parent and children not summed';
+ v:=public.preview_receivables_import(opening); assert v->'rows'->1->>'problem' like 'Повтор покупателя%','parent and children not summed';
 end $$;
 reset role;
 -- Previously imported rows have no stable identity. Manual linking must never turn into "new"
@@ -84,6 +84,24 @@ do $$ declare p jsonb:=pg_temp.bank('legacy-review','LEGACY-ID')||'{"account":"K
  perform public.confirm_receivables_import('b9500000-0000-4000-8000-000000000008',p,v->>'fingerprint');
  p:=jsonb_set(p||jsonb_build_object('file_sha256',repeat('b',64)),'{rows,0,operation_id}','"OTHER-LEGACY-ID"');
  v:=public.preview_receivables_import(p);assert not (v->>'can_confirm')::boolean,'stale same-payment choice never becomes new payment';
+end $$;
+reset role;
+insert into public.currencies(code,name) values ('USD','{"ru":"Synthetic USD"}') on conflict do nothing;
+set local role authenticated;
+do $$ declare p jsonb:=pg_temp.bank('multi','PAIR-A'); v jsonb; r jsonb;begin
+ p:=jsonb_set(p,'{rows}',p->'rows'||jsonb_build_array((p->'rows'->0)||'{"operation_id":"PAIR-B"}'));
+ v:=public.preview_receivables_import(p);
+ r:=public.confirm_receivables_import('b9500000-0000-4000-8000-000000000009',p,v->>'fingerprint');
+ assert (r->>'new')::int=2,'two equal payments with distinct stable IDs in ONE file';
+ assert (select count(*)=1 from public.bank_statement_imports where file_name='multi.txt'),'one file creates one bank batch';
+ p:=jsonb_set(p||jsonb_build_object('file_name','reordered.txt','file_sha256',repeat('3',64)),
+   '{rows}',jsonb_build_array((p->'rows'->1)||'{"purpose":"За  товар"}',(p->'rows'->0)||'{"purpose":"За товар  "}'));
+ v:=public.preview_receivables_import(p);
+ r:=public.confirm_receivables_import('b9500000-0000-4000-8000-000000000010',p,v->>'fingerprint');
+ assert (r->>'new')::int=0 and (r->>'duplicates')::int=2,'row order and formatting do not create payments';
+ p:=pg_temp.bank('currency','PAIR-A')||'{"currency":"USD"}';v:=public.preview_receivables_import(p);
+ r:=public.confirm_receivables_import('b9500000-0000-4000-8000-000000000011',p,v->>'fingerprint');
+ assert (r->>'new')::int=1,'currencies are not collapsed into one identity';
 end $$;
 reset role;
 insert into public.counterparties(id,roles,legal_name,country,tax_id) values
