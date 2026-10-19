@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { readSheet } from "read-excel-file/browser";
 import { ImportReview } from "@/components/finance/import-review";
 import { decodeStatement } from "@/lib/finance/bank-statement";
@@ -14,16 +14,21 @@ export function OpeningBalanceImport({ today }: { today: string }) {
   const [problem, setProblem] = useState("");
   const [asOf, setAsOf] = useState("");
   const [sha, setSha] = useState("");
+  const loadSequence = useRef(0);
   async function load(file?: File) {
+    const sequence = ++loadSequence.current;
     setParsed(null); setProblem(""); setFileName(file?.name ?? "");
     if (!file) return;
     try {
       if (!/\.(xlsx|csv)$/i.test(file.name)) throw new Error("Поддерживаются только XLSX и CSV.");
       const bytes = await file.arrayBuffer();
-      setSha([...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(b => b.toString(16).padStart(2,"0")).join(""));
+      const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(b => b.toString(16).padStart(2,"0")).join("");
       const matrix = file.name.toLowerCase().endsWith(".xlsx") ? (await readSheet(file)) as unknown as Cell[][] : parseCsv(decodeStatement(new Uint8Array(bytes)));
+      if (sequence !== loadSequence.current) return;
+      setSha(hash);
       setParsed(parseOpeningBalances(matrix));
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setProblem(error instanceof Error ? error.message : "Не удалось прочитать файл.");
     }
   }

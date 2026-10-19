@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ImportReview } from "@/components/finance/import-review";
 import { decodeStatement, parseBankStatement, type ParsedStatement } from "@/lib/finance/bank-statement";
 import { money } from "@/lib/finance/receivables";
@@ -17,16 +17,21 @@ export function BankStatementImport({ currencies }: { currencies: string[] }) {
   const [file, setFile] = useState<{ name: string; sha: string } | null>(null);
   const [currency, setCurrency] = useState("");
   const [problem, setProblem] = useState("");
+  const loadSequence = useRef(0);
   async function load(selected?: File) {
+    const sequence = ++loadSequence.current;
     setParsed(null); setFile(null); setProblem(""); setCurrency("");
     if (!selected) return;
     try {
       const buffer = await selected.arrayBuffer();
       const result = parseBankStatement(decodeStatement(new Uint8Array(buffer)));
-      setFile({ name: selected.name, sha: await sha256(buffer) });
+      const sha = await sha256(buffer);
+      if (sequence !== loadSequence.current) return;
+      setFile({ name: selected.name, sha });
       setParsed(result);
       if (result.currency && currencies.includes(result.currency)) setCurrency(result.currency);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setProblem(error instanceof Error ? error.message : "Не удалось прочитать файл.");
     }
   }
