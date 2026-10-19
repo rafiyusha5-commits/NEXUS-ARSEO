@@ -126,11 +126,12 @@ export function currentCommoditySource(source: { status: string; document_versio
     && document.versions.some(v => v.is_current && v.id === source.document_version_id && v.version_number === document.current_version)
     && document.links?.some(link => !link.removed_at && (link.entity_type === "shipment" && link.entity_id === shipmentId || link.entity_type === "shipment_transport" && transportIds.includes(link.entity_id))));
 }
-export type CommodityComparison = { line: CommodityLine; invoice: string; shipment: string; invoiceMatched: boolean; orderedMatched: boolean; status: "matched" | "different" | "review" };
+export type CommodityComparison = { line: CommodityLine; invoice: string; shipment: string; invoiceMatched: boolean; orderedMatched: boolean; orderedDelta: number | null; status: "matched" | "different" | "review" };
 export function compareCommodities(items: CommodityLine[], currency: string | null, invoices: CommodityInvoice[], shipment: ShipmentCommodity[]): CommodityComparison[] {
   return items.map(line => {
     let status: CommodityComparison["status"] = line.warnings.length ? "review" : "matched";
     let invoiceMatched = false, orderedMatched = false;
+    let orderedDelta: number | null = null;
     const review = () => { if (status !== "different") status = "review"; };
     let invoice = "Нет однозначного инвойса для сверки";
     const inv = invoices.length === 1 ? invoices[0] : null;
@@ -155,7 +156,7 @@ export function compareCommodities(items: CommodityLine[], currency: string | nu
         if (positions.some(item => item[field] === null)) { parts.push(`${label}: не заполнено`); review(); continue; }
         const sum = positions.reduce((total, item) => total + item[field]!, 0);
         const equal = Math.abs(sum - line.quantity) < 0.000001;
-        if (field === "ordered") orderedMatched = equal;
+        if (field === "ordered") { orderedMatched = equal; orderedDelta = equal ? 0 : Number((line.quantity - sum).toFixed(6)); }
         parts.push(`${label}: ${sum}${equal ? " — совпадает" : " — расхождение"}`);
         if (!equal) status = "different";
       }
@@ -172,6 +173,6 @@ export function compareCommodities(items: CommodityLine[], currency: string | nu
       }
       shipmentText = parts.join("; ");
     }
-    return { line, invoice, shipment: shipmentText, invoiceMatched, orderedMatched, status };
+    return { line, invoice, shipment: shipmentText, invoiceMatched, orderedMatched, orderedDelta, status };
   });
 }

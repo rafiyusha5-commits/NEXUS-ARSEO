@@ -258,3 +258,6 @@ input,select,textarea{border-radius:var(--radius-control)}
 .order-blockers{display:flex;flex-direction:column;gap:6px;margin:14px 0}.order-blockers ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}.order-blockers li{color:#9f1239;font-size:14px;font-weight:600;line-height:1.45;overflow-wrap:anywhere}
 /* Moving the planned shipment date of an order */
 .order-reschedule{margin:4px 0 14px}.order-reschedule summary{cursor:pointer;font-weight:700}.order-reschedule form{margin-top:10px;align-items:flex-end}.order-reschedule label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.evidence-outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin:16px 0}
+.evidence-outcomes section{min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);overflow-wrap:anywhere}
+.evidence-outcomes h4{margin:0 0 10px}.evidence-outcomes p{line-height:1.5}.evidence-outcomes ul{padding-left:20px}
