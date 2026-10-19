@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { isUuid } from "@/lib/documents/rules";
-import { buildDocumentStoragePath, checkDocumentFile, matchesFileSignature, DOCUMENT_BUCKET } from "@/lib/documents/files";
+import { buildDocumentStoragePath, checkDocumentFile, matchesFileSignature, normalizeFileName, DOCUMENT_BUCKET } from "@/lib/documents/files";
 import { shipmentDrive, SHIPMENT_DRIVE_ROOT } from "@/lib/google/drive-server";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { folderId, FOLDER_MIME, insideFolder, scanFolder } from "@/lib/google/shipment-folder";
@@ -79,7 +79,7 @@ export async function importShipmentDriveFile(form: FormData) {
     if (!matchesFileSignature(check.kind, bytes)) throw new Error("Не удалось проверить содержимое файла");
     const checksum = createHash("sha256").update(bytes).digest("hex");
     const document = randomUUID();
-    const path = buildDocumentStoragePath(document, filename, randomUUID().replaceAll("-", ""));
+    const path = buildDocumentStoragePath(document, normalizeFileName(filename), randomUUID().replaceAll("-", ""));
     const storage = supabase.storage.from(DOCUMENT_BUCKET);
     const upload = await storage.upload(path, bytes, { contentType: check.mimeType, upsert: false });
     if (upload.error) throw new Error("Загрузка не выполнена");
