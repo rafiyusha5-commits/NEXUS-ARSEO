@@ -28,4 +28,17 @@ do $$ declare r jsonb; begin
  perform public.import_opening_balances('2026-01-01','[{"bin":"990000000001","amount":300}]');
  assert (select amount=300 from public.customer_opening_balances where customer_id='b9200000-0000-4000-8000-000000000001' and superseded_at is null),'same-date balance silently replaced';
 end $$;
+reset role;
+insert into public.counterparties(id,roles,legal_name,country,tax_id) values
+ ('b9200000-0000-4000-8000-000000000003',array['customer'],'Синтетический дубль БИН','KZ','9900 0000 0001');
+set local role authenticated;
+do $$ declare r jsonb;begin
+ r:=public.import_bank_statement('ambiguous.txt',repeat('1',64),'KZTEST',null,null,'KZT',
+ '[{"doc_number":"8","doc_date":"2026-01-01","amount":100,"payer_bin":"990000000001","purpose":"Оплата SO-2026-998811"}]');
+ assert (r->>'matched')::int=1,'ambiguous BIN silently falls back to an order on base';
+ r:=public.import_bank_statement('distinct.txt',repeat('2',64),'KZTEST',null,null,'KZT',
+ '[{"operation_id":"REAL-A","doc_number":"9","doc_date":"2026-01-01","amount":100,"payer_bin":"990000000002","purpose":"За товар"},
+   {"operation_id":"REAL-B","doc_number":"9","doc_date":"2026-01-01","amount":100,"payer_bin":"990000000002","purpose":"За товар"}]');
+ assert (r->>'new')::int=1 and (r->>'duplicates')::int=1,'two distinct bank IDs collapse on base';
+end $$;
 rollback;
