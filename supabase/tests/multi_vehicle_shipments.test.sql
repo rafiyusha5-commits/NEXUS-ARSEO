@@ -157,11 +157,11 @@ set session_replication_role=replica;
 insert into public.shipment_transports(id,shipment_id,sequence_no,vehicle_plate) values('ea600000-0000-4000-8000-000000000001','ea300000-0000-4000-8000-000000000002',1,'OTHER-1');
 set session_replication_role=origin;
 set role authenticated;
-select pg_temp.fails($$select public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),'ea600000-0000-4000-8000-000000000001')$$,'не относится к этой поставке');
+select pg_temp.fails($$select public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),'ea600000-0000-4000-8000-000000000001','Synthetic cross-shipment context')$$,'не относится к этой поставке');
 do $$ begin
- perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),(select id from mv_ids where name='t1'));
+ perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),(select id from mv_ids where name='t1'),'Synthetic employee assignment');
  assert (select shipment_transport_id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004')=(select id from mv_ids where name='t1'),'assigned by the employee';
- perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),null);
+ perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004'),null,'Synthetic shipment-wide context');
  assert (select shipment_transport_id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000004') is null,'binding can be cleared';
 end $$;
 
@@ -184,11 +184,11 @@ do $$ begin
 end $$;
 -- the same plate on two vehicles is refused: bind the third document to vehicle 1, then try vehicle 2's plate
 do $$ begin
- perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000003'),(select id from mv_ids where name='t1'));
+ perform public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000003'),(select id from mv_ids where name='t1'),'Synthetic explicit vehicle context');
 end $$;
 select pg_temp.fails($$select public.review_shipment_source_extraction((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000003'),'{"vehicle_plate":"222 ccc 22x"}'::jsonb,true)$$,'уже указан у другого автомобиля');
 -- a confirmed proposal keeps its vehicle
-select pg_temp.fails($$select public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000002'),(select id from mv_ids where name='t1'))$$,'нельзя перепривязать');
+select pg_temp.fails($$select public.assign_source_extraction_transport((select id from public.shipment_source_extractions where document_id='ea500000-0000-4000-8000-000000000002'),(select id from mv_ids where name='t1'),'Synthetic confirmed-source rejection')$$,'нельзя перепривязать');
 
 -- ---------- removing vehicles ----------
 do $$ begin

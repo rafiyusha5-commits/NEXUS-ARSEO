@@ -1,6 +1,7 @@
 -- Never run against a working project. All examples are synthetic and rolled back.
 \set ON_ERROR_STOP 1
 begin;
+\ir fixtures/finish_current_ocr.sql
 \ir fixtures/source_integrity.sql
 create function pg_temp.reject_unchanged(p_sql text) returns void language plpgsql as $$
 declare before_state jsonb; after_state jsonb; rejected boolean:=false;
@@ -21,7 +22,7 @@ select pg_temp.reject_unchanged($call$select public.upsert_shipment_source_extra
 select pg_temp.reject_unchanged($call$select public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'test','1')$call$);
 reset role; update public.shipment_source_extractions set status='pending',extraction_method='ocr' where id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
-select pg_temp.reject_unchanged($call$select public.finish_shipment_source_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
+select pg_temp.reject_unchanged($call$select pg_temp.finish_current_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
 reset role;rollback to state;
 savepoint state;
 update public.documents set status='rejected' where id='eb503000-0000-4000-8000-000000000001';
@@ -31,7 +32,7 @@ select pg_temp.reject_unchanged($call$select public.upsert_shipment_source_extra
 select pg_temp.reject_unchanged($call$select public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'test','1')$call$);
 reset role; update public.shipment_source_extractions set status='pending',extraction_method='ocr' where id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
-select pg_temp.reject_unchanged($call$select public.finish_shipment_source_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
+select pg_temp.reject_unchanged($call$select pg_temp.finish_current_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
 reset role;rollback to state;
 savepoint state;
 update public.documents set archived_at=now(),archived_by='eb000000-0000-4000-8000-000000000001',archive_reason='Synthetic test' where id='eb503000-0000-4000-8000-000000000001';
@@ -41,7 +42,7 @@ select pg_temp.reject_unchanged($call$select public.upsert_shipment_source_extra
 select pg_temp.reject_unchanged($call$select public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'test','1')$call$);
 reset role; update public.shipment_source_extractions set status='pending',extraction_method='ocr' where id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
-select pg_temp.reject_unchanged($call$select public.finish_shipment_source_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
+select pg_temp.reject_unchanged($call$select pg_temp.finish_current_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
 reset role;rollback to state;
 savepoint state;
 update public.document_versions set is_current=false where id='eb513000-0000-4000-8000-000000000001';
@@ -51,7 +52,7 @@ select pg_temp.reject_unchanged($call$select public.upsert_shipment_source_extra
 select pg_temp.reject_unchanged($call$select public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'test','1')$call$);
 reset role; update public.shipment_source_extractions set status='pending',extraction_method='ocr' where id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
-select pg_temp.reject_unchanged($call$select public.finish_shipment_source_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
+select pg_temp.reject_unchanged($call$select pg_temp.finish_current_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
 reset role;rollback to state;
 savepoint state;
 update public.documents set current_version=2 where id='eb503000-0000-4000-8000-000000000001';
@@ -61,7 +62,7 @@ select pg_temp.reject_unchanged($call$select public.upsert_shipment_source_extra
 select pg_temp.reject_unchanged($call$select public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'test','1')$call$);
 reset role; update public.shipment_source_extractions set status='pending',extraction_method='ocr' where id='eb603000-0000-4000-8000-000000000001';
 set role authenticated;
-select pg_temp.reject_unchanged($call$select public.finish_shipment_source_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
+select pg_temp.reject_unchanged($call$select pg_temp.finish_current_ocr('eb603000-0000-4000-8000-000000000001','extracted','{"invoice_number":"OLD"}')$call$);
 reset role;rollback to state;
 -- Valid current source may be confirmed without changing shipment quantities.
 set role authenticated;

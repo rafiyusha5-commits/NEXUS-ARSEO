@@ -302,8 +302,12 @@ export const VEHICLE_SCOPED_FIELDS = [
   "carrier_name", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "driver_name", "driver_phone", "driver_document",
   "temperature_setpoint", "seals", "cmr_number", "ttn_number", "waybill_number", "packing_list_number", "shipping_date",
   "pallet_count", "gross_weight_kg", "net_weight_kg",
+  "loading_address", "unloading_address", "loading_city", "loading_country", "unloading_country",
 ] as const;
 const vehicleScoped = new Set<string>(VEHICLE_SCOPED_FIELDS);
+// A shipment-wide contract may explicitly supply a shared route. Preserve this existing case;
+// once the source is assigned to a vehicle, its route must stay with that vehicle.
+const sharedRouteFields = new Set(["loading_address", "unloading_address", "loading_city", "loading_country", "unloading_country"]);
 
 export type ConfirmedSource = { data: Record<string, unknown>; transportId?: string | null };
 
@@ -318,23 +322,27 @@ export function mergeConfirmedSources(
   sources: ConfirmedSource[],
   scope: { transportId?: string | null; transportCount: number },
 ) {
-  const own: Record<string, unknown>[] = [];
+  const { own, skipped } = scopeConfirmedSources(sources, scope);
+  const merged = mergeConfirmedSourceData(base, own);
+  if (skipped.size) merged.unassigned_vehicle_fields = [...skipped];
+  return merged;
+}
+
+/** One scope calculation shared by generation values and their provenance/readiness labels. */
+export function scopeConfirmedSources(sources: ConfirmedSource[], scope: { transportId?: string | null; transportCount: number }) {
   const skipped = new Set<string>();
-  const filtered = sources.map(source => {
+  const own = sources.map(source => {
     const data: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(source.data)) {
       if (!vehicleScoped.has(key)) { data[key] = value; continue; }
       const bound = source.transportId ?? null;
-      const applies = bound ? bound === scope.transportId : scope.transportCount <= 1;
+      const applies = bound ? bound === scope.transportId : sharedRouteFields.has(key) || scope.transportCount <= 1;
       if (applies) data[key] = value;
       else if (!bound && value !== null && value !== "" && value !== undefined) skipped.add(key);
     }
     return data;
   });
-  for (const data of filtered) own.push(data);
-  const merged = mergeConfirmedSourceData(base, own);
-  if (skipped.size) merged.unassigned_vehicle_fields = [...skipped];
-  return merged;
+  return { own, skipped };
 }
 
 export function mergeConfirmedSourceData(base: Record<string, unknown>, sources: Array<Record<string, unknown>>) {

@@ -175,3 +175,33 @@ jobs:
         # разобранное исключение, перечисленное в scripts/audit-policy.mts; любая новая находка
         # роняет проверку. См. docs/security-audit.md, раздел «Зависимости».
         run: pnpm run audit:ci
+
+  historical-readiness:
+    name: historical-readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Disposable browser tooling and PostgreSQL 16
+        run: |
+          docker pull postgres:16
+          npm install --prefix "$RUNNER_TEMP/nexus-browser" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/nexus-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Historical contract (must fail while owner rule or browser coverage is unmet)
+        run: NEXUS_TEST_PLAYWRIGHT="$RUNNER_TEMP/nexus-browser/node_modules/playwright" node scripts/test-historical-shipment.mjs
+      - name: Synthetic evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-historical-evidence
+          path: test-results/historical/
+          if-no-files-found: warn
