@@ -11,7 +11,7 @@ type OutcomeForWorkbook = {
   outcomes: BatchOutcome[];
   products: Map<string, { internal_sku: string; name: string }>;
   summary: { units: Array<{ uom: string; received: number; issued: number; writtenOff: number; onHand: number; reserved: number }>; balanced: boolean; batches: number };
-  cost: { version: number; status: string; approvedAt: string | null; currency: string | null; goodsTotal: number; expensesTotal: number; landedTotal: number; items: Array<{ shipmentItemId: string; quantity: number; landedAmount: number; unitLandedCost: number }> } | null | "hidden";
+  cost: { version: number; status: string; approvedAt: string | null; currency: string | null; goodsTotal: number; expensesTotal: number; landedTotal: number; items: Array<{ shipmentItemId: string; quantity: number; costQuantity?: number; landedAmount: number; unitLandedCost: number }> } | null | "hidden";
   documentCheck: { lastRunAt: string | null; findings: DocumentCheckFinding[]; counts: { errors: number; warnings: number } } | "hidden";
   shelfLife: Array<{ batchId: string; state: string; firstDeadline: string | null }> | "hidden";
 };
@@ -52,8 +52,8 @@ export function outcomeWorkbookSheets(outcome: OutcomeForWorkbook, items: readon
     sheets.push({ name: "Себестоимость", rows: outcome.cost ? [
       ["Версия", outcome.cost.version], ["Статус", outcome.cost.status === "approved" ? "утверждена" : "черновик"], ["Валюта", outcome.cost.currency],
       ["Товар", outcome.cost.goodsTotal], ["Расходы", outcome.cost.expensesTotal], ["Себестоимость поставки", outcome.cost.landedTotal], [],
-      ["Артикул", "Ед.", "Количество", "Себестоимость позиции", "За единицу"],
-      ...outcome.cost.items.map(row => { const item = itemById.get(row.shipmentItemId); return [sku(item), item?.uom, row.quantity, row.landedAmount, row.unitLandedCost]; }),
+      ["Артикул", "Ед.", "Количество по приёмке/карточке", "Расчётное количество", "Себестоимость позиции", "За единицу"],
+      ...outcome.cost.items.map(row => { const item = itemById.get(row.shipmentItemId); return [sku(item), item?.uom, row.quantity, row.costQuantity ?? row.quantity, row.landedAmount, row.unitLandedCost]; }),
     ] : [["Расчёт себестоимости ещё не выполнен"]] });
   }
   if (outcome.documentCheck !== "hidden") {

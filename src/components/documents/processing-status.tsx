@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { processingState, processingErrors, type ProcessingReceipt } from "@/lib/documents/processing-status";
 const stages: Record<string, string> = { checking: "Проверка прав и квитанции", reading: "Чтение папки", recognizing: "Распознавание документа", downloading: "Скачивание и проверка файла", storage: "Сохранение файла Nexus", registering: "Регистрация результата", finished: "Результат сохранён" };
 const states: Record<string, string> = { running: "Выполняется", completed: "Завершена", failed: "Не выполнена", needs_action: "Требуется действие сотрудника" };
+const kinds: Record<string, string> = { scan: "Проверка папки", import: "Импорт", ocr: "Распознавание", bind: "Привязка", check: "Сравнение содержимого", link: "Связывание документа" };
 export function ProcessingStatus({ receipts, serverNow }: { receipts: ProcessingReceipt[]; serverNow: number }) {
   const [now, setNow] = useState(serverNow);
   useEffect(() => {
@@ -17,7 +18,7 @@ export function ProcessingStatus({ receipts, serverNow }: { receipts: Processing
     {receipts.map(r => {
       const state = processingState(r, now), elapsed = Math.max(0, Date.parse(r.finished_at ?? r.updated_at) - Date.parse(r.started_at));
       return <article key={r.id} style={{ overflowWrap: "anywhere", marginTop: 12 }}>
-        <strong>{states[state]} · {r.kind === "scan" ? "Проверка папки" : r.kind === "import" ? "Импорт" : r.kind === "ocr" ? "Распознавание" : "Привязка"}</strong>
+        <strong>{states[state]} · {kinds[r.kind] ?? "Обработка документа"}</strong>
         <p>{stages[r.stage]} · зафиксированная длительность {(elapsed / 1000).toFixed(1)} с</p>
         {(r.error_code || state === "needs_action") && <p role="status">{processingErrors[r.error_code ?? "INTERRUPTED"]}</p>}
         <small>Операция {r.id}</small>

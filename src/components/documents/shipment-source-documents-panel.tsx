@@ -22,7 +22,7 @@ import { DocumentQuantitiesForm, type QuantityFormItem, type QuantityHistoryRow 
 import { QUANTITY_SOURCE_KINDS, type DocumentLine } from "@/lib/shipments/document-quantities";
 
 const statusLabel: Record<string, string> = {
-  pending: "Обрабатывается", extracted: "Готово к проверке", needs_review: "Нужна проверка",
+  pending: "Ожидается результат", extracted: "Готово к проверке", needs_review: "Нужна проверка",
   confirmed: "Подтверждено", failed: "Не прочитано", superseded: "Устарело",
 };
 const fieldsByKind:Record<string,string[]>={

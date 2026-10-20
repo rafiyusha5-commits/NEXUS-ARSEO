@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as files from "../src/lib/documents/files.ts";
 import { insideFolder } from "../src/lib/google/shipment-folder.ts";
 import { isUuid } from "../src/lib/documents/rules.ts";
+import * as processingStatus from "../src/lib/documents/processing-status.ts";
 const code = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -29,6 +30,8 @@ for (const mode of ["ok", "moved", "changed", "denied", "database-refused", "for
     const db = { from: (name: string) => query(name === "shipment_drive_folders" ? { folder_id: folder }
       : { file_id: "Synthetic_file", present: true, revision: "3" }),
       rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === "begin_shipment_drive_operation") return { data: { action: "run", attempt: 1 } };
+        if (name === "record_shipment_drive_operation") return { data: null };
         calls++; assert.equal(name, mode.startsWith("preview-") ? "check_shipment_drive_content" : "link_shipment_drive_document");
         assert.equal(args.p_checksum, createHash("sha256").update(bytes).digest("hex"));
         if (mode.startsWith("preview-")) assert.deepEqual(Array.from(args.p_verified_versions as string[]), mode === "preview-ok" ? [version] : []);
@@ -41,6 +44,7 @@ for (const mode of ["ok", "moved", "changed", "denied", "database-refused", "for
       "@/lib/auth/access": { requireUser: async () => ({ supabase }) },
       "@/lib/permissions": { loadPermissions: async (_: unknown, names: string[]) => Object.fromEntries(names.map(n => [n, mode !== "denied"])) },
       "@/lib/documents/rules": { isUuid }, "@/lib/documents/files": files,
+      "@/lib/documents/processing-status": processingStatus,
       "@/lib/google/shipment-gateway": { shipmentDriveGateway: async () => db },
       "@/lib/google/shipment-folder": { insideFolder },
       "@/lib/google/drive-server": { shipmentDrive: () => ({

@@ -31,6 +31,14 @@ end $$;
 select pg_temp.refuses($q$select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000002',1,'finished','completed')$q$);
 select pg_temp.refuses($q$select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000002',2,'finished','completed')$q$);
 select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000002',2,'registering','needs_action','SAVE_UNCERTAIN');
+-- The reconciler's explicit byte comparison and link-only action share durable
+-- progress, but a receipt alone must never certify content or create a document.
+select public.begin_shipment_drive_operation('dc000000-0000-4000-8000-000000000003','eb300000-0000-4000-8000-000000000001','check','Synthetic_file','1');
+select pg_temp.refuses($q$select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000003',1,'finished','completed')$q$);
+select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000003',1,'downloading','failed','SOURCE_UNAVAILABLE');
+select public.begin_shipment_drive_operation('dc000000-0000-4000-8000-000000000004','eb300000-0000-4000-8000-000000000001','link','Synthetic_file','1');
+select pg_temp.refuses($q$select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000004',1,'finished','completed')$q$);
+select public.record_shipment_drive_operation('dc000000-0000-4000-8000-000000000004',1,'registering','needs_action','SAVE_UNCERTAIN');
 reset role;
 insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
  select 'eb000000-0000-4000-8000-000000000001',id,'deny','Synthetic deny','eb000000-0000-4000-8000-000000000001' from public.permissions where code='documents.drive.view';

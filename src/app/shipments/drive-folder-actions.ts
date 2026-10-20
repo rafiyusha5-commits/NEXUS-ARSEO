@@ -125,29 +125,33 @@ async function verifyStoredBytes(ctx: Awaited<ReturnType<typeof context>>, versi
 }
 export async function checkShipmentDriveContent(form: FormData) {
   await operation(form, "check", async ctx => {
+    await ctx.report("downloading");
     const { source, binding, checksum } = await checkedContent(form, ctx);
     const verified: string[] = [];
     for (const candidate of await storedCandidates(ctx.supabase, checksum)) {
       if (await verifyStoredBytes(ctx, candidate, checksum)) verified.push(candidate.id);
     }
     insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
+    await ctx.report("registering");
     const saved = await ctx.db.rpc("check_shipment_drive_content", { p_shipment_id: ctx.id, p_file_id: source.file_id, p_revision: source.revision, p_checksum: checksum, p_verified_versions: verified });
     if (saved.error) throw new Error("Не удалось проверить и сохранить результат");
     return "Содержимое проверено по SHA-256. Просмотрите доступные совпадения; документы не изменены.";
   });
 }
 export async function linkShipmentDriveDocument(form: FormData) {
-  await operation(form, async ctx => {
+  await operation(form, "link", async ctx => {
     if (text(form, "confirm") !== "yes") throw new Error("Подтвердите загрузку связи с выбранным документом");
     const permissions = await loadPermissions(ctx.supabase, ["documents.create", "documents.update"] as const);
     if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");
     if (!isUuid(text(form, "document_id")) || !isUuid(text(form, "version_id"))) throw new Error("Не удалось проверить выбранный документ");
+    await ctx.report("downloading");
     const { source, binding, checksum } = await checkedContent(form, ctx);
     const target = await ctx.supabase.from("document_versions").select("id,document_id,version_number,storage_bucket,storage_path,file_size_bytes")
       .eq("id", text(form, "version_id")).eq("document_id", text(form, "document_id")).eq("is_current", true).maybeSingle();
     if (target.error || !target.data || !await verifyStoredBytes(ctx, target.data, checksum))
       throw new Error("Не удалось проверить совпадение содержимого выбранного документа");
     insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
+    await ctx.report("registering");
     const result = await ctx.db.rpc("link_shipment_drive_document", { p_shipment_id: ctx.id, p_file_id: source.file_id,
       p_revision: source.revision, p_checksum: checksum, p_document_id: text(form, "document_id"), p_version_id: text(form, "version_id") });
     if (result.error || !result.data) throw new Error("Не удалось проверить актуальность выбранной связи. Обновите варианты и проверьте документ.");
@@ -156,7 +160,7 @@ export async function linkShipmentDriveDocument(form: FormData) {
   });
 }
 export async function importShipmentDriveFile(form: FormData) {
-  await operation(form, async ctx => {
+  await operation(form, "import", async ctx => {
     const { id, supabase, db, drive, signal, report, operationId } = ctx;
     const permissions = await loadPermissions(supabase, ["documents.create", "documents.update"] as const);
     if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");

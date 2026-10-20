@@ -14,7 +14,7 @@ const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty", 
 export type OutcomeCost = {
   version: number; status: string; approvedAt: string | null; currency: string | null;
   goodsTotal: number; expensesTotal: number; landedTotal: number;
-  items: Array<{ shipmentItemId: string; quantity: number; landedAmount: number; unitLandedCost: number }>;
+  items: Array<{ shipmentItemId: string; quantity: number; costQuantity?: number; landedAmount: number; unitLandedCost: number }>;
 };
 export type OutcomeShelfLife = { batchId: string; state: string; firstDeadline: string | null };
 
@@ -55,7 +55,7 @@ export async function loadShipmentOutcome(supabase: SupabaseClient, shipmentId: 
       ? supabase.from("inventory_reservations").select("batch_id,quantity,status,balance:inventory_balances(uom),sale_item:sale_items(sale:sales(id,sale_number,status,customer:counterparties(short_name,legal_name)))").in("batch_id", batchIds)
       : Promise.resolve({ data: [] }),
     costVisible
-      ? supabase.from("cost_calculations").select("version_number,status,approved_at,goods_total,expenses_total,landed_total,currency:currencies(code),items:cost_calculation_items(shipment_item_id,quantity,landed_amount,unit_landed_cost)").eq("shipment_id", shipmentId).in("status", ["approved", "draft"]).order("status", { ascending: true }).order("version_number", { ascending: false }).limit(1)
+      ? supabase.from("cost_calculations").select("version_number,status,approved_at,goods_total,expenses_total,landed_total,currency:currencies(code),items:cost_calculation_items(shipment_item_id,quantity,cost_quantity,landed_amount,unit_landed_cost)").eq("shipment_id", shipmentId).in("status", ["approved", "draft"]).order("status", { ascending: true }).order("version_number", { ascending: false }).limit(1)
       : Promise.resolve({ data: null }),
     granted.has("documents.view") ? supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId }) : Promise.resolve({ data: null, error: { message: "hidden" } }),
     inventoryVisible && granted.has("products.view") && batchIds.length ? supabase.rpc("shelf_life_risks", { p_horizon_days: 60 }) : Promise.resolve({ data: null, error: batchIds.length ? { message: "hidden" } : null }),
@@ -75,12 +75,12 @@ export async function loadShipmentOutcome(supabase: SupabaseClient, shipmentId: 
   // The approved calculation is the cost of the shipment; a newer draft is shown only when nothing is approved.
   let cost: ShipmentOutcome["cost"] = costVisible ? null : "hidden";
   if (costVisible) {
-    const calculations = (costResult.data ?? []) as Array<{ version_number: number; status: string; approved_at: string | null; goods_total: number | string; expenses_total: number | string; landed_total: number | string; currency: unknown; items: Array<{ shipment_item_id: string; quantity: number | string; landed_amount: number | string; unit_landed_cost: number | string }> }>;
+    const calculations = (costResult.data ?? []) as Array<{ version_number: number; status: string; approved_at: string | null; goods_total: number | string; expenses_total: number | string; landed_total: number | string; currency: unknown; items: Array<{ shipment_item_id: string; quantity: number | string; cost_quantity?: number | string | null; landed_amount: number | string; unit_landed_cost: number | string }> }>;
     const chosen = calculations.find(row => row.status === "approved") ?? calculations[0];
     if (chosen) cost = {
       version: chosen.version_number, status: chosen.status, approvedAt: chosen.approved_at, currency: one(chosen.currency as { code?: string } | null)?.code ?? null,
       goodsTotal: Number(chosen.goods_total), expensesTotal: Number(chosen.expenses_total), landedTotal: Number(chosen.landed_total),
-      items: (chosen.items ?? []).map(item => ({ shipmentItemId: item.shipment_item_id, quantity: Number(item.quantity), landedAmount: Number(item.landed_amount), unitLandedCost: Number(item.unit_landed_cost) })),
+      items: (chosen.items ?? []).map(item => ({ shipmentItemId: item.shipment_item_id, quantity: Number(item.quantity), costQuantity: Number(item.cost_quantity ?? item.quantity), landedAmount: Number(item.landed_amount), unitLandedCost: Number(item.unit_landed_cost) })),
     };
   }
 
