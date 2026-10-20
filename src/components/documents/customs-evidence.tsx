@@ -27,7 +27,8 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
     {"kind" in value && value.kind === "declaration" && <div className="evidence-outcomes" aria-label="Три независимых результата проверки">
         <section><h4>1. Проверка чтения</h4><p>{outcome.reading}.</p><p>Подтверждение чтения не означает совпадение с заказом или фактическую приёмку.</p></section>
         <section><h4>2. Согласованность данных</h4><p>{outcome.comparison}.</p>
-          {outcome.differences.length > 0 && <><strong>Отличие от первоначального заказа</strong><ul>{outcome.differences.map((text, index) => <li key={index}>{text}</li>)}</ul><p>Причина неизвестна. Это не признание складской недостачи.</p></>}
+          <p>Основа сверки отгрузки — актуальные подтверждённые инвойс и упаковочный лист. Первоначальный заказ отражает потребность и сохраняется для сравнения.</p>
+          {outcome.differences.length > 0 && <><strong>Информация: отличие от первоначального заказа</strong><ul>{outcome.differences.map((text, index) => <li key={index}>{text}</li>)}</ul><p>Отличие от потребности не считается ошибкой сверки или складской недостачей. Причина изменения количества поставщиком документами не установлена.</p></>}
           <p>{packingOutcome.message}.</p>
           {packingOutcome.differences.length > 0 && <ul>{packingOutcome.differences.map(text => <li key={text}>{text}</li>)}</ul>}
           <p>Ссылка на упаковочный лист в графе 44: {packingRefs.join(", ") || "не прочитана"}. Сравнение количества не подтверждает приёмку. Итог по реквизитам показан в блоке «Сверка».</p>
@@ -41,10 +42,11 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
     {items.length > 0 && <>
       <h4>Товарные строки ДТ: {items.length}. Сверка с инвойсом и поставкой</h4>
       <p>Связь только по точному артикулу. Количества сравниваются в одинаковых единицах; веса показаны отдельно. Разделённые позиции поставки суммируются по артикулу. Это не подтверждение фактической приёмки.</p>
-      <p>Инвойс по графе 44 ДТ: {refs.join(", ") || "ссылка не прочитана"}. Сверка требует одного доступного актуального инвойса с этим номером.</p>
+      <p>Инвойс по графе 44 ДТ: {refs.join(", ") || "ссылка не прочитана"}. Сверка требует одного доступного актуального подтверждённого инвойса с этим номером и подтверждённого упаковочного листа.</p>
       {current && <>
-        <p>ДТ ↔ инвойс: совпали артикул, количество и сумма в {comparisons.filter(c => c.invoiceMatched).length} из {items.length} строк. ДТ ↔ заказанное количество поставки: совпало в {comparisons.filter(c => c.orderedMatched).length} из {items.length} строк.</p>
-        <p>Строк без замечаний: {comparisons.filter(c => c.status === "matched").length}; расхождения: {comparisons.filter(c => c.status === "different").length}; нужна проверка или заполнение данных: {comparisons.filter(c => c.status === "review").length}.</p>
+        <p>ДТ ↔ подтверждённый инвойс: совпали артикул, количество и сумма в {comparisons.filter(c => c.invoiceMatched).length} из {items.length} строк.</p>
+        <p>Справочно, ДТ ↔ первоначальный заказ: совпало в {comparisons.filter(c => c.orderedMatched).length} из {items.length} строк. Отличия от заказа не включаются в счётчик расхождений.</p>
+        <p>По ДТ, инвойсу и карточке поставки — строк без замечаний: {comparisons.filter(c => c.status === "matched").length}; расхождения: {comparisons.filter(c => c.status === "different").length}; нужна проверка или заполнение данных: {comparisons.filter(c => c.status === "review").length}. Упаковочный лист проверяется отдельно выше.</p>
       </>}
       <div className="table-wrap"><table className="data-table"><caption>ДТ → инвойс → поставка (только чтение)</caption><thead><tr><th>Товар ДТ</th><th>Количество / стоимость</th><th>Вес / таможенная стоимость</th><th>Инвойс</th><th>Поставка</th></tr></thead><tbody>{items.map((item, index) => <tr key={index}>
         <td>№ {item.number} · {item.sku ?? "артикул не прочитан"}<br/>{item.description}<br/>ТН ВЭД: {item.hsCode ?? "—"}{item.warnings.map((warning, n) => <p key={n}>{warning}</p>)}</td>

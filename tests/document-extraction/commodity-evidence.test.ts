@@ -98,8 +98,8 @@ test("split shipment quantities aggregate; original order discrepancy is retaine
   assert.equal(compare([invoice()],positions).status,"matched");
   positions[1].ordered=7;
   const result=compare([invoice()],positions);
-  assert.equal(result.status,"different");
-  assert.match(result.shipment,/Заказано: 11 — расхождение/);
+  assert.equal(result.status,"matched");
+  assert.match(result.shipment,/Заказано: 11 — отличие от потребности \(информация\)/);
   assert.match(result.shipment,/Отгружено: 10 — совпадает/);
 });
 test("only current accessible document version with active shipment/vehicle link is eligible", () => {
