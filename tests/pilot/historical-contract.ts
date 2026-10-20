@@ -20,7 +20,7 @@ export function browserEvidenceProblems(value: unknown): string[] {
   if (!value || typeof value !== "object") return ["Missing authenticated browser evidence"];
   const report = value as Record<string, unknown>;
   const required = ["fullBrowserE2E", "twoTabWrites", "manualConfirmationsPreserved", "fourDocumentTypesParsed",
-    "missingSecondCmrDetected", "bothCmrsPresent", "permissionBoundary"];
+    "missingSecondCmrDetected", "bothCmrsPresent", "permissionBoundary", "ocrIndicator"];
   const problems = required.filter(key => report[key] !== true).map(key => `Missing browser proof: ${key}`);
   if (!Array.isArray(report.checkpoints) || report.checkpoints.some(row => !row || typeof row !== "object" || !row.stock))
     problems.push("Missing UI-to-database checkpoints");
@@ -28,5 +28,8 @@ export function browserEvidenceProblems(value: unknown): string[] {
   const cost = report.cost as Record<string, unknown> | undefined;
   if (!cost || cost.goods !== 346 || cost.expenses !== 50 || cost.total !== 396 || cost.status !== "approved")
     problems.push("Missing approved browser costing");
+  const paid = report.paidQuantityRule as Record<string, unknown> | undefined;
+  if (!paid || paid.goods !== 1000 || paid.received !== 98 || paid.basis !== 100 || paid.unitCost !== 10)
+    problems.push("Paid 100 / received 98 rule was not verified through forms");
   return problems;
 }

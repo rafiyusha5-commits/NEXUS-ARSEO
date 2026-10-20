@@ -24,7 +24,9 @@ globalThis.fetch=async(input,init)=>{
   if(url.origin==='https://synthetic-ocr.invalid'&&method==='POST'){
     const body=JSON.parse(init.body),hash=crypto.createHash('sha256').update(Buffer.from(body.content_base64,'base64')).digest('hex');
     const file=fixture.files.find(f=>f.sha256===hash);if(!file)throw new Error('Unknown synthetic OCR bytes');
-    log({kind:'ocr',method,file:file.key});return json({text:file.text,pages:1,confidence:0.99});
+    log({kind:'ocr',method,file:file.key});
+    await new Promise(resolve=>setTimeout(resolve,400));
+    return json({text:file.text,pages:1,confidence:0.99});
   }
   throw new Error('E2E external network blocked: '+url.origin);
 };

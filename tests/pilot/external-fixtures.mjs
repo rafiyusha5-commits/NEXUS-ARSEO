@@ -1,7 +1,19 @@
 import {createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
+function syntheticPng(key){
+  const chunk=(type,data)=>{
+    const payload=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
+    for(const byte of payload){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+    const length=Buffer.alloc(4),checksum=Buffer.alloc(4);length.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+    return Buffer.concat([length,payload,checksum]);
+  };
+  const header=Buffer.alloc(13);header.writeUInt32BE(100,0);header.writeUInt32BE(100,4);header[8]=8;header[9]=2;
+  const pixels=Buffer.concat(Array.from({length:100},()=>Buffer.concat([Buffer.from([0]),Buffer.alloc(300,255)])));
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),
+    chunk('tEXt',Buffer.from(`Comment\0SYNTHETIC OCR BOUNDARY ${key}`)),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+}
 export function makeExternalFixtures(){
   const root='1ffI_2N0F9Gy3N8r5XgNRv-hipmCl1ele',folder='Synthetic_browser_folder';
-  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDusAAAAASUVORK5CYII=','base64');
   const declaration=`ДЕКЛАРАЦИЯ НА ТОВАРЫ
 No | 50123/010199/0000123
 5 Всего т-ов | 6 Всего мест
@@ -53,6 +65,6 @@ Total: 15 (150 ) 135.000
 Вес нетто: 135 кг`],
     ['customs','Customs declaration.png',declaration],
   ];
-  const files=definitions.map(([key,name,text])=>{const bytes=Buffer.concat([png,Buffer.from('\nSYNTHETIC-'+key)]);return {key,id:'Synthetic_browser_'+key,name,mimeType:'image/png',parents:[folder],version:'1',modifiedTime:'2026-01-01T00:00:00Z',size:String(bytes.length),base64:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex'),text};});
+  const files=definitions.map(([key,name,text])=>{const bytes=syntheticPng(key);return {key,id:'Synthetic_browser_'+key,name,mimeType:'image/png',parents:[folder],version:'1',modifiedTime:'2026-01-01T00:00:00Z',size:String(bytes.length),base64:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex'),text};});
   return {root,folder,files};
 }

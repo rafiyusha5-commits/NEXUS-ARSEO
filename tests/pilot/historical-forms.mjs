@@ -7,6 +7,8 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
   const context=await browser.newContext({viewport:{width:1440,height:1000}});
   await context.route('**/*',r=>new URL(r.request().url()).origin===base?r.continue():r.abort());
   const page=await context.newPage();
+  page.on('pageerror',error=>console.error('BROWSER PAGE ERROR:',error.message));
+  page.on('requestfailed',request=>console.error('BROWSER REQUEST FAILED:',request.method(),request.url(),request.failure()?.errorText));
   page.setDefaultTimeout(20000);
   page.setDefaultNavigationTimeout(30000);
   const scenarioTimeout=setTimeout(()=>{console.error('Browser scenario exceeded 12 minutes');void context.close();},720000);
@@ -16,8 +18,13 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
   const go=async path=>{await page.goto(base+path);await page.waitForLoadState('networkidle');assert.ok(!page.url().includes('/login'),`Session unexpectedly lost: ${path}`)};
   async function submit(form,label){
     const button=label?form.getByRole('button',{name:label,exact:true}):form.locator('button[type="submit"],button:not([type])').last();
-    const [response]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),button.click()]);
-    await Promise.race([response.finished(),new Promise((_,reject)=>{const t=setTimeout(()=>reject(new Error('Server action stream did not finish')),60000);t.unref();})]);
+    const responsePromise=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base));
+    await button.click();
+    if(label==='Распознать и сверить'&&!evidence.ocrIndicator){
+      await page.getByRole('button',{name:'Распознаём…',exact:true}).waitFor({state:'visible'});
+      evidence.ocrIndicator=true;
+    }
+    const response=await responsePromise;
     console.log('FORM:',label??'submit',response.status(),response.headers()['x-action-redirect']??'(no redirect)');
     const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
     if(redirect)await page.waitForURL(new URL(redirect,base).href);
@@ -271,6 +278,42 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.equal(await restrictedPage.getByText('MANUAL-ORDER-VERIFIED',{exact:true}).count(),0);
     await restrictedPage.screenshot({path:join(output,'restricted-user.png'),fullPage:true});
     await restrictedContext.close();evidence.permissionBoundary=true;step('independent restricted session hides documents and purchase cost');
+    // A second, separate purchase proves the owner's paid-quantity rule through forms too.
+    await go('/shipments');await page.locator('details.create-disclosure > summary').click();
+    f=page.locator('form.shipment-form');await fill(f,{project_code:'BROWSER-PAID-100-98',supplier_id:refs.supplier,
+      route_id:refs.route,warehouse_id:refs.warehouse,currency_id:refs.eur});await submit(f,'Создать поставку');
+    const paidShipment=new URL(page.url()).pathname.split('/').at(-1);assert.match(paidShipment,/^[0-9a-f-]{36}$/);
+    await go(`/shipments/${paidShipment}?tab=items`);f=buttonForm('Добавить');
+    await fill(f,{product_id:refs.costProduct,ordered_quantity:100,unit_price:10});await submit(f,'Добавить');
+    await go(`/shipments/${paidShipment}?tab=delivery`);await page.locator('details.transport-add > summary').click();
+    f=page.locator('details.transport-add form');await fill(f,{vehicle_plate:'COST-100',driver_name:'Synthetic Cost Driver'});
+    await submit(f,'Добавить автомобиль');
+    const paidVehicle=q(`select to_jsonb(id) from public.shipment_transports where shipment_id='${paidShipment}';`);
+    await go(`/shipments/${paidShipment}?tab=items`);
+    f=page.locator('form.allocation-form');await fill(f,{transport_id:paidVehicle,quantity:100});await submit(f,'Распределить');
+    for(const status of ['in_transit','arrived']){
+      await go(`/shipments/${paidShipment}?tab=delivery`);
+      f=formWith('transport_id',paidVehicle).filter({has:page.locator('select[name="status"]')});
+      await fill(f,{status});await submit(f,'Сохранить');
+    }
+    await go(`/shipments/${paidShipment}/receiving?transport=${paidVehicle}`);f=page.locator('form.receiving-form');
+    await fill(f,{accepted_quantity:98,damaged_quantity:0,batch_number:'BROWSER-PAID-98',
+      manufacture_date:date(-30),expiry_date:date(370),discrepancy_reason:'Synthetic shortfall of two units',performed_by_name:'Synthetic Receiver'});
+    await submit(f,'Завершить приёмку');
+    await go(`/finance?shipment=${paidShipment}`);f=buttonForm('Сохранить черновик');
+    await fill(f,{shipment_id:paidShipment,expense_type:'goods_cost',amount:1000,currency_id:refs.eur,notes:'Synthetic paid 100 at 10'});
+    await submit(f,'Сохранить черновик');
+    await go(`/finance?shipment=${paidShipment}`);await submit(buttonForm('Подтвердить'),'Подтвердить');
+    await go(`/finance?shipment=${paidShipment}`);f=buttonForm('Распределить');
+    await fill(f,{method:'by_quantity',target_currency_id:refs.eur});await submit(f,'Распределить');
+    await go(`/finance?shipment=${paidShipment}`);await submit(buttonForm('Оплачен'),'Оплачен');
+    await go(`/finance?shipment=${paidShipment}`);f=buttonForm('Рассчитать новую версию');
+    await fill(f,{shipment_id:paidShipment,target_currency_id:refs.eur});await submit(f,'Рассчитать новую версию');
+    const paidCost=q(`select jsonb_build_object('goods',i.goods_amount,'received',i.quantity,'basis',i.cost_quantity,'unitCost',i.unit_landed_cost)
+      from public.cost_calculation_items i join public.cost_calculations c on c.id=i.calculation_id where c.shipment_id='${paidShipment}';`);
+    assert.deepEqual(paidCost,{goods:1000,received:98,basis:100,unitCost:10});
+    evidence.paidQuantityRule=paidCost;step('paid 100 received 98 keeps unit cost 10 through forms');
+    await page.screenshot({path:join(output,'paid-quantity-cost.png'),fullPage:true});
     evidence.fullBrowserE2E=true;step('closed report and refresh verified');return evidence;
   }catch(error){
     writeFileSync(join(output,'browser-progress.json'),JSON.stringify(evidence,null,2));

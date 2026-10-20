@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
 import {randomUUID, generateKeyPairSync, createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, cpSync, symlinkSync, createWriteStream} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, cpSync, symlinkSync, createWriteStream, openSync, closeSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -71,7 +71,8 @@ try{
     'warehouse',(select id from public.warehouses where code='BROWSER-A'),
     'warehouse2',(select id from public.warehouses where code='BROWSER-B'),
     'a',(select id from public.products where internal_sku='990001'),
-    'b',(select id from public.products where internal_sku='990002'));`));
+    'b',(select id from public.products where internal_sku='990002'),
+    'costProduct',(select id from public.products where internal_sku='990003'));`));
   const fixtures=makeExternalFixtures();
   const fixturesPath=join(work,'external.json');writeFileSync(fixturesPath,JSON.stringify(fixtures));
   // Only tracked application files; env and generated files can never be copied.
@@ -81,16 +82,26 @@ try{
     const target=join(app,file);mkdirSync(dirname(target),{recursive:true});cpSync(join(root,file),target);
   }
   symlinkSync(join(root,'node_modules'),join(app,'node_modules'),process.platform==='win32'?'junction':'dir');
+  // next/font's own test hook: functional forms must not depend on a font CDN.
+  // The normal app CI still builds the unmodified production font integration.
+  const fonts=join(work,'font-responses.json');
+  writeFileSync(fonts,JSON.stringify({
+    'https://fonts.googleapis.com/css2?family=Jost:wght@500;600;700&display=swap':"@font-face {font-family: 'Jost'; src: local('Arial'); font-weight: 500 700;}",
+    'https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap':"@font-face {font-family: 'Golos Text'; src: local('Arial'); font-weight: 400 700;}",
+  }));
   const env={...hostEnv,NODE_ENV:'production',NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:api.origin,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:keys.ANON_KEY,APP_ORIGIN:'http://127.0.0.1:3100',
     DRIVE_CATALOG_GATEWAY_SECRET:gateway,GOOGLE_SERVICE_ACCOUNT_EMAIL:'synthetic@pilot.iam.gserviceaccount.com',
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}}).privateKey,
     OCR_PROVIDER:'http',OCR_HTTP_ENDPOINT:'https://synthetic-ocr.invalid/recognize',OCR_HTTP_TOKEN:'synthetic-only',
     OCR_ACKNOWLEDGE_DATA_TRANSFER:'true',OCR_MAX_DOCUMENTS_PER_RUN:'20',OCR_RUN_BUDGET_MS:'200000',
-    AGENT_ENABLED:'false',TELEGRAM_ENABLED:'false'};
+    AGENT_ENABLED:'false',TELEGRAM_ENABLED:'false',NEXT_FONT_GOOGLE_MOCKED_RESPONSES:fonts};
   console.log('Building actual Nexus against the isolated backend');
-  const buildOutput=command(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'build','--webpack'],{cwd:app,env,timeout:300000});
-  writeFileSync(join(output,'browser-build.log'),buildOutput);
+  const buildPath=join(output,'browser-build.log'),buildLog=openSync(buildPath,'w');
+  const buildResult=spawnSync(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'build','--webpack'],
+    {cwd:app,env,timeout:300000,windowsHide:true,stdio:['ignore',buildLog,buildLog]});
+  closeSync(buildLog);
+  if(buildResult.status!==0)throw new Error(`Isolated build failed (${buildResult.error?.message??buildResult.status}): ${readFileSync(buildPath,'utf8').slice(-10000)}`);
   console.log('Actual Nexus build complete; starting browser server');
   log=createWriteStream(join(output,'browser-server.log'));
   server=spawn(process.execPath,['--import',join(root,'tests/pilot/external-boundaries.mjs'),join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p','3100'],
