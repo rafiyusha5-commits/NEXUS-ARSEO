@@ -9,12 +9,12 @@ insert into public.routes(name,origin_country,destination_country)
  values('{"ru":"Учебный маршрут","en":"Browser Route"}','FI','KZ');
 insert into public.products(internal_sku,name,manufacturer_id,status,shelf_life_days)
  select sku,jsonb_build_object('ru',title),c.id,'active',400 from public.counterparties c
- cross join (values('BROWSER-A','Учебный товар Альфа'),('BROWSER-B','Учебный товар Бета')) p(sku,title)
+ cross join (values('990001','Учебный товар Альфа'),('990002','Учебный товар Бета')) p(sku,title)
  where c.tax_id='BROWSER-FACTORY';
 insert into public.product_packaging(product_id,uom,units_per_parent,gross_weight_kg,net_weight_kg)
- select id,'piece',1,1,0.9 from public.products where internal_sku in('BROWSER-A','BROWSER-B');
+ select id,'piece',1,1,0.9 from public.products where internal_sku in('990001','990002');
 insert into public.product_packaging(product_id,uom,units_per_parent)
- select id,'box',10 from public.products where internal_sku='BROWSER-A';
+ select id,'box',10 from public.products where internal_sku='990001';
 insert into public.document_requirements(document_type_id,applies_to,shipment_type,is_mandatory,route_id)
  select dt.id,'shipment_transport','import',true,r.id from public.document_types dt cross join public.routes r
  where dt.code='cmr' and r.name->>'en'='Browser Route';

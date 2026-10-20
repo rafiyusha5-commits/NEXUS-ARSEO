@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 
-export async function runHistoricalForms({chromium,base,email,password,refs,sql,output,fixtures}){
+export async function runHistoricalForms({chromium,base,email,password,restrictedEmail,refs,sql,output,fixtures}){
   const browser=await chromium.launch({headless:true});
   const context=await browser.newContext({viewport:{width:1440,height:1000}});
   await context.route('**/*',r=>new URL(r.request().url()).origin===base?r.continue():r.abort());
   const page=await context.newPage();
   page.setDefaultTimeout(20000);
+  page.setDefaultNavigationTimeout(30000);
+  const scenarioTimeout=setTimeout(()=>{console.error('Browser scenario exceeded 12 minutes');void context.close();},720000);
   const evidence={fullBrowserE2E:false,steps:[],checkpoints:[],twoTabWrites:false,manualConfirmationsPreserved:false};
   const q=text=>JSON.parse(sql(text));
   const step=name=>{evidence.steps.push(name);console.log('BROWSER STEP:',name)};
@@ -15,7 +17,8 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
   async function submit(form,label){
     const button=label?form.getByRole('button',{name:label,exact:true}):form.locator('button[type="submit"],button:not([type])').last();
     const [response]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),button.click()]);
-    await response.finished();
+    await Promise.race([response.finished(),new Promise((_,reject)=>{const t=setTimeout(()=>reject(new Error('Server action stream did not finish')),60000);t.unref();})]);
+    console.log('FORM:',label??'submit',response.status(),response.headers()['x-action-redirect']??'(no redirect)');
     const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
     if(redirect)await page.waitForURL(new URL(redirect,base).href);
     await page.waitForLoadState('networkidle');
@@ -33,9 +36,9 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
   let shipment;
   const items=()=>q(`select coalesce(jsonb_agg(jsonb_build_object('id',i.id,'sku',p.internal_sku,'transport',i.shipment_transport_id,'qty',i.ordered_quantity) order by i.id),'[]') from public.shipment_items i join public.products p on p.id=i.product_id where shipment_id='${shipment}';`);
   const snapshot=()=>q(`select jsonb_build_object(
-    'stock',(select coalesce(jsonb_object_agg(uom,n),'{}') from(select bal.uom,sum(bal.quantity_on_hand) n from public.inventory_balances bal join public.inventory_batches b on b.id=bal.batch_id join public.products p on p.id=b.product_id where p.internal_sku like 'BROWSER-%' group by bal.uom)s),
-    'reserved',(select coalesce(sum(bal.quantity_reserved),0) from public.inventory_balances bal join public.inventory_batches b on b.id=bal.batch_id join public.products p on p.id=b.product_id where p.internal_sku like 'BROWSER-%'),
-    'movements',(select count(*) from public.inventory_movements m join public.inventory_batches b on b.id=m.batch_id join public.products p on p.id=b.product_id where p.internal_sku like 'BROWSER-%'),
+    'stock',(select coalesce(jsonb_object_agg(uom,n),'{}') from(select bal.uom,sum(bal.quantity_on_hand) n from public.inventory_balances bal join public.inventory_batches b on b.id=bal.batch_id join public.products p on p.id=b.product_id where p.internal_sku in('990001','990002') group by bal.uom)s),
+    'reserved',(select coalesce(sum(bal.quantity_reserved),0) from public.inventory_balances bal join public.inventory_batches b on b.id=bal.batch_id join public.products p on p.id=b.product_id where p.internal_sku in('990001','990002')),
+    'movements',(select count(*) from public.inventory_movements m join public.inventory_batches b on b.id=m.batch_id join public.products p on p.id=b.product_id where p.internal_sku in('990001','990002')),
     'receipts',(select count(*) from public.shipment_transport_receipts where shipment_id='${shipment}'));`);
   const checkpoint=(stage,expected)=>{const actual=snapshot();for(const [k,v]of Object.entries(expected))assert.deepEqual(actual[k],v,stage+': '+k);evidence.checkpoints.push({stage,...actual});step(stage)};
   try{
@@ -64,7 +67,7 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     }
     const vehicles=q(`select jsonb_agg(jsonb_build_object('id',id,'no',sequence_no) order by sequence_no) from public.shipment_transports where shipment_id='${shipment}';`);
     assert.equal(vehicles.length,2);
-    for(const [sku,qty,vehicle]of [['BROWSER-A',60,vehicles[0]],['BROWSER-A',40,vehicles[1]],['BROWSER-B',50,vehicles[1]]]){
+    for(const [sku,qty,vehicle]of [['990001',60,vehicles[0]],['990001',40,vehicles[1]],['990002',50,vehicles[1]]]){
       await go(`/shipments/${shipment}?tab=items`);
       const item=items().find(i=>i.sku===sku&&!i.transport);assert.ok(item);
       const f=formWith('item_id',item.id).filter({has:page.locator('select[name="transport_id"]')});
@@ -92,6 +95,10 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     const sources=()=>q(`select jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'file',f.file_id,'data',e.extracted_data,'confirmed',e.confirmed_data,'reviewed',e.reviewed_at) order by e.id) from public.shipment_source_extractions e join public.shipment_drive_files f on f.imported_document_id=e.document_id and f.shipment_id=e.shipment_id where e.shipment_id='${shipment}' and e.status<>'superseded';`);
     assert.equal(sources().length,5);
     assert.ok(sources().every(s=>['extracted','needs_review'].includes(s.status)),JSON.stringify(sources()));
+    assert.equal(sources().find(s=>s.file.endsWith('_invoice')).data.commodity_invoice.items.length,2);
+    assert.equal(sources().find(s=>s.file.endsWith('_packing')).data.packing_evidence.total,150);
+    assert.equal(sources().find(s=>s.file.endsWith('_customs')).data.customs_record.items.length,2);
+    evidence.fourDocumentTypesParsed=true;
     step('real OCR pipeline through synthetic HTTP boundary');
     // Review generic requisites through the actual source forms. No direct review RPC.
     for(const source of sources()){
@@ -107,15 +114,18 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
         if(await details.getAttribute('open')===null)await details.locator('summary').first().click();
       }
       f=details.locator('form').filter({has:page.getByRole('button',{name:'Подтвердить данные',exact:true})});
-      if(await f.count()){await submit(f,'Подтвердить данные');}
-      else if(file.key==='customs'){
+      if(file.key==='customs'){
         f=details.locator('form').filter({has:page.locator('[name="review_note"]')});
         await fill(f,{review_note:'Synthetic declaration original and commodity lines checked; no company data'});
         await f.locator('[name="checked"]').check();await submit(f,'Подтвердить сверку декларации');
+      }else{
+        if(file.key==='invoice')await fill(f,{field_order_number:'MANUAL-ORDER-VERIFIED'});
+        await submit(f,'Подтвердить данные');
       }
     }
     const confirmedBefore=sources().filter(s=>s.status==='confirmed');
     assert.equal(confirmedBefore.length,5,'All five sources must be manually confirmed');
+    assert.equal(confirmedBefore.find(s=>s.file.endsWith('_invoice')).confirmed.order_number,'MANUAL-ORDER-VERIFIED');
     await go(`/shipments/${shipment}?tab=documents`);
     await submit(page.locator('#source-documents form').filter({has:page.getByRole('button',{name:'Распознать и сверить',exact:true})}),'Распознать и сверить');
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);evidence.manualConfirmationsPreserved=true;
@@ -126,7 +136,7 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
       await go(`/documents/${document}`);
       f=buttonForm('Добавить связь');
       const option=await f.locator('select[name="link"] option').filter({hasText:`Автомобиль №${index+1}`}).first().getAttribute('value');
-      assert.ok(option,'Vehicle document link option');await fill(f,{link:option});await submit(f,'Добавить связь');
+      assert.equal(option,`shipment_transport:${vehicle.id}`);await fill(f,{link:option});await submit(f,'Добавить связь');
       if(index===0){
         await go(`/shipments/${shipment}/report`);
         assert.match(await page.locator('body').innerText(),/CMR[^\n]*автомобиль №2/i);
@@ -190,7 +200,7 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     const movement=new URL(page.url()).pathname.split('/').at(-1);
     await go(`/inventory/movements/${movement}?tab=items`);
     f=buttonForm('Добавить строку');
-    const balance=await f.locator('select[name="source_balance_id"] option').filter({hasText:'BROWSER-B'}).getAttribute('value');
+    const balance=await f.locator('select[name="source_balance_id"] option').filter({hasText:'990002'}).getAttribute('value');
     assert.ok(balance);await fill(f,{source_balance_id:balance,quantity:10});await submit(f,'Добавить строку');
     await go(`/inventory/movements/${movement}`);await submit(buttonForm('Провести документ'),'Провести документ');
     checkpoint('transferred',{stock:{piece:147},reserved:70,movements:5,receipts:2});
@@ -204,7 +214,7 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     checkpoint('shipped',{stock:{piece:77},reserved:0,movements:7,receipts:2});evidence.twoTabWrites=true;
     await go(`/sales/${sale}?tab=returns`);
     f=page.locator('form.customer-return-form');
-    const returnRow=f.locator('tbody tr').filter({hasText:'BROWSER-0-BROWSER-A'});
+    const returnRow=f.locator('tbody tr').filter({hasText:'BROWSER-0-990001'});
     await returnRow.locator('input[name^="qty_"]').fill('1');
     await returnRow.locator('select').selectOption('refused');await fill(f,{reason:'Synthetic unopened box'});
     await submit(f,'Оформить возврат');
@@ -244,13 +254,28 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
       assert.match(await page.locator('body').innerText(),/Итог поставки/);
       assert.match(await page.locator('body').innerText(),/396/);
     }
-    await page.reload();await page.waitForLoadState('networkidle');assert.deepEqual(snapshot(),evidence.checkpoints.at(-1)&&{
+    await page.reload();await page.waitForLoadState('networkidle');assert.deepEqual(snapshot(),{
       stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
+    const restrictedContext=await browser.newContext();
+    const restrictedPage=await restrictedContext.newPage();
+    await restrictedPage.goto(base+'/login');
+    await restrictedPage.locator('[name="email"]').fill(restrictedEmail);await restrictedPage.locator('[name="password"]').fill(password);
+    await restrictedPage.getByRole('button',{name:'Войти',exact:true}).click();
+    await restrictedPage.waitForURL(base+'/');
+    await restrictedPage.goto(`${base}/shipments/${shipment}/report`);await restrictedPage.waitForLoadState('networkidle');
+    const restrictedText=await restrictedPage.locator('body').innerText();
+    assert.match(restrictedText,/Нет доступа|нет прав/i);
+    assert.doesNotMatch(restrictedText,/396\s*EUR/);
+    await restrictedPage.goto(`${base}/shipments/${shipment}?tab=documents`);await restrictedPage.waitForLoadState('networkidle');
+    assert.equal(await restrictedPage.getByRole('button',{name:'Подтвердить данные',exact:true}).count(),0);
+    assert.equal(await restrictedPage.getByText('MANUAL-ORDER-VERIFIED',{exact:true}).count(),0);
+    await restrictedPage.screenshot({path:join(output,'restricted-user.png'),fullPage:true});
+    await restrictedContext.close();evidence.permissionBoundary=true;step('independent restricted session hides documents and purchase cost');
     evidence.fullBrowserE2E=true;step('closed report and refresh verified');return evidence;
   }catch(error){
     writeFileSync(join(output,'browser-progress.json'),JSON.stringify(evidence,null,2));
     writeFileSync(join(output,'browser-failure.txt'),`URL: ${page.url()}\n${error.stack}\n\n${await page.locator('body').innerText().catch(()=>'(no page)')}`);
     await page.screenshot({path:join(output,'browser-failure.png'),fullPage:true}).catch(()=>{});
     throw error;
-  }finally{await context.close();await browser.close();}
+  }finally{clearTimeout(scenarioTimeout);await context.close();await browser.close();}
 }

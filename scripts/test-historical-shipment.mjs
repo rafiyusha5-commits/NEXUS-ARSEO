@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
-import { checkpointProblems } from '../tests/pilot/historical-contract.ts';
+import { checkpointProblems, browserEvidenceProblems } from '../tests/pilot/historical-contract.ts';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv.length > 2) throw new Error('No database URLs or external endpoints accepted');
 const playwright = process.env.NEXUS_TEST_PLAYWRIGHT || 'playwright';
@@ -20,8 +20,8 @@ const capture = JSON.parse(readFileSync(resolve(root, 'test-results/historical/c
 const problems = checkpointProblems(capture.checkpoints);
 if (problems.length) throw new Error(problems.join('; '));
 const browser = JSON.parse(readFileSync(resolve(root, 'test-results/historical/browser-result.json'), 'utf8'));
-if (browser.fullBrowserE2E !== true || browser.twoTabWrites !== true || browser.manualConfirmationsPreserved !== true)
-  throw new Error('Full authenticated browser contract is incomplete');
+const browserProblems = browserEvidenceProblems(browser);
+if (browserProblems.length) throw new Error(browserProblems.join('; '));
 const limitations = ['Synthetic documents and external Drive/OCR HTTP boundaries; real company files and external providers are not exercised.'];
 const defects = [];
 if (!capture.costDiagnostic.owner_rule_satisfied) defects.push({

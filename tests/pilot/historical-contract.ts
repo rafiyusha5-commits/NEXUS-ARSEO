@@ -14,3 +14,19 @@ export function checkpointProblems(rows: Checkpoint[]): string[] {
       ? [] : [`Checkpoint ${stage} does not match expected synthetic totals`];
   });
 }
+
+// Readiness must require actual UI-to-database evidence, not just successful SQL/component tests.
+export function browserEvidenceProblems(value: unknown): string[] {
+  if (!value || typeof value !== "object") return ["Missing authenticated browser evidence"];
+  const report = value as Record<string, unknown>;
+  const required = ["fullBrowserE2E", "twoTabWrites", "manualConfirmationsPreserved", "fourDocumentTypesParsed",
+    "missingSecondCmrDetected", "bothCmrsPresent", "permissionBoundary"];
+  const problems = required.filter(key => report[key] !== true).map(key => `Missing browser proof: ${key}`);
+  if (!Array.isArray(report.checkpoints) || report.checkpoints.some(row => !row || typeof row !== "object" || !row.stock))
+    problems.push("Missing UI-to-database checkpoints");
+  else problems.push(...checkpointProblems(report.checkpoints.map(row => ({ ...row, receipt_count: row.receipts }))));
+  const cost = report.cost as Record<string, unknown> | undefined;
+  if (!cost || cost.goods !== 346 || cost.expenses !== 50 || cost.total !== 396 || cost.status !== "approved")
+    problems.push("Missing approved browser costing");
+  return problems;
+}
