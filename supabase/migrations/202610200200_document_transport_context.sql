@@ -61,6 +61,19 @@ revoke all on function public.assign_source_extraction_transport(uuid,uuid,text)
 grant execute on function public.assign_source_extraction_transport(uuid,uuid,text),
  public.assign_source_extraction_transport(uuid,uuid) to authenticated;
 
+-- The existing explicit "accept proposal" operation carries its reviewed reason.
+-- It still refreshes candidates and requires employee acceptance; no auto-binding.
+do $$declare definition text; old_fragment text; new_fragment text;begin
+ definition:=replace(pg_get_functiondef('public.accept_logist_proposal(uuid)'::regprocedure),chr(13),'');
+ old_fragment:=$old$perform public.assign_source_extraction_transport((v_action ->> 'extraction_id')::uuid, (v_action ->> 'transport_id')::uuid);$old$;
+ new_fragment:=$new$perform public.assign_source_extraction_transport((v_action ->> 'extraction_id')::uuid, (v_action ->> 'transport_id')::uuid,
+      left('Сотрудник принял предложение логиста '||p.id::text||': '||coalesce(p.reason,''),500));$new$;
+ if position(new_fragment in definition)=0 then
+  if position(old_fragment in definition)=0 then raise exception 'Logist acceptance changed: review context integration'; end if;
+  execute replace(definition,old_fragment,new_fragment);
+ end if;
+end $$;
+
 -- Same eligibility as generation and review: a link to vehicle B cannot authorize evidence bound to A.
 do $$declare definition text; old_fragment text; new_fragment text;begin
  definition:=replace(pg_get_functiondef('private.document_check_findings(uuid,date)'::regprocedure),chr(13),'');
