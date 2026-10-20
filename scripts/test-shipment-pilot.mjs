@@ -46,7 +46,11 @@ try {
   const migrations = readdirSync(resolve(root, 'supabase/migrations')).filter(n => n.endsWith('.sql')).sort();
   psql(migrations.map(file => `\n\\echo migration:${file}\n` + readFileSync(resolve(root, 'supabase/migrations', file), 'utf8')).join('\n'));
   console.log(`PASS PostgreSQL ${version}: ${migrations.length} migrations`);
-  const test = readFileSync(resolve(root, 'supabase/tests/shipment_pilot_e2e.test.sql'), 'utf8');
+  // This runner sends SQL on stdin, so psql cannot resolve \ir relative to a file.
+  // Inline only the known test-only adapter; never resolve arbitrary include paths.
+  const test = readFileSync(resolve(root, 'supabase/tests/shipment_pilot_e2e.test.sql'), 'utf8')
+    .replace(/^\\ir fixtures\/finish_current_ocr\.sql\r?$/m,
+      () => readFileSync(resolve(root, 'supabase/tests/fixtures/finish_current_ocr.sql'), 'utf8'));
   const results = [];
   for (let run = 1; run <= 2; run++) {
     const output = psql(test);

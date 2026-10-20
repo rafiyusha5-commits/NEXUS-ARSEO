@@ -196,6 +196,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610190100_shipment_drive_folders.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200100_drive_folder_reconciliation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200200_document_transport_context.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200300_document_processing_reliability.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

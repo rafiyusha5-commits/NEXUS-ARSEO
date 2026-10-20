@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { refreshLogistAfterChange } from "@/lib/logist/run";
@@ -29,11 +30,13 @@ export async function extractShipmentSourcesAction(formData: FormData) {
     redirect(back(shipmentId, "error", "Недостаточно прав для распознавания исходных документов"));
 
   let summary;
+  const operationId = randomUUID(), started = Date.now();
   try { summary = await extractShipmentSources(supabase, shipmentId); }
   catch (error) {
-    console.error("[source-document-extraction]", error);
+    console.info("[document-processing]", { operation_id: operationId, stage: "recognition", duration_ms: Date.now()-started, error_code: "SAVE_UNCERTAIN" });
     redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы.")));
   }
+  console.info("[document-processing]", { operation_id: operationId, stage: "recognition", duration_ms: Date.now()-started, error_code: summary.failed ? "SAVE_UNCERTAIN" : null });
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
   redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));

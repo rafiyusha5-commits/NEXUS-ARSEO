@@ -3,6 +3,7 @@
 -- guarantee that nothing reaches the shipment before an employee confirms it. Every cell is executed for real.
 \set ON_ERROR_STOP 1
 begin;
+\ir fixtures/finish_current_ocr.sql
 
 insert into auth.users(id,email,raw_user_meta_data) values
  ('e9000000-0000-4000-8000-000000000001','mx-logist@test.local','{"full_name":"MX Logist"}'),
@@ -70,7 +71,7 @@ create function pg_temp.upsert_sql(p_n integer,p_status text,p_data text,p_confl
 create function pg_temp.begin_sql(p_n integer,p_hash text,p_force boolean default false) returns text language sql as $$
  select format($f$select public.begin_shipment_source_ocr('e9300000-0000-4000-8000-000000000001','e9200000-0000-4000-8000-00000000000%s','e921000%s-0000-4000-8000-000000000001','driver_document',%L,'fake','fake-1',3,300,%L::boolean)$f$,p_n,p_n,repeat(p_hash,64),p_force) $$;
 create function pg_temp.finish_sql(p_n integer,p_status text,p_data text) returns text language sql as $$
- select format($f$select public.finish_shipment_source_ocr((select id from public.shipment_source_extractions where document_id='e9200000-0000-4000-8000-00000000000%s'),%L,%L::jsonb,'{}'::jsonb,'[]'::jsonb,null,'ocr-rules-v1',1,100,0.9)$f$,p_n,p_status,p_data) $$;
+ select format($f$select pg_temp.finish_current_ocr((select id from public.shipment_source_extractions where document_id='e9200000-0000-4000-8000-00000000000%s'),%L,%L::jsonb,'{}'::jsonb,'[]'::jsonb,null,'ocr-rules-v1',1,100,0.9)$f$,p_n,p_status,p_data) $$;
 create function pg_temp.row_status(p_n integer) returns text language sql as $$
  select status from public.shipment_source_extractions where document_id=('e9200000-0000-4000-8000-00000000000'||p_n)::uuid $$;
 create function pg_temp.driver() returns text language sql as $$select coalesce(driver_name,'<none>') from public.shipment_transports where id='e9600000-0000-4000-8000-000000000001'$$;
