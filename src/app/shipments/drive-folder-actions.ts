@@ -98,6 +98,9 @@ export async function importShipmentDriveFile(form: FormData) {
     ]);
     if (!binding || !source || !source.present || source.revision !== text(form, "revision")) throw new Error("Файл изменён. Сначала повторите проверку папки");
     if (source.imported_document_id) {
+      // A saved receipt avoids a second upload, not the live-source boundary.
+      // Recheck membership/revision before reporting a successful retry.
+      insideFolder(await drive.scopedReference(source.file_id, signal), binding.folder_id, source.revision);
       const visible = await supabase.from("documents").select("id").eq("id", source.imported_document_id).maybeSingle();
       if (visible.error || !visible.data || source.imported_revision !== source.revision) throw new Error("Файл изменён или недоступен");
       return "Сохранённая квитанция импорта найдена. Повторная загрузка, версия и подтверждение не создавались.";

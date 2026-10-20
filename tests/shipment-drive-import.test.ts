@@ -15,7 +15,7 @@ const action = ts.transpileModule(readFileSync(new URL("../src/app/shipments/dri
 }).outputText;
 const cases = [
   ...["Invoice.pdf", "Despatch note.pdf", "ДТ Поставка 19.03.2026.pdf", "Заявка на перевозку.docx", "a".repeat(150) + ".pdf"].map(filename => ({ filename, fault: "" })),
-  ...["timeout", "stream", "storage", "lost-response", "revoked"].map(fault => ({ filename: "Synthetic.pdf", fault })),
+  ...["timeout", "stream", "storage", "lost-response", "lost-response-moved", "revoked"].map(fault => ({ filename: "Synthetic.pdf", fault })),
 ];
 for (const { filename, fault } of cases) {
   test(`Drive action ${fault || "success"}: ${filename.slice(0, 50)}`, async () => {
@@ -25,6 +25,7 @@ for (const { filename, fault } of cases) {
     const folder = "Drive_folder_123456";
     const uploaded: string[] = [], removed: string[] = [];
     let registrations = 0;
+    let moved = false;
     const query = (data: unknown) => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data }), maybeSingle: async () => ({ data }) });
     const storage = {
       upload: async (path: string, actual: Uint8Array) => { assert.ok(files.isDocumentStoragePath(path)); assert.deepEqual(actual, bytes); uploaded.push(path); return { error: fault === "storage" ? { message: "SYNTH_SECRET provider detail" } : null }; },
@@ -42,7 +43,7 @@ for (const { filename, fault } of cases) {
         assert.equal(params.p_storage_path, uploaded[0]);
         assert.equal(params.p_type_id, type);
         if (fault === "revoked") return { data: null, error: { code: "42501", message: "SYNTH_SECRET denied" } };
-        if (fault === "lost-response") { source.imported_document_id = existing; source.imported_revision = source.revision; return { data: null, error: { message: "SYNTH_SECRET response lost" } }; }
+        if (fault.startsWith("lost-response")) { source.imported_document_id = existing; source.imported_revision = source.revision; return { data: null, error: { message: "SYNTH_SECRET response lost" } }; }
         return { data: existing, error: null };
       },
     };
@@ -56,7 +57,7 @@ for (const { filename, fault } of cases) {
       "@/lib/google/shipment-gateway": { shipmentDriveGateway: async () => db },
       "@/lib/google/shipment-folder": { insideFolder },
       "@/lib/google/drive-server": { shipmentDrive: () => ({
-        scopedReference: async () => ({ ancestors: [folder], version: source.revision }),
+        scopedReference: async () => ({ ancestors: moved ? [] : [folder], version: source.revision }),
         download: async () => {
           if (fault === "timeout") throw new Error("SYNTH_SECRET timeout before download");
           return { blob: fault === "stream" ? { size: bytes.length, arrayBuffer: async () => { throw new Error("SYNTH_SECRET broken stream"); } } : new Blob([bytes]), filename };
@@ -76,8 +77,14 @@ for (const { filename, fault } of cases) {
     assert.equal(registrations, ["timeout", "stream", "storage"].includes(fault) ? 0 : 1);
     assert.equal(uploaded.length, ["timeout", "stream"].includes(fault) ? 0 : 1);
     assert.deepEqual(removed, fault ? [] : uploaded, "never delete a possibly registered staging file");
-    if (fault === "lost-response") {
-      await assert.rejects(exports.importShipmentDriveFile!(form), error => error instanceof Error && decodeURIComponent(error.message).includes("квитанция импорта найдена"));
+    if (fault.startsWith("lost-response")) {
+      moved = fault === "lost-response-moved";
+      await assert.rejects(exports.importShipmentDriveFile!(form), error => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message.includes("success="), !moved, "a receipt must not bypass current source membership");
+        if (!moved) assert.ok(decodeURIComponent(error.message).includes("квитанция импорта найдена"));
+        return true;
+      });
       assert.equal(registrations, 1, "retry reuses the saved source receipt, not a second registration");
       assert.equal(uploaded.length, 1, "retry does not upload another temporary object");
     }
