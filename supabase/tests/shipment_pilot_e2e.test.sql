@@ -31,6 +31,18 @@ insert into pilot_package values ('{"format":"nexus-reference-import","version":
  {"row":2,"internal_sku":"PILOT-E2E-B","name":{"ru":"Вымышленный товар Бета"},"manufacturer":"maker","shelf_life_days":400,"packaging":[{"uom":"piece","units_per_parent":1,"gross_weight_kg":0.5,"net_weight_kg":0.4}]}]}');
 
 create function pg_temp.pilot_id(text) returns uuid language sql as $$select id from pilot_ids where k=$1$$;
+create function pg_temp.pilot_checkpoint(p_stage text) returns text language sql as $$
+ select 'PILOT_CHECKPOINT='||jsonb_build_object('stage',p_stage,
+ 'stock',(select coalesce(jsonb_object_agg(uom,n),'{}') from
+   (select b.uom,sum(b.quantity_on_hand) n from public.inventory_balances b
+    join public.inventory_batches x on x.id=b.batch_id
+    where x.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b')) group by b.uom) q),
+ 'reserved',(select coalesce(sum(b.quantity_reserved),0) from public.inventory_balances b
+   join public.inventory_batches x on x.id=b.batch_id where x.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
+ 'movements',(select count(*) from public.inventory_movements m join public.inventory_batches b on b.id=m.batch_id where b.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
+ 'receipt_count',(select count(*) from public.shipment_transport_receipts where shipment_id=pg_temp.pilot_id('shipment')),
+ 'confirmed_sources',(select count(*) from public.shipment_source_extractions where shipment_id=pg_temp.pilot_id('shipment') and status='confirmed'))::text
+$$;
 create function pg_temp.pilot_fails(q text,pattern text) returns void language plpgsql as $$
 begin
  begin execute q; exception when others then
@@ -170,6 +182,7 @@ do $$declare t uuid; payload jsonb; begin
 end$$;
 
 -- Fixed dates, FEFO across two batches, low shelf-life guarantee, repeated reservation.
+select pg_temp.pilot_checkpoint('received');
 insert into pilot_ids values ('sale',public.create_customer_order('ee100000-0000-4000-8000-000000000001',null,pg_temp.pilot_id('warehouse'),'2099-01-20',(select id from public.currencies where code='EUR'),'Synthetic pilot'));
 insert into pilot_ids values ('sale-item',public.add_customer_order_item(pg_temp.pilot_id('sale'),pg_temp.pilot_id('a'),7,'box',50,60));
 select public.reserve_customer_order_item_fefo(pg_temp.pilot_id('sale-item'));
@@ -186,6 +199,7 @@ insert into pilot_ids values ('guarantee',public.create_sale_guarantee_letter(pg
 select public.change_sale_guarantee_status(pg_temp.pilot_id('guarantee'),'approved');
 select public.confirm_customer_order(pg_temp.pilot_id('sale'));
 do $$begin assert (select status='confirmed' from public.sales where id=pg_temp.pilot_id('sale')),'sale confirmed, NOT shipped';end$$;
+select pg_temp.pilot_checkpoint('reserved');
 
 -- Warehouse transfer keeps batch provenance; it does not create another receipt.
 insert into pilot_ids select 'warehouse-2',id from public.warehouses where status='active' and not is_virtual and id<>pg_temp.pilot_id('warehouse') order by code limit 1;
@@ -194,6 +208,7 @@ select public.add_inventory_operation_line(pg_temp.pilot_id('move'),b.id,null,10
  join public.inventory_batches x on x.id=b.batch_id where x.product_id=pg_temp.pilot_id('b') and b.warehouse_id=pg_temp.pilot_id('warehouse');
 select public.post_inventory_operation_document(pg_temp.pilot_id('move'));
 select pg_temp.pilot_fails('select public.post_inventory_operation_document(pg_temp.pilot_id(''move''))','черновик|провед');
+select pg_temp.pilot_checkpoint('transferred');
 select public.fulfill_customer_order(pg_temp.pilot_id('sale'));
 select public.fulfill_customer_order(pg_temp.pilot_id('sale'));
 do $$begin
@@ -203,10 +218,12 @@ do $$begin
 end$$;
 insert into pilot_ids select 'return',public.create_customer_return(pg_temp.pilot_id('sale'),jsonb_build_array(jsonb_build_object(
  'sale_item_id',pg_temp.pilot_id('sale-item'),'batch_id',(select id from public.inventory_batches where source_shipment_transport_id=pg_temp.pilot_id('t1')),'quantity',1,'reason_code','refused')),'Synthetic unopened box');
+select pg_temp.pilot_checkpoint('shipped');
 select public.decide_customer_return_item(id,'restock',null,'Synthetic inspection: intact') from public.customer_return_items where return_id=pg_temp.pilot_id('return');
 select pg_temp.pilot_fails(format('select public.decide_customer_return_item(%L,''restock'',null,''Synthetic replay'')',
  (select id from public.customer_return_items where return_id=pg_temp.pilot_id('return'))),'уже принято');
 -- Same-currency costing exercises real expenses without inventing an exchange rate or changing VAT rules.
+select pg_temp.pilot_checkpoint('returned');
 insert into pilot_ids select 'expense',public.create_expense(pg_temp.pilot_id('shipment'),'transport',pg_temp.pilot_id('supplier'),50,(select id from public.currencies where code='EUR'),'2099-01-10',false,null,'Synthetic actual cost');
 select public.confirm_expense(pg_temp.pilot_id('expense'));
 select public.allocate_expense(pg_temp.pilot_id('expense'),'by_quantity',(select id from public.currencies where code='EUR'));
@@ -237,6 +254,17 @@ do $$declare task_stage record; begin
  perform public.change_shipment_stage_status((select r.id from public.shipment_stage_runs r join public.shipment_stages s on s.id=r.stage_id where r.shipment_id=pg_temp.pilot_id('shipment') and s.code='closed'),'completed',null,'Synthetic Operator');
  assert (select status='closed' and is_locked and closed_at is not null from public.shipments where id=pg_temp.pilot_id('shipment')),'final stage closes shipment';
 end$$;
+select pg_temp.pilot_checkpoint('closed');
+-- Reuse the real reopening operation; restore the closed snapshot afterwards.
+savepoint reopening_diagnostic;
+select pg_temp.pilot_fails('select public.reopen_shipment(pg_temp.pilot_id(''shipment''),'' '')','причину');
+do $$begin
+ assert (select status='closed' and is_locked from public.shipments where id=pg_temp.pilot_id('shipment')),'failed reopen leaves closed state';
+ perform public.reopen_shipment(pg_temp.pilot_id('shipment'),'Synthetic historical review');
+ assert (select status='sales' and not is_locked from public.shipments where id=pg_temp.pilot_id('shipment')),'authorized reopening';
+ assert exists(select 1 from public.shipment_stage_history where shipment_id=pg_temp.pilot_id('shipment') and reason like '%Synthetic historical review%'),'reopening reason retained';
+end$$;
+rollback to reopening_diagnostic;
 select 'PILOT_RESULT='||jsonb_build_object('ordered',150,'received_including_damage',148,
  'accepted',(select sum(i.accepted_quantity) from public.shipment_transport_receipt_items i join public.shipment_transport_receipts r on r.id=i.receipt_id where r.shipment_id=pg_temp.pilot_id('shipment')),
  'receipt_movements',(select sum(m.quantity) from public.inventory_movements m where m.shipment_transport_id in (pg_temp.pilot_id('t1'),pg_temp.pilot_id('t2')) and m.movement_type='receipt'),
@@ -258,6 +286,12 @@ select 'PILOT_REPORT='||jsonb_build_object(
   (select jsonb_agg(to_jsonb(i)||jsonb_build_object('batch',to_jsonb(b),'movement',jsonb_build_object('quantity',m.quantity))) from public.shipment_transport_receipt_items i
    left join public.inventory_batches b on b.id=i.inventory_batch_id left join public.inventory_movements m on m.id=i.inventory_movement_id where i.receipt_id=r.id))) from public.shipment_transport_receipts r where r.shipment_id=pg_temp.pilot_id('shipment')),
  'documents',(select jsonb_agg(to_jsonb(d)) from public.documents d where id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002','ee200000-0000-4000-8000-000000000003')),
+ 'inventory_batches',(select jsonb_agg(to_jsonb(b)||jsonb_build_object('product',to_jsonb(p))) from public.inventory_batches b join public.products p on p.id=b.product_id where p.id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
+ 'inventory_balances',(select jsonb_agg(to_jsonb(b)) from public.inventory_balances b join public.inventory_batches x on x.id=b.batch_id where x.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
+ 'inventory_movements',(select jsonb_agg(to_jsonb(m)) from public.inventory_movements m join public.inventory_batches b on b.id=m.batch_id where b.product_id in(pg_temp.pilot_id('a'),pg_temp.pilot_id('b'))),
+ 'inventory_reservations',(select jsonb_agg(to_jsonb(r)||jsonb_build_object('balance',jsonb_build_object('uom',b.uom),'sale_item',jsonb_build_object('sale',to_jsonb(s)))) from public.inventory_reservations r join public.inventory_balances b on b.id=r.inventory_balance_id join public.sale_items i on i.id=r.sale_item_id join public.sales s on s.id=i.sale_id where s.id=pg_temp.pilot_id('sale')),
+ 'cost_calculations',(select jsonb_agg(to_jsonb(c)||jsonb_build_object('currency',jsonb_build_object('code','EUR'),'items',(select jsonb_agg(to_jsonb(i)) from public.cost_calculation_items i where i.calculation_id=c.id))) from public.cost_calculations c where c.shipment_id=pg_temp.pilot_id('shipment')),
+ 'document_check',public.shipment_document_check(pg_temp.pilot_id('shipment')),
  'document_links',(select jsonb_agg(to_jsonb(l)) from public.document_links l where document_id in ('ee200000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000002','ee200000-0000-4000-8000-000000000003')),
  'document_requirements',(select jsonb_agg(to_jsonb(r)) from public.document_requirements r where is_active),
  'tasks',(select coalesce(jsonb_agg(to_jsonb(t)),'[]'::jsonb) from public.tasks t where shipment_id=pg_temp.pilot_id('shipment')))::text;

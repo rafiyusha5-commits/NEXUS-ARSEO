@@ -1,7 +1,7 @@
 // PostgreSQL 16 only; disposable container, no network, no ports, no env files.
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -10,7 +10,8 @@ import { checkPilotReport } from '../tests/pilot/report.check.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const name = `nexus-pilot-${randomUUID()}`;
 const allSql = process.argv.includes('--all-sql');
-assert.ok(process.argv.slice(2).every(arg => arg === '--all-sql'), 'Only --all-sql is supported; remote database arguments are forbidden');
+const historical = process.argv.includes('--historical');
+assert.ok(process.argv.slice(2).every(arg => ['--all-sql', '--historical'].includes(arg)), 'Only --all-sql/--historical are supported; remote database arguments are forbidden');
 function docker(args, input) {
   const r = spawnSync('docker', args, { input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 180000 });
   if (r.error || r.status !== 0) throw new Error(`${args.slice(0, 3).join(' ')}: ${r.error?.message ?? r.stderr}`);
@@ -52,6 +53,7 @@ try {
     .replace(/^\\ir fixtures\/finish_current_ocr\.sql\r?$/m,
       () => readFileSync(resolve(root, 'supabase/tests/fixtures/finish_current_ocr.sql'), 'utf8'));
   const results = [];
+  let capture;
   for (let run = 1; run <= 2; run++) {
     const output = psql(test);
     const line = output.split('\n').find(x => x.startsWith('PILOT_RESULT='));
@@ -60,12 +62,23 @@ try {
     const report = output.split('\n').find(x => x.startsWith('PILOT_REPORT='));
     assert.ok(report, 'database report snapshot is required');
     await checkPilotReport(JSON.parse(report.slice('PILOT_REPORT='.length)));
+    capture = { backend: `PostgreSQL ${version}`, result, report: JSON.parse(report.slice('PILOT_REPORT='.length)),
+      checkpoints: output.split('\n').filter(x => x.startsWith('PILOT_CHECKPOINT=')).map(x => JSON.parse(x.slice('PILOT_CHECKPOINT='.length))) };
     results.push(result);
     console.log(`PASS pilot run ${run}: ${JSON.stringify(result)}`);
   }
   assert.deepEqual(results[0], results[1], 'repeat execution must have identical business totals');
   assert.equal(psql("select count(*) from public.products where internal_sku like 'PILOT-E2E-%';").trim(), '0', 'transaction rollback leaves no fixture');
   console.log('PASS repeatability and rollback; no real services used');
+  if (historical) {
+    const diagnostic = psql(readFileSync(resolve(root, 'supabase/tests/diagnostics/historical_paid_shortfall.sql'), 'utf8'));
+    const cost = diagnostic.split('\n').find(x => x.startsWith('HISTORICAL_COST='));
+    assert.ok(cost, 'Cost diagnostic output is required');
+    capture.costDiagnostic = JSON.parse(cost.slice('HISTORICAL_COST='.length));
+    mkdirSync(resolve(root, 'test-results/historical'), { recursive: true });
+    writeFileSync(resolve(root, 'test-results/historical/capture.json'), JSON.stringify(capture, null, 2));
+    console.log(`DIAGNOSTIC (not acceptance): ${cost}`);
+  }
 } finally {
   if (created) docker(['rm', '--force', name]); // Exact UUID container created by this run only.
 }
