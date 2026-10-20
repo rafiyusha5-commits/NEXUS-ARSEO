@@ -3,6 +3,7 @@
 -- No live keys, binary documents, remote OCR or storage. No disabled triggers/RLS.
 \set ON_ERROR_STOP 1
 begin;
+\ir fixtures/finish_current_ocr.sql
 set local timezone='UTC';
 do $$ begin assert current_date < date '2099-01-01','Fixed pilot date expired: revise fixture dates explicitly'; end $$;
 insert into auth.users(id,email,raw_user_meta_data) values
@@ -97,7 +98,7 @@ select public.register_document('ee200000-0000-4000-8000-000000000001',(select i
 select pg_temp.pilot_fails($q$select public.register_document('ee200000-0000-4000-8000-000000000001',(select id from public.document_types where code='cmr'),'Synthetic duplicate','documents/ee200000-0000-4000-8000-000000000001/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-pilot.pdf','synthetic-pilot.pdf')$q$,'duplicate key|уже');
 insert into pilot_ids select 'version',id from public.document_versions where document_id='ee200000-0000-4000-8000-000000000001';
 insert into pilot_ids select 'extraction',(public.begin_shipment_source_ocr(pg_temp.pilot_id('shipment'),'ee200000-0000-4000-8000-000000000001',pg_temp.pilot_id('version'),'waybill',repeat('a',64),'synthetic','pilot-v1')->>'extraction_id')::uuid;
-select public.finish_shipment_source_ocr(pg_temp.pilot_id('extraction'),'needs_review','{"driver_name":"Synthetic OCR Driver A","vehicle_plate":"PILOT-A","gross_weight_kg":999}');
+select pg_temp.finish_current_ocr(pg_temp.pilot_id('extraction'),'needs_review','{"driver_name":"Synthetic OCR Driver A","vehicle_plate":"PILOT-A","gross_weight_kg":999}');
 do $$begin
  assert (select driver_name='Synthetic Driver A' from public.shipment_transports where id=pg_temp.pilot_id('t1')),'OCR never applies itself';
  assert (select shipment_transport_id=pg_temp.pilot_id('t1') from public.shipment_source_extractions where id=pg_temp.pilot_id('extraction')),'OCR follows document link';

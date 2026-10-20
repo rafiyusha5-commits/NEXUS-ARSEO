@@ -83,8 +83,9 @@ export async function extractShipmentSources(
         if (!(error instanceof NeedsOcrError)) throw error;
         scans.push({ shipmentId, documentId: document.id, versionId: version.id, hintedKind: sourceKind(code), bytes, code });
       }
-    } catch (error) {
-      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: error instanceof Error ? error.message : "Не удалось прочитать файл" });
+    } catch {
+      // Provider/Storage/parser errors can contain document text, paths, tokens or SQL.
+      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: "Не удалось прочитать файл. Проверьте доступ и формат, затем повторите чтение." });
     }
   }
 

@@ -35,8 +35,8 @@ export type PreparedOcr =
   | { state: "reused"; extractionId: string }
   | { state: "busy"; extractionId: string }
   | { state: "exhausted"; extractionId: string }
-  | { state: "recognized"; extractionId: string; proposal: OcrProposal; ocr: OcrResult; ms: number }
-  | { state: "failed"; extractionId: string; message: string; ms: number };
+  | { state: "recognized"; extractionId: string; leaseStartedAt: string; proposal: OcrProposal; ocr: OcrResult; ms: number }
+  | { state: "failed"; extractionId: string; leaseStartedAt: string; message: string; ms: number };
 
 const LANGUAGES = ["ru", "kk", "en"];
 const OCR_EXTRACTOR_VERSION = "ocr-rules-v3";
@@ -66,22 +66,24 @@ export async function recognizeDocument(deps: PipelineDeps, doc: OcrDocument, op
     if (isPermissionError(claim.error)) throw new OcrPermissionError(permissionMessage);
     return { state: "rejected", message: "Не удалось начать распознавание документа" };
   }
-  const answer = claim.data as { action?: string; extraction_id?: string } | null;
+  const answer = claim.data as { action?: string; extraction_id?: string; lease_started_at?: string } | null;
   const extractionId = answer?.extraction_id ?? "";
   if (!extractionId) return { state: "rejected", message: "Не удалось начать распознавание документа" };
   if (answer?.action === "reuse") return { state: "reused", extractionId };
   if (answer?.action === "busy") return { state: "busy", extractionId };
   if (answer?.action === "exhausted") return { state: "exhausted", extractionId };
+  if (answer?.action !== "run" || !answer.lease_started_at) return { state: "rejected", message: "Не удалось подтвердить попытку распознавания. Проверьте состояние и повторите действие." };
+  const leaseStartedAt = answer.lease_started_at;
 
   const started = deps.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), limits.timeoutMs);
   try {
     const ocr = await provider.recognize({ bytes: doc.bytes, kind: inspected.kind, mimeType: inspected.mimeType, maxPages: limits.maxPages, languageHints: LANGUAGES }, { signal: controller.signal });
-    return { state: "recognized", extractionId, proposal: proposeFromOcr(ocr, doc.hintedKind), ocr, ms: deps.now() - started };
+    return { state: "recognized", extractionId, leaseStartedAt, proposal: proposeFromOcr(ocr, doc.hintedKind), ocr, ms: deps.now() - started };
   } catch (error) {
     const message = error instanceof OcrError ? error.message : controller.signal.aborted ? "Сервис распознавания не ответил вовремя" : "Не удалось распознать документ";
-    return { state: "failed", extractionId, message, ms: deps.now() - started };
+    return { state: "failed", extractionId, leaseStartedAt, message, ms: deps.now() - started };
   } finally {
     clearTimeout(timer);
   }
@@ -93,7 +95,8 @@ export async function persistOcrOutcome(deps: PipelineDeps, prepared: PreparedOc
     const { proposal, ocr, ms, extractionId } = prepared;
     const status = proposal.status === "extracted" && conflicts.length ? "needs_review" : proposal.status;
     const evidence = Object.fromEntries(Object.entries(proposal.result.evidence).map(([field, item]) => [field, { ...item, method: "ocr" }]));
-    const { error } = await deps.db.rpc("finish_shipment_source_ocr", {
+    const { error } = await deps.db.rpc("finish_shipment_source_ocr_fenced", {
+      p_lease_started_at: prepared.leaseStartedAt,
       p_extraction_id: extractionId, p_status: status, p_extracted_data: proposal.result.data, p_field_evidence: evidence,
       p_conflicts: conflicts, p_error_message: proposal.error, p_extractor_version: OCR_EXTRACTOR_VERSION, p_page_count: ocr.pageCount,
       p_processing_ms: ms, p_confidence: proposal.confidence === null ? null : Math.round(proposal.confidence * 1000) / 1000,
@@ -102,7 +105,8 @@ export async function persistOcrOutcome(deps: PipelineDeps, prepared: PreparedOc
     return { ok: !error, status: error ? "failed" : status };
   }
   if (prepared.state === "failed") {
-    const { error } = await deps.db.rpc("finish_shipment_source_ocr", {
+    const { error } = await deps.db.rpc("finish_shipment_source_ocr_fenced", {
+      p_lease_started_at: prepared.leaseStartedAt,
       p_extraction_id: prepared.extractionId, p_status: "failed", p_extracted_data: {}, p_field_evidence: {}, p_conflicts: [],
       p_error_message: prepared.message, p_extractor_version: OCR_EXTRACTOR_VERSION, p_page_count: null, p_processing_ms: prepared.ms, p_confidence: null,
     });

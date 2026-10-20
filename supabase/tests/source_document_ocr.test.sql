@@ -2,6 +2,7 @@
 -- for running jobs, and the guarantee that OCR only proposes: it never confirms and never touches the shipment.
 \set ON_ERROR_STOP 1
 begin;
+\ir fixtures/finish_current_ocr.sql
 
 insert into auth.users(id,email,raw_user_meta_data) values
  ('ff000000-0000-4000-8000-000000000001','ocr-director@test.local','{"full_name":"OCR Director"}'),
@@ -98,23 +99,23 @@ set role authenticated;
 reset role;
 select set_config('request.jwt.claim.sub','ff000000-0000-4000-8000-000000000004',false);
 set role authenticated;
-select pg_temp.fails($$select public.finish_shipment_source_ocr((select id from ocr_ids where name='main'),'extracted','{"vehicle_plate":"X"}','{}','[]',null,'ocr-rules-v1',1,100,0.9)$$,'запущено другим пользователем');
+select pg_temp.fails($$select pg_temp.finish_current_ocr((select id from ocr_ids where name='main'),'extracted','{"vehicle_plate":"X"}','{}','[]',null,'ocr-rules-v1',1,100,0.9)$$,'запущено другим пользователем');
 
 reset role;
 select set_config('request.jwt.claim.sub','ff000000-0000-4000-8000-000000000002',false);
 set role authenticated;
 -- the result can never be 'confirmed' directly
-select pg_temp.fails($$select public.finish_shipment_source_ocr((select id from ocr_ids where name='main'),'confirmed','{"vehicle_plate":"X"}','{}','[]',null,'ocr-rules-v1',1,100,0.9)$$,'Некорректный статус');
-select pg_temp.fails($$select public.finish_shipment_source_ocr((select id from ocr_ids where name='main'),'extracted','{}','{}','[]',null,'ocr-rules-v1',1,100,1.5)$$,'уверенност');
+select pg_temp.fails($$select pg_temp.finish_current_ocr((select id from ocr_ids where name='main'),'confirmed','{"vehicle_plate":"X"}','{}','[]',null,'ocr-rules-v1',1,100,0.9)$$,'Некорректный статус');
+select pg_temp.fails($$select pg_temp.finish_current_ocr((select id from ocr_ids where name='main'),'extracted','{}','{}','[]',null,'ocr-rules-v1',1,100,1.5)$$,'уверенност');
 do $$ begin
- perform public.finish_shipment_source_ocr((select id from ocr_ids where name='main'),'needs_review','{"vehicle_plate":"000TST00"}',
+ perform pg_temp.finish_current_ocr((select id from ocr_ids where name='main'),'needs_review','{"vehicle_plate":"000TST00"}',
   '{"vehicle_plate":{"label":"Госномер","value":"000TST00","confidence":0.55,"method":"ocr"}}','[]',null,'ocr-rules-v1',2,1500,0.812,'driver_document');
  assert (select status from public.shipment_source_extractions where id=(select id from ocr_ids where name='main'))='needs_review','result waits for review (Нужна проверка)';
  assert (select ocr_page_count=2 and processing_ms=1500 and ocr_confidence=0.812 and processing_finished_at is not null and confirmed_data='{}'::jsonb and reviewed_by is null from public.shipment_source_extractions where id=(select id from ocr_ids where name='main')),'metadata stored, nothing confirmed';
  assert (select field_evidence->'vehicle_plate'->>'confidence' from public.shipment_source_extractions where id=(select id from ocr_ids where name='main'))='0.55','confidence per field is stored';
 end $$;
 -- finishing twice is refused
-select pg_temp.fails($$select public.finish_shipment_source_ocr((select id from ocr_ids where name='main'),'extracted','{}','{}','[]',null,'ocr-rules-v1',1,1,0.9)$$,'уже завершено');
+select pg_temp.fails($$select pg_temp.finish_current_ocr((select id from ocr_ids where name='main'),'extracted','{}','{}','[]',null,'ocr-rules-v1',1,1,0.9)$$,'уже завершено');
 
 -- ---------- idempotency ----------
 do $$ declare v jsonb; begin
@@ -123,10 +124,10 @@ do $$ declare v jsonb; begin
  assert (select status from public.shipment_source_extractions where id=(select id from ocr_ids where name='main'))='needs_review','reuse leaves the result in place';
  v:=pg_temp.begin_ocr(repeat('b',64));
  assert v->>'action'='run' and (v->>'attempt')::int=1,'different bytes are a new job';
- perform public.finish_shipment_source_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"1"}','{}','[]',null,'ocr-rules-v1',1,10,0.9);
+ perform pg_temp.finish_current_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"1"}','{}','[]',null,'ocr-rules-v1',1,10,0.9);
  v:=pg_temp.begin_ocr(repeat('b',64),'fake','fake-2');
  assert v->>'action'='run','a new provider version re-recognises';
- perform public.finish_shipment_source_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"1"}','{}','[]',null,'ocr-rules-v1',1,10,0.9);
+ perform pg_temp.finish_current_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"1"}','{}','[]',null,'ocr-rules-v1',1,10,0.9);
  assert (select count(*) from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001')=1,'one row per document version however many times it ran';
 end $$;
 
@@ -135,7 +136,7 @@ do $$ declare v jsonb; begin
  for i in 1..3 loop
   v:=pg_temp.begin_ocr(repeat('c',64));
   assert v->>'action'='run' and (v->>'attempt')::int=i,'attempt '||i;
-  perform public.finish_shipment_source_ocr((v->>'extraction_id')::uuid,'failed','{}','{}','[]','Сервис распознавания не ответил вовремя','ocr-rules-v1',null,30000,null);
+  perform pg_temp.finish_current_ocr((v->>'extraction_id')::uuid,'failed','{}','{}','[]','Сервис распознавания не ответил вовремя','ocr-rules-v1',null,30000,null);
  end loop;
  v:=pg_temp.begin_ocr(repeat('c',64));
  assert v->>'action'='exhausted','after the limit the job stops instead of retrying forever';
@@ -151,7 +152,7 @@ set role authenticated;
 do $$ declare v jsonb; begin
  v:=pg_temp.begin_ocr(repeat('c',64),'fake','fake-1',true);
  assert v->>'action'='run' and (v->>'attempt')::int=1,'a reviewer can force one more run and the counter restarts';
- perform public.finish_shipment_source_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"000TST00"}','{}','[]',null,'ocr-rules-v1',1,900,0.95);
+ perform pg_temp.finish_current_ocr((v->>'extraction_id')::uuid,'extracted','{"vehicle_plate":"000TST00"}','{}','[]',null,'ocr-rules-v1',1,900,0.95);
 end $$;
 
 -- ---------- abandoned job: the lease expires and another user may take it over ----------
@@ -168,7 +169,7 @@ end $$;
 reset role;
 select set_config('request.jwt.claim.sub','ff000000-0000-4000-8000-000000000002',false);
 set role authenticated;
-select pg_temp.fails($$select public.finish_shipment_source_ocr((select id from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'),'extracted','{"vehicle_plate":"late"}','{}','[]',null,'ocr-rules-v1',1,1,0.9)$$,'запущено другим пользователем');
+select pg_temp.fails($$select pg_temp.finish_current_ocr((select id from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'),'extracted','{"vehicle_plate":"late"}','{}','[]',null,'ocr-rules-v1',1,1,0.9)$$,'запущено другим пользователем');
 
 -- ---------- recorded outcomes are never overwritten by text recognition, and nothing can be written as confirmed ----------
 reset role;
@@ -177,7 +178,7 @@ set role authenticated;
 select pg_temp.fails($$select public.upsert_shipment_source_extraction('ff300000-0000-4000-8000-000000000001','ff200000-0000-4000-8000-000000000001','ff210001-0000-4000-8000-000000000001','driver_document','confirmed','{"vehicle_plate":"X"}')$$,'Некорректный статус');
 do $$ begin
  -- finish the takeover job, then let a reviewer confirm it
- perform public.finish_shipment_source_ocr((select id from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'),'extracted','{"vehicle_plate":"000TST00"}','{}','[]',null,'ocr-rules-v1',1,500,0.95);
+ perform pg_temp.finish_current_ocr((select id from public.shipment_source_extractions where shipment_id='ff300000-0000-4000-8000-000000000001'),'extracted','{"vehicle_plate":"000TST00"}','{}','[]',null,'ocr-rules-v1',1,500,0.95);
 end $$;
 reset role;
 select set_config('request.jwt.claim.sub','ff000000-0000-4000-8000-000000000001',false);
