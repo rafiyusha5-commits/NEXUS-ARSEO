@@ -20,6 +20,24 @@ insert into public.shipment_items(id,shipment_id,product_id,uom,ordered_quantity
 create temp table diagnostic_ids(k text primary key,id uuid);
 grant all on diagnostic_ids to authenticated;
 set local role authenticated;
+insert into diagnostic_ids select 'legacy',public.calculate_shipment_cost('ed300000-0000-4000-8000-000000000001',(select id from public.currencies where code='EUR'));
+do $$begin
+ assert (select quantity=98 and cost_quantity=98 and cost_quantity_basis='received' and goods_amount=980 and unit_landed_cost=10
+  from public.cost_calculation_items where calculation_id=(select id from diagnostic_ids where k='legacy')),
+  'Without a separate goods expense the existing calculation is preserved';
+end $$;
+reset role;
+update public.shipment_items set received_quantity=null where id='ed400000-0000-4000-8000-000000000001';
+set local role authenticated;
+insert into diagnostic_ids select 'before_receipt',public.calculate_shipment_cost('ed300000-0000-4000-8000-000000000001',(select id from public.currencies where code='EUR'));
+do $$begin
+ assert (select quantity=100 and cost_quantity=100 and cost_quantity_basis='shipped' and unit_landed_cost=10
+  from public.cost_calculation_items where calculation_id=(select id from diagnostic_ids where k='before_receipt')),
+  'Before receipt, shipped quantity must not be labelled as received';
+end $$;
+reset role;
+update public.shipment_items set received_quantity=98 where id='ed400000-0000-4000-8000-000000000001';
+set local role authenticated;
 insert into diagnostic_ids select 'goods',public.create_expense('ed300000-0000-4000-8000-000000000001','goods_cost',
  'ed100000-0000-4000-8000-000000000001',1000,(select id from public.currencies where code='EUR'),'2099-01-10',false,null,'Synthetic: paid 100 units at 10');
 select public.confirm_expense((select id from diagnostic_ids where k='goods'));

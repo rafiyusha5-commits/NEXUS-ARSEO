@@ -76,7 +76,10 @@ begin
    if v_cost_qty is null or v_cost_qty<=0 then raise exception 'Укажите количество закупки для расчёта позиции %',r.internal_sku;end if;
    v_goods_item:=v_goods_allocated;v_rate:=null;v_rate_date:=null;v_basis:='expense';
   else
-   v_cost_qty:=r.qty;v_cost_qty_basis:='received';
+   v_cost_qty:=r.qty;
+   v_cost_qty_basis:=case when r.received_quantity is not null then 'received'
+    when r.shipped_quantity is not null then 'shipped'
+    when r.confirmed_quantity is not null then 'confirmed' else 'ordered' end;
    if r.unit_price is null or r.currency_id is null then raise exception 'У позиции поставки не заполнена закупочная цена или валюта';end if;
    if r.currency_id=p_target_currency_id then
     v_rate_date:=(now() at time zone 'Asia/Almaty')::date;v_basis:='same_currency';
