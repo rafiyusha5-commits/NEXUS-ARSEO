@@ -51,3 +51,14 @@ assert.equal(await run("select count(*) from public.document_versions where chec
 assert.equal(await run("select count(*) from public.document_links where document_id::text like 'd941%' and removed_at is null;"), '2');
 assert.equal(await run("select count(*) from public.shipment_drive_files where imported_checksum=repeat('8',64);"), '10');
 console.log('shipment-drive: ten copied files across two shipments -> one document, two links');
+// Reuse the same fixture and RPC: explicit content-review/link needs no additional Storage copy.
+const target = await run("select document_id from public.document_versions where checksum_sha256=repeat('8',64);");
+const version = await run("select id from public.document_versions where checksum_sha256=repeat('8',64);");
+const before = await run("select count(*) from storage.objects;");
+await run(`${who} select public.check_shipment_drive_content('${shipment}','Concurrent_copy_0','1',repeat('8',64));`);
+await Promise.all(Array.from({ length: 10 }, () => run(`${who}
+select public.link_shipment_drive_document('${shipment}','Concurrent_copy_0','1',repeat('8',64),'${target}','${version}');`)));
+assert.equal(await run("select count(*) from storage.objects;"), before);
+assert.equal(await run("select count(*) from public.document_versions where checksum_sha256=repeat('8',64);"), "1");
+assert.equal(await run(`select count(*) from public.document_links where document_id='${target}' and entity_id='${shipment}' and removed_at is null;`), "1");
+console.log('shipment-drive: ten concurrent explicit links -> same receipt, no additional Storage/version/link');

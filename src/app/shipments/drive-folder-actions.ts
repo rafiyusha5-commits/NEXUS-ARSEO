@@ -57,6 +57,47 @@ export async function checkShipmentDriveFolder(form: FormData) {
     return `Проверка завершена: ${files.length} файлов. Документы и подтверждённые данные Nexus не изменены.`;
   });
 }
+// Explicit content check only: no Storage write, recognition or document confirmation.
+async function checkedContent(form: FormData, ctx: Awaited<ReturnType<typeof context>>) {
+  const { id, db, drive, signal } = ctx;
+  const [{ data: binding }, { data: source }] = await Promise.all([
+    db.from("shipment_drive_folders").select("folder_id").eq("shipment_id", id).single(),
+    db.from("shipment_drive_files").select("file_id,revision,present").eq("shipment_id", id).eq("file_id", text(form, "file_id")).single(),
+  ]);
+  if (!binding || !source?.present || source.revision !== text(form, "revision")) throw new Error("Файл изменён. Повторите проверку папки");
+  insideFolder(await drive.scopedReference(source.file_id, signal), binding.folder_id, source.revision);
+  const { blob, filename } = await drive.download(source.file_id, signal);
+  const check = checkDocumentFile({ name: filename, size: blob.size, type: "" });
+  if (!check.ok) throw new Error("Не удалось проверить файл: " + check.error);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  if (!matchesFileSignature(check.kind, bytes)) throw new Error("Не удалось проверить содержимое файла");
+  const checksum = createHash("sha256").update(bytes).digest("hex");
+  insideFolder(await drive.scopedReference(source.file_id, signal), binding.folder_id, source.revision);
+  return { source, binding, checksum };
+}
+export async function checkShipmentDriveContent(form: FormData) {
+  await operation(form, async ctx => {
+    const { source, checksum } = await checkedContent(form, ctx);
+    const saved = await ctx.db.rpc("check_shipment_drive_content", { p_shipment_id: ctx.id, p_file_id: source.file_id, p_revision: source.revision, p_checksum: checksum });
+    if (saved.error) throw new Error("Не удалось проверить и сохранить результат");
+    return "Содержимое проверено по SHA-256. Просмотрите доступные совпадения; документы не изменены.";
+  });
+}
+export async function linkShipmentDriveDocument(form: FormData) {
+  await operation(form, async ctx => {
+    if (text(form, "confirm") !== "yes") throw new Error("Подтвердите загрузку связи с выбранным документом");
+    const permissions = await loadPermissions(ctx.supabase, ["documents.create", "documents.update"] as const);
+    if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");
+    if (!isUuid(text(form, "document_id")) || !isUuid(text(form, "version_id"))) throw new Error("Не удалось проверить выбранный документ");
+    const { source, binding, checksum } = await checkedContent(form, ctx);
+    insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
+    const result = await ctx.db.rpc("link_shipment_drive_document", { p_shipment_id: ctx.id, p_file_id: source.file_id,
+      p_revision: source.revision, p_checksum: checksum, p_document_id: text(form, "document_id"), p_version_id: text(form, "version_id") });
+    if (result.error || !result.data) throw new Error("Не удалось проверить актуальность выбранной связи. Обновите варианты и проверьте документ.");
+    revalidatePath("/documents");
+    return "Связь сохранена. Документ, его версия и ручные подтверждения не изменены. Копия в Storage не создавалась.";
+  });
+}
 export async function importShipmentDriveFile(form: FormData) {
   await operation(form, async ({ id, supabase, db, drive, signal }) => {
     const permissions = await loadPermissions(supabase, ["documents.create", "documents.update"] as const);
