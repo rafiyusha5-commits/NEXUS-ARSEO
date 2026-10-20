@@ -13,8 +13,12 @@ select set_config('request.jwt.claim.sub','eb000000-0000-4000-8000-000000000001'
 select public.assign_source_extraction_transport('eb603000-0000-4000-8000-000000000001','eb310000-0000-4000-8000-000000000001','Синтетическая CMR первого автомобиля');
 select public.assign_source_extraction_transport('eb603000-0000-4000-8000-000000000001','eb310000-0000-4000-8000-000000000001','Повтор после потери ответа');
 select public.assign_source_extraction_transport('eb603000-0000-4000-8000-000000000001','eb310000-0000-4000-8000-000000000002','Уточнено по синтетическому оригиналу');
+-- A valid current source still cannot be moved through the old signature
+-- without an employee-provided reason.
+select pg_temp.refuses($q$select public.assign_source_extraction_transport('eb603000-0000-4000-8000-000000000001',null)$q$);
 do $$begin
  assert (select count(*) from public.shipment_source_context_history)=2;
+ assert (select shipment_transport_id='eb310000-0000-4000-8000-000000000002' from public.shipment_source_extractions where id='eb603000-0000-4000-8000-000000000001');
  assert (select bool_and(changed_by=auth.uid()) from public.shipment_source_context_history);
 end $$;
 select pg_temp.refuses($q$select public.assign_source_extraction_transport('eb603000-0000-4000-8000-000000000001',null,'')$q$);

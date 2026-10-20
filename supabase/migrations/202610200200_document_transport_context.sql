@@ -50,10 +50,11 @@ begin
  insert into public.shipment_source_context_history(extraction_id,old_transport_id,new_transport_id,reason,changed_by)
  values(e.id,e.shipment_transport_id,p_transport_id,btrim(p_reason),auth.uid());
 end $$;
--- Existing callers retain the same operation; they cannot bypass its current-document checks.
+-- Keep the old signature to give old clients a controlled refusal. A generated
+-- technical phrase is not the employee's reason for moving a document.
 create or replace function public.assign_source_extraction_transport(p_extraction_id uuid,p_transport_id uuid)
 returns void language sql security invoker set search_path='' as $$
- select public.assign_source_extraction_transport(p_extraction_id,p_transport_id,'Назначение через существующую операцию Nexus');
+ select public.assign_source_extraction_transport(p_extraction_id,p_transport_id,null::text);
 $$;
 revoke all on function public.assign_source_extraction_transport(uuid,uuid,text),
  public.assign_source_extraction_transport(uuid,uuid) from public,anon,authenticated,service_role;
