@@ -105,7 +105,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await go(`/shipments/${shipment}?tab=documents`);
     f=page.locator('#source-documents form').filter({has:page.getByRole('button',{name:'Распознать и сверить',exact:true})});
     await submit(f,'Распознать и сверить');
-    const sources=()=>q(`select jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'file',f.file_id,'data',e.extracted_data,'confirmed',e.confirmed_data,'reviewed',e.reviewed_at) order by e.id) from public.shipment_source_extractions e join public.shipment_drive_files f on f.imported_document_id=e.document_id and f.shipment_id=e.shipment_id where e.shipment_id='${shipment}' and e.status<>'superseded';`);
+    const sources=()=>q(`select jsonb_agg(jsonb_build_object('id',e.id,'status',e.status,'file',f.file_id,'data',e.extracted_data,'confirmed',e.confirmed_data,'reviewed',e.reviewed_at,'transport',e.shipment_transport_id) order by e.id) from public.shipment_source_extractions e join public.shipment_drive_files f on f.imported_document_id=e.document_id and f.shipment_id=e.shipment_id where e.shipment_id='${shipment}' and e.status<>'superseded';`);
     assert.equal(sources().length,5);
     assert.ok(sources().every(s=>['extracted','needs_review'].includes(s.status)),JSON.stringify(sources()));
     assert.equal(sources().find(s=>s.file.endsWith('_invoice')).data.commodity_invoice.items.length,2);
@@ -142,6 +142,12 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await go(`/shipments/${shipment}?tab=documents`);
     await submit(page.locator('#source-documents form').filter({has:page.getByRole('button',{name:'Распознать и сверить',exact:true})}),'Распознать и сверить');
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);evidence.manualConfirmationsPreserved=true;
+    await go(`/shipments/${shipment}?tab=documents`);
+    await submit(page.locator('#drive-folder form').filter({has:page.getByRole('button',{name:'Проверить папку',exact:true})}),'Проверить папку');
+    assert.equal(q('select count(*) from public.documents;'),5);
+    assert.equal(q('select count(*) from public.document_versions;'),5);
+    assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);
+    assert.equal(items().reduce((n,i)=>n+Number(i.qty),0),150);
     step('manual confirmations survive repeated recognition');
     const documents=q(`select jsonb_object_agg(file_id,imported_document_id) from public.shipment_drive_files where shipment_id='${shipment}';`);
     for(const [index,vehicle]of vehicles.entries()){
@@ -182,6 +188,9 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
       assert.match(await page.locator('body').innerText(),/уже принят/);
     }
     checkpoint('received',{stock:{piece:147},reserved:0,movements:3,receipts:2});
+    const provenance=()=>q(`select jsonb_agg(jsonb_build_object('id',id,'vehicle',source_shipment_transport_id,'product',product_id) order by id) from public.inventory_batches where product_id in('${refs.a}','${refs.b}');`);
+    const receivedBatches=provenance();assert.equal(receivedBatches.length,3);
+    assert.ok(receivedBatches.every(b=>vehicles.some(v=>v.id===b.vehicle)));
     assert.equal(q(`select sum(received_quantity) from public.shipment_items where shipment_id='${shipment}';`),148);
     await go('/sales');await page.locator('details.create-disclosure > summary').click();
     f=page.locator('form').filter({has:page.locator('select[name="customer_id"]')});
@@ -219,6 +228,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.ok(balance);await fill(f,{source_balance_id:balance,quantity:10});await submit(f,'Добавить строку');
     await go(`/inventory/movements/${movement}`);await submit(buttonForm('Провести документ'),'Провести документ');
     checkpoint('transferred',{stock:{piece:147},reserved:70,movements:5,receipts:2});
+    assert.deepEqual(provenance(),receivedBatches);
     await go(`/sales/${sale}?tab=shipping`);
     // Two real tabs submit the same server action with the same session.
     const second=await context.newPage();await second.goto(page.url());await second.waitForLoadState('networkidle');
@@ -240,6 +250,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     f=page.locator('form.customer-return-decision');
     await fill(f,{decision:'restock',note:'Synthetic inspection: intact'});await submit(f,'Принять решение');
     checkpoint('returned',{stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
+    assert.deepEqual(provenance(),receivedBatches);
     await go(`/finance?shipment=${shipment}`);f=buttonForm('Сохранить черновик');
     await fill(f,{shipment_id:shipment,expense_type:'transport',amount:50,currency_id:refs.eur,notes:'Synthetic actual freight'});
     await submit(f,'Сохранить черновик');
@@ -269,8 +280,8 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await go(`/shipments/${shipment}/report`);
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});await page.screenshot({path:join(output,`full-cycle-report-${width}.png`),fullPage:true});
-      assert.match(await page.locator('body').innerText(),/Итог поставки/);
-      assert.match(await page.locator('body').innerText(),/396/);
+      assert.match(await page.locator('body').innerText(),/Итог поставки/i);
+      assert.match(await page.locator('body').innerText(),/396(?:[,.]00)?\s*EUR/);
     }
     await page.reload();await page.waitForLoadState('networkidle');assert.deepEqual(snapshot(),{
       stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
@@ -283,7 +294,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await restrictedPage.goto(`${base}/shipments/${shipment}/report`);await restrictedPage.waitForLoadState('networkidle');
     const restrictedText=await restrictedPage.locator('body').innerText();
     assert.match(restrictedText,/Нет доступа|нет прав/i);
-    assert.doesNotMatch(restrictedText,/396\s*EUR/);
+    assert.doesNotMatch(restrictedText,/396(?:[,.]00)?\s*EUR/);
     await restrictedPage.goto(`${base}/shipments/${shipment}?tab=documents`);await restrictedPage.waitForLoadState('networkidle');
     assert.equal(await restrictedPage.getByRole('button',{name:'Подтвердить данные',exact:true}).count(),0);
     assert.equal(await restrictedPage.getByText('MANUAL-ORDER-VERIFIED',{exact:true}).count(),0);
