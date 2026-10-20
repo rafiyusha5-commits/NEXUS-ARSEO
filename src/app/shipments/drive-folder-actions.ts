@@ -76,6 +76,12 @@ async function checkedContent(form: FormData, ctx: Awaited<ReturnType<typeof con
   return { source, binding, checksum };
 }
 type StoredVersion = { id: string; document_id: string; version_number: number; storage_bucket: string; storage_path: string; file_size_bytes: number };
+async function storedCandidates(supabase: Awaited<ReturnType<typeof requireUser>>["supabase"], checksum: string) {
+  const candidates = await supabase.from("document_versions").select("id,document_id,version_number,storage_bucket,storage_path,file_size_bytes")
+    .eq("is_current", true).eq("checksum_sha256", checksum).limit(21);
+  if (candidates.error || (candidates.data?.length ?? 0) > 20) throw new Error("Не удалось проверить все совпадения. Требуется отдельный разбор документов.");
+  return candidates.data ?? [];
+}
 async function verifyStoredBytes(ctx: Awaited<ReturnType<typeof context>>, version: StoredVersion, checksum: string) {
   ctx.signal.throwIfAborted();
   const visible = await ctx.supabase.from("documents").select("id,current_version").eq("id", version.document_id).is("archived_at", null).neq("status", "rejected").maybeSingle();
@@ -92,11 +98,8 @@ async function verifyStoredBytes(ctx: Awaited<ReturnType<typeof context>>, versi
 export async function checkShipmentDriveContent(form: FormData) {
   await operation(form, async ctx => {
     const { source, binding, checksum } = await checkedContent(form, ctx);
-    const candidates = await ctx.supabase.from("document_versions").select("id,document_id,version_number,storage_bucket,storage_path,file_size_bytes")
-      .eq("is_current", true).eq("checksum_sha256", checksum).limit(21);
-    if (candidates.error || (candidates.data?.length ?? 0) > 20) throw new Error("Не удалось проверить все совпадения. Требуется отдельный разбор документов.");
     const verified: string[] = [];
-    for (const candidate of candidates.data ?? []) {
+    for (const candidate of await storedCandidates(ctx.supabase, checksum)) {
       if (await verifyStoredBytes(ctx, candidate, checksum)) verified.push(candidate.id);
     }
     insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
@@ -125,7 +128,8 @@ export async function linkShipmentDriveDocument(form: FormData) {
   });
 }
 export async function importShipmentDriveFile(form: FormData) {
-  await operation(form, async ({ id, supabase, db, drive, signal }) => {
+  await operation(form, async ctx => {
+    const { id, supabase, db, drive, signal } = ctx;
     const permissions = await loadPermissions(supabase, ["documents.create", "documents.update"] as const);
     if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");
     if (text(form, "confirm") !== "yes") throw new Error("Подтвердите загрузку документа");
@@ -145,6 +149,11 @@ export async function importShipmentDriveFile(form: FormData) {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     if (!matchesFileSignature(check.kind, bytes)) throw new Error("Не удалось проверить содержимое файла");
     const checksum = createHash("sha256").update(bytes).digest("hex");
+    // The old upload action can also reuse a checksum match. Do not let it
+    // bypass byte verification merely because the employee chose "upload".
+    for (const candidate of await storedCandidates(supabase, checksum)) {
+      if (!await verifyStoredBytes(ctx, candidate, checksum)) throw new Error("Не удалось проверить совпадение содержимого. Требуется отдельный разбор документа.");
+    }
     const document = randomUUID();
     const path = buildDocumentStoragePath(document, normalizeFileName(filename), randomUUID().replaceAll("-", ""));
     const storage = supabase.storage.from(DOCUMENT_BUCKET);

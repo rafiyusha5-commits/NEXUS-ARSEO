@@ -12,7 +12,7 @@ import { isUuid } from "../src/lib/documents/rules.ts";
 const action = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-for (const filename of ["Invoice.pdf", "Despatch note.pdf", "ДТ Поставка 19.03.2026.pdf", "Заявка на перевозку.docx", "a".repeat(150) + ".pdf"]) {
+for (const filename of ["Invoice.pdf", "Despatch note.pdf", "ДТ Поставка 19.03.2026.pdf", "Заявка на перевозку.docx", "a".repeat(150) + ".pdf", "Forged.pdf"]) {
   test(`Drive action links an existing document with filename ${filename.slice(0, 50)}`, async () => {
     const shipment = randomUUID(), existing = randomUUID(), type = randomUUID();
     const bytes = new TextEncoder().encode(filename.endsWith("docx") ? "PK\x03\x04test" : "%PDF-1.4\ntest");
@@ -20,12 +20,16 @@ for (const filename of ["Invoice.pdf", "Despatch note.pdf", "ДТ Поставк
     const folder = "Drive_folder_123456";
     const uploaded: string[] = [], removed: string[] = [];
     let registrations = 0;
-    const query = (data: unknown) => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data }), maybeSingle: async () => ({ data }) });
+    const query = (data: unknown) => ({ select() { return this; }, eq() { return this; }, is() { return this; }, neq() { return this; }, single: async () => ({ data }), maybeSingle: async () => ({ data }), limit: async () => ({ data: [data] }) });
     const storage = {
+      download: async () => ({ data: new Blob([filename === "Forged.pdf" ? new Uint8Array(bytes.length) : bytes]) }),
       upload: async (path: string, actual: Uint8Array) => { assert.ok(files.isDocumentStoragePath(path)); assert.deepEqual(actual, bytes); uploaded.push(path); return { error: null }; },
       remove: async (paths: string[]) => { removed.push(...paths); return { error: null }; },
     };
-    const supabase = { from: () => query({ id: shipment }), storage: { from: () => storage } };
+    const supabase = { from: (table: string) => query(table === "document_versions" ? {
+      id: randomUUID(), document_id: existing, version_number: 1, storage_bucket: files.DOCUMENT_BUCKET,
+      storage_path: "synthetic/existing.pdf", file_size_bytes: bytes.length,
+    } : { id: shipment, current_version: 1 }), storage: { from: () => storage } };
     const db = {
       from: (table: string) => query(table === "shipment_drive_folders" ? { folder_id: folder } : source),
       rpc: async (name: string, params: Record<string, unknown>) => {
@@ -54,9 +58,9 @@ for (const filename of ["Invoice.pdf", "Despatch note.pdf", "ДТ Поставк
     runInNewContext(action, { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, AbortSignal, Uint8Array, Error });
     const form = new FormData();
     for (const [key, value] of Object.entries({ shipment_id: shipment, document_type_id: type, file_id: source.file_id, revision: source.revision, confirm: "yes" })) form.set(key, value);
-    await assert.rejects(exports.importShipmentDriveFile!(form), error => error instanceof Error && decodeURIComponent(error.message).includes("дубль не создан"));
-    assert.equal(registrations, 1);
-    assert.equal(uploaded.length, 1);
+    await assert.rejects(exports.importShipmentDriveFile!(form), error => error instanceof Error && decodeURIComponent(error.message).includes(filename === "Forged.pdf" ? "Не удалось проверить совпадение" : "дубль не создан"));
+    assert.equal(registrations, filename === "Forged.pdf" ? 0 : 1);
+    assert.equal(uploaded.length, filename === "Forged.pdf" ? 0 : 1);
     assert.deepEqual(removed, uploaded, "only unused Nexus staging file is removed");
   });
 }
