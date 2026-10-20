@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SourceTransportContext } from "./source-transport-context";
 import { CustomsEvidence } from "./customs-evidence";
 import { CustomsReviewForm } from "./customs-review-form";
 import { CustomsRevisionForm } from "./customs-revision-form";
@@ -41,7 +42,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
   const supabase = await createClient();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update"] as const);
   if (!permissions["documents.view"]) return null;
-  const [{ data, error, count: sourceCount }, { data: types }, { data: transportRows, error: transportsError, count: transportCount }, { data: itemRows, error: itemsError, count: itemCount }, { data: quantityHistory, error: historyError, count: historyCount }] = await Promise.all([
+  const [{ data, error, count: sourceCount }, { data: types }, { data: transportRows, error: transportsError, count: transportCount }, { data: itemRows, error: itemsError, count: itemCount }, { data: quantityHistory, error: historyError, count: historyCount }, { data: shipmentContext }, { data: contextHistory, error: contextError, count: contextCount }] = await Promise.all([
     supabase.from("shipment_source_extractions")
       .select("id,document_id,document_version_id,shipment_transport_id,source_kind,status,extracted_data,field_evidence,confirmed_data,conflicts,error_message,updated_at,reviewed_at,extraction_method,ocr_provider,ocr_provider_version,ocr_confidence,ocr_page_count,processing_ms,attempt_count,document:documents(title,original_filename,archived_at,status,current_version,versions:document_versions!document_versions_document_id_fkey(id,is_current,version_number),links:document_links(entity_type,entity_id,removed_at))", { count: "exact" })
       .eq("shipment_id", shipmentId).neq("status", "superseded").order("updated_at", { ascending: false }),
@@ -51,6 +52,8 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     supabase.from("shipment_transports").select("id,sequence_no,status,vehicle_plate,driver_name", { count: "exact" }).eq("shipment_id", shipmentId).neq("status", "cancelled").order("sequence_no"),
     supabase.from("shipment_items").select("id,uom,shipment_transport_id,ordered_quantity,confirmed_quantity,shipped_quantity,product:products(internal_sku,name,hs_code)", { count: "exact" }).eq("shipment_id", shipmentId).order("created_at"),
     supabase.from("shipment_item_quantity_confirmations").select("shipment_item_id,extraction_id,field,quantity,confirmed_at", { count: "exact" }).eq("shipment_id", shipmentId).order("confirmed_at", { ascending: false }),
+    supabase.from("shipments").select("shipment_number,type").eq("id", shipmentId).maybeSingle(),
+    supabase.from("shipment_source_context_history").select("id,extraction_id,old_transport_id,new_transport_id,reason,changed_at,changed_by,extraction:shipment_source_extractions!inner(shipment_id)", { count: "exact" }).eq("extraction.shipment_id", shipmentId).order("changed_at", { ascending: false }),
   ]);
   const one = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
   const quantityItems = ((itemRows ?? []) as Array<Omit<QuantityFormItem, "product"> & { product: QuantityFormItem["product"] | QuantityFormItem["product"][] }>)
@@ -90,7 +93,12 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
       {!sourceCurrent&&<p className="login-error">Актуальность или полнота источника не подтверждена. Обновите страницу и повторите распознавание; подтверждение и запись количеств отключены.</p>}
       {vehicles.length>0&&row.status!=="superseded"&&<div className="source-vehicle-binding">
         <span>Относится к: <strong>{row.shipment_transport_id&&vehicleById.get(row.shipment_transport_id)?`автомобилю ${describeTransport(vehicleById.get(row.shipment_transport_id)!)}`:"ко всей поставке"}</strong></span>
-        {sourceCurrent&&permissions["source_documents.extract"]&&row.status!=="confirmed"&&<form action={assignSourceTransportAction} className="inline-item-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="extraction_id" value={row.id}/><select name="transport_id" defaultValue={row.shipment_transport_id??""} aria-label="Автомобиль документа"><option value="">Вся поставка</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>Автомобиль {describeTransport(vehicle)}</option>)}</select><button className="ghost compact" type="submit">Привязать</button></form>}
+        <SourceTransportContext shipmentId={shipmentId} extractionId={row.id}
+          shipmentLabel={`${({ import: "Импорт", export: "Экспорт", domestic_transfer: "Перемещение" } as Record<string,string>)[shipmentContext?.type ?? ""] ?? "Операция"} · ${shipmentContext?.shipment_number ?? "текущая поставка"}`}
+          transportId={row.shipment_transport_id} vehicles={vehicles.map(v=>({id:v.id,label:`Автомобиль ${describeTransport(v)}`}))}
+          editable={sourceCurrent&&Boolean(permissions["source_documents.extract"])&&!["confirmed","pending","superseded"].includes(row.status)}
+          history={contextError||contextCount!==(contextHistory?.length??0)?[]:(contextHistory??[]).filter(h=>h.extraction_id===row.id)}
+          historyUnavailable={!!contextError||contextCount!==(contextHistory?.length??0)} action={assignSourceTransportAction}/>
         {vehicles.length>1&&!row.shipment_transport_id&&row.status!=="confirmed"&&VEHICLE_SCOPED_FIELDS.some(field=>row.extracted_data?.[field]!==undefined&&row.extracted_data?.[field]!==null&&row.extracted_data?.[field]!=="")&&<small className="login-error">В поставке несколько автомобилей: выберите, к какому относится документ, иначе данные водителя и машины не будут записаны.</small>}
       </div>}
       {row.status==="pending"&&<div className="setup-notice">Документ обрабатывается. Если статус не меняется несколько минут, запустите «Распознать и сверить» ещё раз.</div>}

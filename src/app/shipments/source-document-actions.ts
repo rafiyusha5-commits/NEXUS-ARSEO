@@ -126,7 +126,7 @@ export async function assignSourceTransportAction(formData: FormData) {
   const transportId = value(formData, "transport_id");
   if (!UUID.test(shipmentId) || !UUID.test(extractionId) || (transportId && !UUID.test(transportId))) redirect("/shipments?error=Некорректные данные");
   const { supabase } = await requireUser();
-  const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null });
+  const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null, p_reason: value(formData, "context_reason") });
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   await refreshLogistAfterChange(supabase, shipmentId);
