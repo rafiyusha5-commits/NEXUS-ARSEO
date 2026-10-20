@@ -75,10 +75,32 @@ async function checkedContent(form: FormData, ctx: Awaited<ReturnType<typeof con
   insideFolder(await drive.scopedReference(source.file_id, signal), binding.folder_id, source.revision);
   return { source, binding, checksum };
 }
+type StoredVersion = { id: string; document_id: string; version_number: number; storage_bucket: string; storage_path: string; file_size_bytes: number };
+async function verifyStoredBytes(ctx: Awaited<ReturnType<typeof context>>, version: StoredVersion, checksum: string) {
+  ctx.signal.throwIfAborted();
+  const visible = await ctx.supabase.from("documents").select("id,current_version").eq("id", version.document_id).is("archived_at", null).neq("status", "rejected").maybeSingle();
+  if (visible.error || !visible.data || visible.data.current_version !== version.version_number ||
+    version.storage_bucket !== DOCUMENT_BUCKET || version.file_size_bytes <= 0 || version.file_size_bytes > 4 * 1024 * 1024)
+    throw new Error("Не удалось проверить выбранный документ");
+  // Session-scoped download, never service_role. Metadata hashes are only candidate hints.
+  const stored = await ctx.supabase.storage.from(DOCUMENT_BUCKET).download(version.storage_path);
+  ctx.signal.throwIfAborted();
+  if (stored.error || !stored.data || stored.data.size > 4 * 1024 * 1024 || stored.data.size !== version.file_size_bytes)
+    throw new Error("Не удалось проверить содержимое выбранного документа");
+  return createHash("sha256").update(new Uint8Array(await stored.data.arrayBuffer())).digest("hex") === checksum;
+}
 export async function checkShipmentDriveContent(form: FormData) {
   await operation(form, async ctx => {
-    const { source, checksum } = await checkedContent(form, ctx);
-    const saved = await ctx.db.rpc("check_shipment_drive_content", { p_shipment_id: ctx.id, p_file_id: source.file_id, p_revision: source.revision, p_checksum: checksum });
+    const { source, binding, checksum } = await checkedContent(form, ctx);
+    const candidates = await ctx.supabase.from("document_versions").select("id,document_id,version_number,storage_bucket,storage_path,file_size_bytes")
+      .eq("is_current", true).eq("checksum_sha256", checksum).limit(21);
+    if (candidates.error || (candidates.data?.length ?? 0) > 20) throw new Error("Не удалось проверить все совпадения. Требуется отдельный разбор документов.");
+    const verified: string[] = [];
+    for (const candidate of candidates.data ?? []) {
+      if (await verifyStoredBytes(ctx, candidate, checksum)) verified.push(candidate.id);
+    }
+    insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
+    const saved = await ctx.db.rpc("check_shipment_drive_content", { p_shipment_id: ctx.id, p_file_id: source.file_id, p_revision: source.revision, p_checksum: checksum, p_verified_versions: verified });
     if (saved.error) throw new Error("Не удалось проверить и сохранить результат");
     return "Содержимое проверено по SHA-256. Просмотрите доступные совпадения; документы не изменены.";
   });
@@ -90,6 +112,10 @@ export async function linkShipmentDriveDocument(form: FormData) {
     if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");
     if (!isUuid(text(form, "document_id")) || !isUuid(text(form, "version_id"))) throw new Error("Не удалось проверить выбранный документ");
     const { source, binding, checksum } = await checkedContent(form, ctx);
+    const target = await ctx.supabase.from("document_versions").select("id,document_id,version_number,storage_bucket,storage_path,file_size_bytes")
+      .eq("id", text(form, "version_id")).eq("document_id", text(form, "document_id")).eq("is_current", true).maybeSingle();
+    if (target.error || !target.data || !await verifyStoredBytes(ctx, target.data, checksum))
+      throw new Error("Не удалось проверить совпадение содержимого выбранного документа");
     insideFolder(await ctx.drive.scopedReference(source.file_id, ctx.signal), binding.folder_id, source.revision);
     const result = await ctx.db.rpc("link_shipment_drive_document", { p_shipment_id: ctx.id, p_file_id: source.file_id,
       p_revision: source.revision, p_checksum: checksum, p_document_id: text(form, "document_id"), p_version_id: text(form, "version_id") });

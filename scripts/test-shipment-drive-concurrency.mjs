@@ -55,7 +55,7 @@ console.log('shipment-drive: ten copied files across two shipments -> one docume
 const target = await run("select document_id from public.document_versions where checksum_sha256=repeat('8',64);");
 const version = await run("select id from public.document_versions where checksum_sha256=repeat('8',64);");
 const before = await run("select count(*) from storage.objects;");
-await run(`${who} select public.check_shipment_drive_content('${shipment}','Concurrent_copy_0','1',repeat('8',64));`);
+await run(`${who} select public.check_shipment_drive_content('${shipment}','Concurrent_copy_0','1',repeat('8',64),array['${version}'::uuid]);`);
 await Promise.all(Array.from({ length: 10 }, () => run(`${who}
 select public.link_shipment_drive_document('${shipment}','Concurrent_copy_0','1',repeat('8',64),'${target}','${version}');`)));
 assert.equal(await run("select count(*) from storage.objects;"), before);

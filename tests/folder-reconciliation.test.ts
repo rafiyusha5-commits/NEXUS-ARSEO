@@ -7,12 +7,14 @@ const reconcile = (s: ReconciliationSource, docs = [doc], ids = new Set<string>(
 test("name does not establish duplicate; digest must belong to current Drive revision", () => {
   assert.equal(reconcile(source).state, "possible");
   assert.equal(reconcile({ ...source, checked_revision: "1", checked_checksum: doc.checksum }).state, "possible");
-  assert.equal(reconcile({ ...source, checked_revision: "2", checked_checksum: doc.checksum }).state, "exact");
+  assert.equal(reconcile({ ...source, checked_revision: "2", checked_checksum: doc.checksum }).state, "possible", "stored metadata alone is not verified content");
+  assert.equal(reconcile({ ...source, checked_revision: "2", checked_checksum: doc.checksum, verified_version_ids: ["v2"] }).state, "exact");
+  assert.equal(reconcile({ ...source, checked_revision: "2", checked_checksum: doc.checksum, verified_version_ids: ["v1"] }).state, "possible");
   assert.equal(reconcile({ ...source, checked_revision: "2", checked_checksum: "b".repeat(64) }).state, "possible");
 });
 test("identical bytes across subfolders match; translations with different bytes do not", () => {
   for (const path of ["Import/copy.pdf", "Продажа клиенту/copy.pdf"]) {
-    assert.equal(reconcile({ ...source, path, name: "copy.pdf", checked_revision: "2", checked_checksum: doc.checksum }).state, "exact");
+    assert.equal(reconcile({ ...source, path, name: "copy.pdf", checked_revision: "2", checked_checksum: doc.checksum, verified_version_ids: ["v2"] }).state, "exact");
     assert.equal(reconcile({ ...source, path, name: "translation.pdf", checked_revision: "2", checked_checksum: "b".repeat(64) }).state, "new");
   }
 });

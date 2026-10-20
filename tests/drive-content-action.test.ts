@@ -10,20 +10,29 @@ import { isUuid } from "../src/lib/documents/rules.ts";
 const code = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-for (const mode of ["ok", "moved", "changed", "denied", "database-refused"] as const) {
-  test(`link-only action ${mode}: actual bytes, current membership, no Storage`, async () => {
+for (const mode of ["ok", "moved", "changed", "denied", "database-refused", "forged-checksum", "storage-denied", "preview-ok", "preview-forged-checksum", "preview-storage-denied"] as const) {
+  test(`link-only action ${mode}: both byte streams, current membership, no Storage write`, async () => {
     const shipment = randomUUID(), document = randomUUID(), version = randomUUID();
     const folder = "Synthetic_folder";
     const bytes = new TextEncoder().encode("%PDF-1.4 synthetic");
     let reads = 0, calls = 0, downloads = 0;
-    const query = (data: unknown) => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data }), maybeSingle: async () => ({ data }) });
-    const supabase = { from: () => query({ id: shipment }), storage: { from: () => { throw Error("Storage must not be touched"); } } };
+    const query = (data: unknown) => ({ select() { return this; }, eq() { return this; }, is() { return this; }, neq() { return this; }, single: async () => ({ data }), maybeSingle: async () => ({ data }), limit: async () => ({ data: [data] }) });
+    const supabase = {
+      from: (table: string) => query(table === "document_versions" ? { id: version, document_id: document, version_number: 1,
+        storage_bucket: files.DOCUMENT_BUCKET, storage_path: "synthetic/path.pdf", file_size_bytes: bytes.length } : { id: shipment, current_version: 1 }),
+      storage: { from: () => ({
+        download: async () => mode.includes("storage-denied") ? { error: { message: "private SQL must not leak" } }
+          : { data: new Blob([mode.includes("forged-checksum") ? new Uint8Array(bytes.length) : bytes]) },
+        upload: () => { throw Error("Storage write forbidden"); }, remove: () => { throw Error("Storage deletion forbidden"); },
+      }) },
+    };
     const db = { from: (name: string) => query(name === "shipment_drive_folders" ? { folder_id: folder }
       : { file_id: "Synthetic_file", present: true, revision: "3" }),
       rpc: async (name: string, args: Record<string, unknown>) => {
-        calls++; assert.equal(name, "link_shipment_drive_document");
+        calls++; assert.equal(name, mode.startsWith("preview-") ? "check_shipment_drive_content" : "link_shipment_drive_document");
         assert.equal(args.p_checksum, createHash("sha256").update(bytes).digest("hex"));
-        assert.equal(args.p_version_id, version);
+        if (mode.startsWith("preview-")) assert.deepEqual(Array.from(args.p_verified_versions as string[]), mode === "preview-ok" ? [version] : []);
+        else assert.equal(args.p_version_id, version);
         return mode === "database-refused" ? { error: { message: "private SQL must not leak" } } : { data: document };
       } };
     const deps: Record<string, unknown> = {
@@ -39,17 +48,17 @@ for (const mode of ["ok", "moved", "changed", "denied", "database-refused"] as c
         download: async () => { downloads++; return { blob: new Blob([bytes]), filename: "invoice.pdf" }; },
       }) },
     };
-    const exports: { linkShipmentDriveDocument?: (f: FormData) => Promise<void> } = {};
+    const exports: { linkShipmentDriveDocument?: (f: FormData) => Promise<void>; checkShipmentDriveContent?: (f: FormData) => Promise<void> } = {};
     runInNewContext(code, { exports, require: (name: string) => { assert.ok(name in deps); return deps[name]; }, AbortSignal, Uint8Array, Error });
     const form = new FormData();
     for (const [k, v] of Object.entries({ shipment_id: shipment, file_id: "Synthetic_file", revision: "3", document_id: document, version_id: version, confirm: "yes" })) form.set(k, v);
-    await assert.rejects(exports.linkShipmentDriveDocument!(form), e => {
+    await assert.rejects((mode.startsWith("preview-") ? exports.checkShipmentDriveContent! : exports.linkShipmentDriveDocument!)(form), e => {
       assert.ok(e instanceof Error);
       assert.equal(e.message.includes("private SQL"), false);
-      assert.equal(e.message.includes("success="), mode === "ok");
+      assert.equal(e.message.includes("success="), ["ok", "preview-ok", "preview-forged-checksum"].includes(mode));
       return true;
     });
-    assert.equal(calls, ["ok", "database-refused"].includes(mode) ? 1 : 0);
+    assert.equal(calls, ["ok", "database-refused", "preview-ok", "preview-forged-checksum"].includes(mode) ? 1 : 0);
     assert.equal(downloads, mode === "denied" ? 0 : 1);
   });
 }

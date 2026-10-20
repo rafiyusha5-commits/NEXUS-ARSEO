@@ -8,6 +8,7 @@ export type ReconciliationSource = {
   file_id: string; name: string; path: string; revision: string; present: boolean;
   mime_type?: string; imported_document_id: string | null; imported_revision: string | null;
   checked_revision?: string | null; checked_checksum?: string | null;
+  verified_version_ids?: string[];
 };
 export type VisibleDocument = Omit<Candidate, "basis"> & { checksum: string | null; filename: string | null };
 export const reconciliationLabels = {
@@ -26,11 +27,11 @@ export function supportedSource(source: ReconciliationSource) {
 }
 /** Input documents MUST already be restricted by session RLS. Never send hashes to the client. */
 export function reconcileSource(source: ReconciliationSource, documents: VisibleDocument[], activeLinkedIds: Set<string>) {
-  const { checked_checksum, checked_revision, imported_document_id, imported_revision, ...safe } = source;
+  const { checked_checksum, checked_revision, verified_version_ids, imported_document_id, imported_revision, ...safe } = source;
   const linked = documents.find(d => d.id === imported_document_id && activeLinkedIds.has(d.id));
   const verified = checked_revision === source.revision && Boolean(checked_checksum);
   const candidates: Candidate[] = documents.flatMap(d => {
-    const basis = linked?.id === d.id ? "linked" : verified && d.checksum === checked_checksum ? "checksum"
+    const basis = linked?.id === d.id ? "linked" : verified && d.checksum === checked_checksum && verified_version_ids?.includes(d.versionId) ? "checksum"
       : [d.title, d.filename].some(n => n?.trim().toLocaleLowerCase("ru") === source.name.trim().toLocaleLowerCase("ru")) ? "name" : null;
     if (!basis) return [];
     return [{ id: d.id, title: d.title, type: d.type, versionId: d.versionId, version: d.version, status: d.status, review: d.review, basis }];

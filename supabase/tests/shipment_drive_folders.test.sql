@@ -48,6 +48,11 @@ do $$declare d uuid;begin
 end $$;
 -- Explicit checksum review/link uses the same receipt and no Storage object.
 select public.check_shipment_drive_content('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64));
+select pg_temp.refuses($q$select public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),'fd000000-0000-4000-8000-000000000001',(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current))$q$);
+-- The test gateway attests the Nexus byte check; production attestation comes
+-- only after a session-scoped Storage download and SHA-256 comparison.
+select public.check_shipment_drive_content('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),
+ array(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current));
 do $$declare version_id uuid; before_versions integer; before_objects integer; linked uuid;begin
  select id into version_id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current;
  select count(*) into before_versions from public.document_versions;

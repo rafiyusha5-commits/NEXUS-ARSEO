@@ -24,7 +24,7 @@ export async function ShipmentDriveFolderPanel({ shipmentId }: { shipmentId: str
     if (binding) {
       await shipmentDrive().scopedReference(binding.folder_id, AbortSignal.timeout(12000));
       const [fileResult, typeResult, documentResult, versionResult, linkResult, reviewResult] = await Promise.all([
-        selectAll((from, to) => db.from("shipment_drive_files").select("file_id,name,path,mime_type,revision,present,imported_document_id,imported_revision,checked_revision,checked_checksum").eq("shipment_id", shipmentId).order("path").order("file_id").range(from, to)),
+        selectAll((from, to) => db.from("shipment_drive_files").select("file_id,name,path,mime_type,revision,present,imported_document_id,imported_revision,checked_revision,checked_checksum,verified_version_ids").eq("shipment_id", shipmentId).order("path").order("file_id").range(from, to)),
         session.from("document_types").select("id,name_ru").eq("is_active", true).order("name_ru"),
         selectAll((from, to) => session.from("documents").select("id,title,document_type_id,status,current_version,original_filename").is("archived_at", null).neq("status", "rejected").order("id").range(from, to)),
         selectAll((from, to) => session.from("document_versions").select("id,document_id,version_number,checksum_sha256").eq("is_current", true).order("id").range(from, to)),
