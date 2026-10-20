@@ -83,7 +83,7 @@ try{
   console.log('Building actual Nexus against the isolated backend');
   command(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'build','--webpack'],{cwd:app,env});
   log=createWriteStream(join(output,'browser-server.log'));
-  server=spawn(process.execPath,['--require',join(root,'tests/pilot/external-boundaries.cjs'),join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p','3100'],
+  server=spawn(process.execPath,['--import',join(root,'tests/pilot/external-boundaries.mjs'),join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p','3100'],
     {cwd:app,env:{...env,NEXUS_SYNTHETIC_FIXTURES:fixturesPath,NEXUS_SYNTHETIC_REQUESTS:join(output,'external-requests.jsonl')},windowsHide:true,stdio:['ignore','pipe','pipe']});
   server.stdout.pipe(log);server.stderr.pipe(log);
   for(let i=0;i<120;i++){try{if((await fetch('http://127.0.0.1:3100/login')).ok)break}catch{}if(i===119)throw new Error('Nexus did not start');await new Promise(r=>setTimeout(r,1000));}

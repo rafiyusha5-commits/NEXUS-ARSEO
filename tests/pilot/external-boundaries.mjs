@@ -1,5 +1,6 @@
 // Loaded ONLY by the disposable E2E server. Real auth, REST, Storage and SQL remain intact.
-const fs=require('node:fs'), crypto=require('node:crypto');
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 const fixture=JSON.parse(fs.readFileSync(process.env.NEXUS_SYNTHETIC_FIXTURES,'utf8'));
 const original=globalThis.fetch;
 const log=data=>fs.appendFileSync(process.env.NEXUS_SYNTHETIC_REQUESTS,JSON.stringify(data)+'\n');
@@ -15,7 +16,7 @@ globalThis.fetch=async(input,init)=>{
     if(method!=='GET')throw new Error('Synthetic Drive rejects every write');
     const id=url.pathname.split('/').at(-1),media=url.searchParams.get('alt')==='media';
     log({kind:'drive',method,id,media});
-    if(id==='files')return json({files:fixture.files.map(({base64,text,sha256,key,...f})=>f)});
+    if(id==='files')return json({files:fixture.files.map(f=>Object.fromEntries(Object.entries(f).filter(([k])=>!['base64','text','sha256','key'].includes(k))))});
     if([fixture.root,fixture.folder].includes(id))return json({id,name:'Synthetic folder',mimeType:'application/vnd.google-apps.folder',parents:id===fixture.root?[]:[fixture.root],trashed:false});
     const file=fixture.files.find(f=>f.id===id);if(!file)return new Response('',{status:404});
     return media?new Response(Buffer.from(file.base64,'base64'),{headers:{'content-type':file.mimeType}}):json({...file,trashed:false});

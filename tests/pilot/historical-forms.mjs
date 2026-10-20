@@ -14,7 +14,10 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
   const go=async path=>{await page.goto(base+path);await page.waitForLoadState('networkidle');assert.ok(!page.url().includes('/login'),`Session unexpectedly lost: ${path}`)};
   async function submit(form,label){
     const button=label?form.getByRole('button',{name:label,exact:true}):form.locator('button[type="submit"],button:not([type])').last();
-    await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),button.click()]);
+    const [response]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),button.click()]);
+    await response.finished();
+    const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
+    if(redirect)await page.waitForURL(new URL(redirect,base).href);
     await page.waitForLoadState('networkidle');
     const u=new URL(page.url());
     for(const key of ['error','source_error','drive_error'])if(u.searchParams.has(key))throw new Error(`${key}: ${u.searchParams.get(key)}`);
@@ -25,6 +28,8 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     else await field.fill(String(value));
   }}
   const formWith=(name,value)=>page.locator('form').filter({has:page.locator(`input[name="${name}"][value="${value}"]`)});
+  const buttonForm=label=>page.locator('form').filter({has:page.getByRole('button',{name:label,exact:true})});
+  const date=days=>new Date(Date.now()+days*86400000).toISOString().slice(0,10);
   let shipment;
   const items=()=>q(`select coalesce(jsonb_agg(jsonb_build_object('id',i.id,'sku',p.internal_sku,'transport',i.shipment_transport_id,'qty',i.ordered_quantity) order by i.id),'[]') from public.shipment_items i join public.products p on p.id=i.product_id where shipment_id='${shipment}';`);
   const snapshot=()=>q(`select jsonb_build_object(
@@ -92,18 +97,156 @@ export async function runHistoricalForms({chromium,base,email,password,refs,sql,
     for(const source of sources()){
       await go(`/shipments/${shipment}?tab=documents`);
       const details=page.locator('#source-documents details').filter({has:page.locator(`input[name="extraction_id"][value="${source.id}"]`)}).first();
-      if(!await details.getAttribute('open'))await details.locator('summary').first().click();
+      if(await details.getAttribute('open')===null)await details.locator('summary').first().click();
+      const file=fixtures.files.find(file=>file.id===source.file);
+      if(file.key.startsWith('cmr')){
+        const contextForm=details.locator('form').filter({has:page.locator('[name="context_reason"]')});
+        await fill(contextForm,{transport_id:vehicles[file.key==='cmr1'?0:1].id,context_reason:'Synthetic original identifies this transport'});
+        await submit(contextForm,'Сохранить контекст');
+        await go(`/shipments/${shipment}?tab=documents`);
+        if(await details.getAttribute('open')===null)await details.locator('summary').first().click();
+      }
       f=details.locator('form').filter({has:page.getByRole('button',{name:'Подтвердить данные',exact:true})});
       if(await f.count()){await submit(f,'Подтвердить данные');}
+      else if(file.key==='customs'){
+        f=details.locator('form').filter({has:page.locator('[name="review_note"]')});
+        await fill(f,{review_note:'Synthetic declaration original and commodity lines checked; no company data'});
+        await f.locator('[name="checked"]').check();await submit(f,'Подтвердить сверку декларации');
+      }
     }
     const confirmedBefore=sources().filter(s=>s.status==='confirmed');
-    assert.ok(confirmedBefore.length>=4,'Invoice, two CMRs and packing must be manually confirmed');
+    assert.equal(confirmedBefore.length,5,'All five sources must be manually confirmed');
     await go(`/shipments/${shipment}?tab=documents`);
     await submit(page.locator('#source-documents form').filter({has:page.getByRole('button',{name:'Распознать и сверить',exact:true})}),'Распознать и сверить');
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);evidence.manualConfirmationsPreserved=true;
     step('manual confirmations survive repeated recognition');
-    // Continuing stages are added below; fail closed until every required form is exercised.
-    throw new Error('Full form scenario is still being implemented after document review');
+    const documents=q(`select jsonb_object_agg(file_id,imported_document_id) from public.shipment_drive_files where shipment_id='${shipment}';`);
+    for(const [index,vehicle]of vehicles.entries()){
+      const document=documents[fixtures.files.find(x=>x.key===`cmr${index+1}`).id];
+      await go(`/documents/${document}`);
+      f=buttonForm('Добавить связь');
+      const option=await f.locator('select[name="link"] option').filter({hasText:`Автомобиль №${index+1}`}).first().getAttribute('value');
+      assert.ok(option,'Vehicle document link option');await fill(f,{link:option});await submit(f,'Добавить связь');
+      if(index===0){
+        await go(`/shipments/${shipment}/report`);
+        assert.match(await page.locator('body').innerText(),/CMR[^\n]*автомобиль №2/i);
+        evidence.missingSecondCmrDetected=true;
+      }
+    }
+    await go(`/shipments/${shipment}/report`);
+    assert.doesNotMatch(await page.locator('body').innerText(),/CMR[^\n]*автомобиль №[12]/i);
+    evidence.bothCmrsPresent=true;step('missing second CMR detected and resolved by document link form');
+    for(const [index,vehicle]of vehicles.entries()){
+      await go(`/shipments/${shipment}?tab=delivery`);
+      f=formWith('transport_id',vehicle.id).filter({has:page.locator('select[name="status"]')});
+      await fill(f,{status:'in_transit'});await submit(f,'Сохранить');
+      await go(`/shipments/${shipment}?tab=delivery`);
+      f=formWith('transport_id',vehicle.id).filter({has:page.locator('select[name="status"]')});
+      await fill(f,{status:'arrived'});await submit(f,'Сохранить');
+      await go(`/shipments/${shipment}/receiving?transport=${vehicle.id}`);
+      f=page.locator('form.receiving-form');
+      for(const item of items().filter(i=>i.transport===vehicle.id)){
+        const row=f.locator('fieldset').filter({has:page.locator(`input[name="item_id"][value="${item.id}"]`)});
+        await fill(row,{accepted_quantity:index===0?57:item.qty,damaged_quantity:index===0?1:0,
+          batch_number:`BROWSER-${index}-${item.sku}`,manufacture_date:date(index===0?-300:-30),expiry_date:date(index===0?100:370),
+          discrepancy_reason:index===0?'Synthetic: 2 missing and 1 damaged':''});
+      }
+      await fill(f,{performed_by_name:'Synthetic Receiver',notes:'Disposable browser pilot'});
+      await submit(f,'Завершить приёмку');
+      // Refresh cannot repeat the receipt; the form is no longer available.
+      await go(`/shipments/${shipment}/receiving?transport=${vehicle.id}`);
+      assert.equal(await page.locator('form.receiving-form').count(),0);
+      assert.match(await page.locator('body').innerText(),/уже принят/);
+    }
+    checkpoint('received',{stock:{piece:147},reserved:0,movements:3,receipts:2});
+    assert.equal(q(`select sum(received_quantity) from public.shipment_items where shipment_id='${shipment}';`),148);
+    await go('/sales');await page.locator('details.create-disclosure > summary').click();
+    f=page.locator('form').filter({has:page.locator('select[name="customer_id"]')});
+    await fill(f,{customer_id:refs.customer,warehouse_id:refs.warehouse,planned_shipment_date:date(1),currency_id:refs.eur});
+    await submit(f,'Создать заказ');
+    const sale=new URL(page.url()).pathname.split('/').at(-1);assert.match(sale,/^[0-9a-f-]{36}$/);
+    await go(`/sales/${sale}?tab=items`);
+    f=buttonForm('Добавить');
+    await fill(f,{product_id:refs.a,quantity:7,uom:'box',unit_price:50,required_shelf_life_pct:60});await submit(f,'Добавить');
+    await go(`/sales/${sale}?tab=shipping`);
+    await submit(buttonForm('Резервировать по FEFO'),'Резервировать по FEFO');
+    await go(`/sales/${sale}?tab=shipping`);
+    await submit(buttonForm('Резервировать по FEFO'),'Резервировать по FEFO');
+    assert.equal(snapshot().reserved,70);
+    await go(`/sales/${sale}?tab=main`);
+    // The first batch intentionally needs a shelf-life guarantee.
+    await assert.rejects(()=>submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ'),/гарантийн/i);
+    await go(`/sales/${sale}?tab=documents`);
+    await submit(buttonForm('Проверить ОСГ и подготовить письмо'),'Проверить ОСГ и подготовить письмо');
+    await go(`/sales/${sale}?tab=documents`);
+    await submit(buttonForm('Утвердить'),'Утвердить');
+    await go(`/sales/${sale}?tab=main`);await submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ');
+    checkpoint('reserved',{stock:{piece:147},reserved:70,movements:3,receipts:2});
+    await go('/inventory/movements');await page.locator('details.create-disclosure > summary').click();
+    f=buttonForm('Создать черновик');
+    await fill(f,{operation_type:'transfer',from_warehouse_id:refs.warehouse,to_warehouse_id:refs.warehouse2,
+      reference:'BROWSER-TRANSFER',reason:'Synthetic own warehouse transfer',performed_by_name:'Synthetic Receiver'});
+    await submit(f,'Создать черновик');
+    const movement=new URL(page.url()).pathname.split('/').at(-1);
+    await go(`/inventory/movements/${movement}?tab=items`);
+    f=buttonForm('Добавить строку');
+    const balance=await f.locator('select[name="source_balance_id"] option').filter({hasText:'BROWSER-B'}).getAttribute('value');
+    assert.ok(balance);await fill(f,{source_balance_id:balance,quantity:10});await submit(f,'Добавить строку');
+    await go(`/inventory/movements/${movement}`);await submit(buttonForm('Провести документ'),'Провести документ');
+    checkpoint('transferred',{stock:{piece:147},reserved:70,movements:5,receipts:2});
+    await go(`/sales/${sale}?tab=shipping`);
+    // Two real tabs submit the same server action with the same session.
+    const second=await context.newPage();await second.goto(page.url());await second.waitForLoadState('networkidle');
+    const post=async p=>{await Promise.all([p.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),
+      p.getByRole('button',{name:'Отгрузить заказ полностью',exact:true}).click()]);await p.waitForLoadState('networkidle');};
+    await Promise.all([post(page),post(second)]);await second.close();
+    assert.equal(q(`select to_jsonb(status) from public.sales where id='${sale}';`),'shipped');
+    checkpoint('shipped',{stock:{piece:77},reserved:0,movements:7,receipts:2});evidence.twoTabWrites=true;
+    await go(`/sales/${sale}?tab=returns`);
+    f=page.locator('form.customer-return-form');
+    const returnRow=f.locator('tbody tr').filter({hasText:'BROWSER-0-BROWSER-A'});
+    await returnRow.locator('input[name^="qty_"]').fill('1');
+    await returnRow.locator('select').selectOption('refused');await fill(f,{reason:'Synthetic unopened box'});
+    await submit(f,'Оформить возврат');
+    await go(`/sales/${sale}?tab=returns`);
+    f=page.locator('form.customer-return-decision');
+    await fill(f,{decision:'restock',note:'Synthetic inspection: intact'});await submit(f,'Принять решение');
+    checkpoint('returned',{stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
+    await go(`/finance?shipment=${shipment}`);f=buttonForm('Сохранить черновик');
+    await fill(f,{shipment_id:shipment,expense_type:'transport',amount:50,currency_id:refs.eur,notes:'Synthetic actual freight'});
+    await submit(f,'Сохранить черновик');
+    await go(`/finance?shipment=${shipment}`);await submit(buttonForm('Подтвердить'),'Подтвердить');
+    await go(`/finance?shipment=${shipment}`);f=buttonForm('Распределить');
+    await fill(f,{method:'by_quantity',target_currency_id:refs.eur});await submit(f,'Распределить');
+    await go(`/finance?shipment=${shipment}`);f=buttonForm('Рассчитать новую версию');
+    await fill(f,{shipment_id:shipment,target_currency_id:refs.eur});await submit(f,'Рассчитать новую версию');
+    await go(`/finance?shipment=${shipment}`);await submit(buttonForm('Утвердить себестоимость'),'Утвердить себестоимость');
+    const costs=q(`select jsonb_build_object('goods',goods_total,'expenses',expenses_total,'total',landed_total,'status',status) from public.cost_calculations where shipment_id='${shipment}' order by version_number desc limit 1;`);
+    assert.deepEqual(costs,{goods:346,expenses:50,total:396,status:'approved'});evidence.cost=costs;step('expense and costing approved through forms');
+    const unfinished=()=>q(`select coalesce(jsonb_agg(jsonb_build_object('id',r.id,'code',s.code) order by s.sequence_order,r.id),'[]') from public.shipment_stage_runs r join public.shipment_stages s on s.id=r.stage_id where r.shipment_id='${shipment}' and r.status not in('completed','skipped','not_applicable');`);
+    for(const run of unfinished()){
+      await go(`/shipments/${shipment}?tab=stages`);f=formWith('run_id',run.id);
+      await fill(f,{status:'completed',reason:'Synthetic historical stage verified'});await submit(f,'Сохранить');
+    }
+    assert.equal(q(`select to_jsonb(status) from public.shipments where id='${shipment}';`),'closed');
+    await go(`/shipments/${shipment}?tab=stages`);
+    f=buttonForm('Открыть повторно');await fill(f,{reason:'Synthetic correction with auditable reason'});await submit(f,'Открыть повторно');
+    assert.notEqual(q(`select to_jsonb(status) from public.shipments where id='${shipment}';`),'closed');
+    for(const run of unfinished()){
+      await go(`/shipments/${shipment}?tab=stages`);f=formWith('run_id',run.id);
+      await fill(f,{status:'completed',reason:'Synthetic reclosure after verification'});await submit(f,'Сохранить');
+    }
+    checkpoint('closed',{stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
+    assert.equal(q(`select to_jsonb(status) from public.shipments where id='${shipment}';`),'closed');
+    await go(`/shipments/${shipment}/report`);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});await page.screenshot({path:join(output,`full-cycle-report-${width}.png`),fullPage:true});
+      assert.match(await page.locator('body').innerText(),/Итог поставки/);
+      assert.match(await page.locator('body').innerText(),/396/);
+    }
+    await page.reload();await page.waitForLoadState('networkidle');assert.deepEqual(snapshot(),evidence.checkpoints.at(-1)&&{
+      stock:{piece:77,box:1},reserved:0,movements:8,receipts:2});
+    evidence.fullBrowserE2E=true;step('closed report and refresh verified');return evidence;
   }catch(error){
     writeFileSync(join(output,'browser-progress.json'),JSON.stringify(evidence,null,2));
     writeFileSync(join(output,'browser-failure.txt'),`URL: ${page.url()}\n${error.stack}\n\n${await page.locator('body').innerText().catch(()=>'(no page)')}`);
