@@ -30,7 +30,13 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     if(redirect)await page.waitForURL(new URL(redirect,base).href);
     await page.waitForLoadState('networkidle');
     const u=new URL(page.url());
-    for(const key of ['error','source_error','drive_error'])if(u.searchParams.has(key))throw new Error(`${key}: ${u.searchParams.get(key)}`);
+    for(const key of ['error','source_error','drive_error'])if(u.searchParams.has(key)){
+      const message=u.searchParams.get(key);
+      // Existing UI uses source_error for a successful OCR batch that needs human review.
+      // Only the explicit zero-unread summary is allowed; actual extraction rows are asserted next.
+      if(key==='source_error'&&label==='Распознать и сверить'&&/^Готово к проверке: \d+; нужна проверка: \d+; не прочитано: 0(?:;|\.)/.test(message))continue;
+      throw new Error(`${key}: ${message}`);
+    }
   }
   async function fill(form,values){for(const [name,value] of Object.entries(values)){
     const field=form.locator(`[name="${name}"]`);
@@ -192,7 +198,9 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.equal(snapshot().reserved,70);
     await go(`/sales/${sale}?tab=main`);
     // The first batch intentionally needs a shelf-life guarantee.
-    await assert.rejects(()=>submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ'),/гарантийн/i);
+    await assert.rejects(()=>submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ'),/error: Не удалось подтвердить заказ/);
+    assert.equal(q(`select to_jsonb(status) from public.sales where id='${sale}';`),'reserved');
+    assert.ok(q(`select min(remaining_shelf_life_pct) from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id where i.sale_id='${sale}' and r.status='active';`)<60);
     await go(`/sales/${sale}?tab=documents`);
     await submit(buttonForm('Проверить ОСГ и подготовить письмо'),'Проверить ОСГ и подготовить письмо');
     await go(`/sales/${sale}?tab=documents`);
@@ -214,8 +222,11 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await go(`/sales/${sale}?tab=shipping`);
     // Two real tabs submit the same server action with the same session.
     const second=await context.newPage();await second.goto(page.url());await second.waitForLoadState('networkidle');
-    const post=async p=>{await Promise.all([p.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),
-      p.getByRole('button',{name:'Отгрузить заказ полностью',exact:true}).click()]);await p.waitForLoadState('networkidle');};
+    const post=async p=>{const [response]=await Promise.all([p.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base)),
+      p.getByRole('button',{name:'Отгрузить заказ полностью',exact:true}).click()]);
+      assert.ok(response.status()<400);const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
+      if(redirect)await p.waitForURL(new URL(redirect,base).href);await p.waitForLoadState('networkidle');
+      assert.equal(new URL(p.url()).searchParams.has('error'),false);};
     await Promise.all([post(page),post(second)]);await second.close();
     assert.equal(q(`select to_jsonb(status) from public.sales where id='${sale}';`),'shipped');
     checkpoint('shipped',{stock:{piece:77},reserved:0,movements:7,receipts:2});evidence.twoTabWrites=true;
