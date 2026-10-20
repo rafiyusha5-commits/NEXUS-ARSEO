@@ -179,7 +179,7 @@ jobs:
   historical-readiness:
     name: historical-readiness
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -188,6 +188,9 @@ jobs:
         with:
           node-version: '24'
       - run: corepack enable && pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
       - name: Disposable browser tooling and PostgreSQL 16
         run: |
           docker pull postgres:16
