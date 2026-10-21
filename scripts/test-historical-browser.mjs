@@ -11,6 +11,8 @@ import {createRequire} from 'node:module';
 import {runHistoricalForms} from '../tests/pilot/historical-forms.mjs';
 import {makeExternalFixtures} from '../tests/pilot/external-fixtures.mjs';
 import {runRecoveryDrill, assertLocalDocker} from '../tests/recovery/drill.mjs';
+import {startFaultHttp} from '../tests/pilot/fault-http.mjs';
+import {runDocumentFaults} from '../tests/pilot/document-faults.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const recovery=process.argv.length===3&&process.argv[2]==='--recovery';
@@ -29,7 +31,7 @@ function command(bin,args,options={}){
   return r.stdout;
 }
 const cli=args=>command('supabase',['--workdir',stack,...args]);
-let started=false, server, log;
+let started=false, server, log, faultHttp;
 async function stopApp(){
   if(server){
     const child=server;let timer;
@@ -89,6 +91,9 @@ try{
     'b',(select id from public.products where internal_sku='990002'),
     'costProduct',(select id from public.products where internal_sku='990003'));`));
   const fixtures=makeExternalFixtures();
+  // Recovery keeps its existing independent fixture. Readiness additionally tests
+  // transport faults against this real HTTP boundary and the same disposable backend.
+  if(!recovery)faultHttp=await startFaultHttp(fixtures);
   const fixturesPath=join(work,'external.json');writeFileSync(fixturesPath,JSON.stringify(fixtures));
   // Only tracked application files; env and generated files can never be copied.
   const files=command('git',['ls-files','-z'],{cwd:root}).split('\0').filter(Boolean);
@@ -109,7 +114,7 @@ try{
     DRIVE_CATALOG_GATEWAY_SECRET:gateway,GOOGLE_SERVICE_ACCOUNT_EMAIL:'synthetic@pilot.iam.gserviceaccount.com',
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}}).privateKey,
     OCR_PROVIDER:'http',OCR_HTTP_ENDPOINT:'https://synthetic-ocr.invalid/recognize',OCR_HTTP_TOKEN:'synthetic-only',
-    OCR_ACKNOWLEDGE_DATA_TRANSFER:'true',OCR_MAX_DOCUMENTS_PER_RUN:'20',OCR_RUN_BUDGET_MS:'200000',
+    OCR_ACKNOWLEDGE_DATA_TRANSFER:'true',OCR_MAX_DOCUMENTS_PER_RUN:'20',OCR_RUN_BUDGET_MS:'200000',OCR_TIMEOUT_MS:'60000',
     AGENT_ENABLED:'false',TELEGRAM_ENABLED:'false',NEXT_FONT_GOOGLE_MOCKED_RESPONSES:fonts};
   console.log('Building actual Nexus against the isolated backend');
   const buildPath=join(output,'browser-build.log'),buildLog=openSync(buildPath,'w');
@@ -118,11 +123,14 @@ try{
   closeSync(buildLog);
   if(buildResult.status!==0)throw new Error(`Isolated build failed (${buildResult.error?.message??buildResult.status}): ${readFileSync(buildPath,'utf8').slice(-10000)}`);
   console.log('Actual Nexus build complete; starting browser server');
-  log=createWriteStream(join(output,'browser-server.log'));
+  async function startApp(){
+  log=createWriteStream(join(output,'browser-server.log'),{flags:'a'});
   server=spawn(process.execPath,['--import',join(root,'tests/pilot/external-boundaries.mjs'),join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p','3100'],
-    {cwd:app,env:{...env,NEXUS_SYNTHETIC_FIXTURES:fixturesPath,NEXUS_SYNTHETIC_REQUESTS:join(output,'external-requests.jsonl')},windowsHide:true,stdio:['ignore','pipe','pipe']});
+    {cwd:app,env:{...env,NEXUS_SYNTHETIC_FIXTURES:fixturesPath,NEXUS_SYNTHETIC_REQUESTS:join(output,'external-requests.jsonl'),...(faultHttp?{NEXUS_FAULT_HTTP:faultHttp.endpoint}:{})},windowsHide:true,stdio:['ignore','pipe','pipe']});
   server.stdout.pipe(log);server.stderr.pipe(log);
   for(let i=0;i<120;i++){try{if((await fetch('http://127.0.0.1:3100/login')).ok)break}catch{}if(i===119)throw new Error('Nexus did not start');await new Promise(r=>setTimeout(r,1000));}
+  }
+  await startApp();
   const req=createRequire(join(root,'package.json'));
   const {chromium}=req(process.env.NEXUS_TEST_PLAYWRIGHT||'playwright');
   const evidence=await runHistoricalForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output,fixtures});
@@ -132,6 +140,19 @@ try{
   assert.ok(requests.filter(r=>r.kind==='drive').every(r=>r.method==='GET'),'Drive is read-only');
   writeFileSync(join(output,'browser-result.json'),JSON.stringify({...evidence,backend:`Local Supabase, PostgreSQL ${version}`,externalRequests:requests.length},null,2));
   console.log('PASS full authenticated browser scenario',JSON.stringify(evidence));
+  if(faultHttp){
+    await runDocumentFaults({chromium,base:'http://127.0.0.1:3100',email,password,refs,sql,output,fixtures,http:faultHttp,
+      async restart(){
+        assert.ok(server&&server.exitCode===null,'Only the test Nexus process can be restarted');
+        const child=server;const exited=new Promise(r=>child.once('exit',r));child.kill('SIGKILL');await exited;
+        server=undefined;log?.end();log=undefined;await startApp();
+      },
+      async storageRead(bucket,path){
+        // Evidence-only owner read of this generated LOCAL backend, never used by application actions.
+        const r=await fetch(new URL(`/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`,api),{headers:{apikey:keys.SERVICE_ROLE_KEY,Authorization:`Bearer ${keys.SERVICE_ROLE_KEY}`}});
+        assert.ok(r.ok,`Stored object unavailable: ${r.status}`);return Buffer.from(await r.arrayBuffer());
+      }});
+  }
   if(recovery){
     await stopApp();
     await runRecoveryDrill({root,work,project,stack,command,sql,keys,api,refs,email,restrictedEmail,password,fixtures,
@@ -162,5 +183,6 @@ try{
   throw error;
 }finally{
   await stopApp();
+  if(faultHttp)await faultHttp.close();
   if(started){try{cli(['stop','--no-backup'])}catch{console.error('Could not stop isolated stack',project)}}
 }

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { checkpointProblems, browserEvidenceProblems } from '../tests/pilot/historical-contract.ts';
+import { FAULT_CASES } from '../tests/pilot/document-faults.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv.length > 2) throw new Error('No database URLs or external endpoints accepted');
 const playwright = process.env.NEXUS_TEST_PLAYWRIGHT || 'playwright';
@@ -23,6 +24,8 @@ if (problems.length) throw new Error(problems.join('; '));
 const browser = JSON.parse(readFileSync(resolve(root, 'test-results/historical/browser-result.json'), 'utf8'));
 const browserProblems = browserEvidenceProblems(browser);
 if (browserProblems.length) throw new Error(browserProblems.join('; '));
+const faults=JSON.parse(readFileSync(resolve(root,'test-results/historical/document-faults.json'),'utf8'));
+if(!faults.fullHttpMatrix||JSON.stringify(faults.cases.map(c=>c.name))!==JSON.stringify(FAULT_CASES)||faults.cases.some(c=>c.status!=='passed'))throw new Error('Full HTTP fault matrix is incomplete');
 const limitations = ['Synthetic documents and external Drive/OCR HTTP boundaries; real company files and external providers are not exercised.'];
 const defects = [];
 if (!capture.costDiagnostic.owner_rule_satisfied) defects.push({
@@ -30,7 +33,7 @@ if (!capture.costDiagnostic.owner_rule_satisfied) defects.push({
   expected: 10, actual: capture.costDiagnostic.actual_unit_cost,
   scenario: '100 paid at 10 EUR, 98 received; goods_cost=1000 allocated and marked paid',
 });
-const report = { fullBrowserE2E: true, defects, limitations, checkpoints: capture.checkpoints, browser, backend: capture.backend };
+const report = { fullBrowserE2E: true, defects, limitations, checkpoints: capture.checkpoints, browser, faults, backend: capture.backend };
 writeFileSync(resolve(root, 'test-results/historical/readiness.json'), JSON.stringify(report, null, 2));
 console.table(capture.checkpoints.map(r => ({ stage: r.stage, stock: JSON.stringify(r.stock), reserved: r.reserved, movements: r.movements })));
 if (defects.length) throw new Error(JSON.stringify(defects));
