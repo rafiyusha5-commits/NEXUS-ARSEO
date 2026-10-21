@@ -22,9 +22,16 @@ export async function runRecoveryDrill(c){
     for(const name of names)assertContainer(name,p);return names;
   };
   const inspect=name=>JSON.parse(docker(['inspect',name]))[0];
+  // Supabase's postgres login is deliberately not its bootstrap superuser.
+  // Only the existing local bootstrap role can restore Auth/Storage ownership.
+  // Never grant privileges or strip ownership/ACL from the backup to bypass this.
+  const restoreRole='supabase_admin';
+  const assertBootstrapRole=db=>assert.equal(docker(['exec',db,'psql','-U',restoreRole,'-d','postgres','-X','-qAt','-v','ON_ERROR_STOP=1',
+    '-c','select rolsuper from pg_roles where rolname=current_user;']).trim(),'t','Local Supabase bootstrap superuser is required');
   const sourceDb=`supabase_db_${project}`,sourceStorage=`supabase_storage_${project}`;
   const initialIds=new Map(containers(project).map(name=>[name,inspect(name).Id]));
   assert.ok(initialIds.has(sourceDb)&&initialIds.has(sourceStorage));
+  assertBootstrapRole(sourceDb);
   const validateSource=()=>{for(const [name,id]of initialIds)assert.equal(inspect(name).Id,id,'Source container replaced');};
   const q=text=>JSON.parse(sql(text));
   async function login(k,account){
@@ -92,7 +99,7 @@ export async function runRecoveryDrill(c){
         :'test -z "$(find /mnt -type f -print -quit)" && tar -C /mnt -xf /backup/storage.tar']);
   }
   let mark=performance.now();
-  docker(['exec',sourceDb,'pg_dump','-U','postgres','-d','postgres','--format=custom','--file=/tmp/recovery.dump']);
+  docker(['exec',sourceDb,'pg_dump','-U',restoreRole,'-d','postgres','--format=custom','--file=/tmp/recovery.dump']);
   docker(['cp',`${sourceDb}:/tmp/recovery.dump`,join(backup,'database.dump')]);
   volumeTar(sourceStorage,['create']);timings.backupSeconds=(performance.now()-mark)/1000;
   const checksums={database:sha256(readFileSync(join(backup,'database.dump'))),storage:sha256(readFileSync(join(backup,archive)))};
@@ -109,6 +116,7 @@ export async function runRecoveryDrill(c){
     const targetKeys=JSON.parse(targetCli(['status','-o','json']));assertLocalApi(targetKeys.API_URL);
     const targetDb=`supabase_db_${target}`,targetStorage=`supabase_storage_${target}`;
     const targetId=inspect(targetDb).Id;
+    assertBootstrapRole(targetDb);
     const restoredSql=text=>docker(['exec','-i',targetDb,'psql','-U','postgres','-d','postgres','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:text});
     assert.equal(restoredSql('show server_version;').trim(),sourceVersion,'Restore requires matching engine version');
     assert.equal(restoredSql("select to_regclass('public.shipments') is null and not exists(select 1 from auth.users) and not exists(select 1 from storage.objects);").trim(),'t','Destination is not empty');
@@ -126,7 +134,7 @@ export async function runRecoveryDrill(c){
     // The destination was recreated from template0 above. --clean would issue
     // DROP POLICY ... ON storage.objects before the storage schema exists;
     // IF EXISTS on the policy does not guard its missing parent relation/schema.
-    docker(['exec',targetDb,'pg_restore','-U','postgres','-d','postgres','--exit-on-error','/tmp/recovery.dump']);
+    docker(['exec',targetDb,'pg_restore','-U',restoreRole,'-d','postgres','--exit-on-error','/tmp/recovery.dump']);
     timings.databaseRestoreSeconds=(performance.now()-mark)/1000;
     assert.deepEqual(snapshot(restoredSql),before,'Restored table contents differ');
     assert.deepEqual(JSON.parse(restoredSql(schemaSql)),schemaBefore,'Schema/RLS/ACL/sequences differ');
