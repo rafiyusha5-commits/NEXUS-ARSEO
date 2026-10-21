@@ -20,3 +20,13 @@ test("provider text, SQL, tokens and filenames never reach safe messages or diag
   assert.equal(processingErrorCode(new Error("Недостаточно прав"), "storage"), "ACCESS_DENIED");
   assert.equal(processingErrorCode(new Error("response lost"), "registering"), "SAVE_UNCERTAIN");
 });
+
+test("temporary failures wait for retry while uncertain results require employee review", () => {
+  const row: ProcessingReceipt = { id: "synthetic", kind: "import", state: "failed", stage: "storage", started_at: "2030-01-01T00:00:00Z",
+    updated_at: "2030-01-01T00:00:01Z", lease_until: "2030-01-01T00:02:00Z", finished_at: "2030-01-01T00:00:01Z", error_code: "STORAGE_FAILED" };
+  for (const error_code of ["STORAGE_FAILED", "SOURCE_UNAVAILABLE", "INTERRUPTED"] as const)
+    assert.equal(processingState({ ...row, error_code }, 0), "waiting_retry");
+  for (const error_code of ["SAVE_UNCERTAIN", "ACCESS_DENIED", "SESSION_EXPIRED", "SOURCE_CHANGED", "UNSUPPORTED"] as const)
+    assert.equal(processingState({ ...row, error_code }, 0), "needs_action");
+  assert.equal(processingState({ ...row, state: "completed" }, 0), "completed");
+});

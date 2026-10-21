@@ -5,4 +5,5 @@ createRoot(document.getElementById("root")!).render(<ProcessingStatus serverNow=
   { ...common, id: "synthetic-interrupted", state: "running" },
   { ...common, id: "synthetic-completed", state: "completed", stage: "finished", finished_at: "2030-01-01T00:00:10Z" },
   { ...common, id: "synthetic-uncertain", state: "needs_action", error_code: "SAVE_UNCERTAIN" },
+  { ...common, id: "synthetic-retry", state: "failed", error_code: "SOURCE_UNAVAILABLE" },
 ]}/>);
