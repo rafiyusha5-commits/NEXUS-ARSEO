@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { processingState, processingErrors, type ProcessingReceipt } from "@/lib/documents/processing-status";
 const stages: Record<string, string> = { checking: "Проверка прав и квитанции", reading: "Чтение папки", recognizing: "Распознавание документа", downloading: "Скачивание и проверка файла", storage: "Сохранение файла Nexus", registering: "Регистрация результата", finished: "Результат сохранён" };
-const states: Record<string, string> = { running: "Выполняется", completed: "Завершена", failed: "Не выполнена", needs_action: "Требуется действие сотрудника" };
+const states: Record<string, string> = { running: "Выполняется", completed: "Завершена", waiting_retry: "Ожидает повторения", needs_action: "Требуется действие сотрудника" };
 const kinds: Record<string, string> = { scan: "Проверка папки", import: "Импорт", ocr: "Распознавание", bind: "Привязка", check: "Сравнение содержимого", link: "Связывание документа" };
 export function ProcessingStatus({ receipts, serverNow }: { receipts: ProcessingReceipt[]; serverNow: number }) {
   const [now, setNow] = useState(serverNow);
@@ -21,6 +21,7 @@ export function ProcessingStatus({ receipts, serverNow }: { receipts: Processing
         <strong>{states[state]} · {kinds[r.kind] ?? "Обработка документа"}</strong>
         <p>{stages[r.stage]} · зафиксированная длительность {(elapsed / 1000).toFixed(1)} с</p>
         {(r.error_code || state === "needs_action") && <p role="status">{processingErrors[r.error_code ?? "INTERRUPTED"]}</p>}
+        {state === "waiting_retry" && <p>Автоматический повтор не запущен. Проверьте сохранённый результат и повторите действие для этого файла.</p>}
         <small>Операция {r.id}</small>
       </article>;
     })}

@@ -33,6 +33,7 @@ try {
       await page.goto(url); await page.getByText("synthetic-completed", { exact: false }).waitFor();
       const before = await page.locator("body").innerText();
       assert.match(before, /Требуется действие сотрудника/); assert.match(before, /Результат сохранения пока не подтверждён/);
+      assert.match(before, /Ожидает повторения/); assert.match(before, /Автоматический повтор не запущен/);
       assert.equal(before.includes("Выполняется"), false, "expired lease must not look active");
       assert.equal(before.includes("%"), false, "no invented percentages");
       await page.reload(); await page.getByText("synthetic-completed", { exact: false }).waitFor();
