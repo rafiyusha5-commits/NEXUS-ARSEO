@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
-import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,sha256} from './guards.mjs';
+import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,storageMount,sha256} from './guards.mjs';
 
 export function assertLocalDocker(command){
   const contexts=JSON.parse(command('docker',['context','inspect']));
@@ -81,15 +81,15 @@ export async function runRecoveryDrill(c){
   const snapshotSql=readFileSync(join(root,'tests/recovery/snapshot.sql'),'utf8'),schemaSql=readFileSync(join(root,'tests/recovery/schema.sql'),'utf8');
   const snapshot=runner=>JSON.parse(runner(snapshotSql).trim());
   const before=snapshot(sql),schemaBefore=q(schemaSql);
-  const storageMount=inspect(sourceStorage).Mounts.find(m=>m.Destination==='/var/lib/storage');assert.ok(storageMount);
+  const sourceMount=storageMount(inspect(sourceStorage),project);
   const archive='storage.tar';
   function volumeTar(storage,args){
     assertContainer(storage,storage===sourceStorage?project:target);
     docker(['run','--rm','--pull=never','--network=none','--name','nexus-recovery-copy-'+randomUUID(),
       '--volumes-from',storage+(args[0]==='create'?':ro':''),'--mount',`type=bind,src=${backup},dst=/backup`,
       '--entrypoint','sh','postgres:16','-c',args[0]==='create'
-        ?'tar -C /var/lib/storage -cf /backup/storage.tar .'
-        :'test -z "$(find /var/lib/storage -type f -print -quit)" && tar -C /var/lib/storage -xf /backup/storage.tar']);
+        ?'tar -C /mnt -cf /backup/storage.tar .'
+        :'test -z "$(find /mnt -type f -print -quit)" && tar -C /mnt -xf /backup/storage.tar']);
   }
   let mark=performance.now();
   docker(['exec',sourceDb,'pg_dump','-U','postgres','-d','postgres','--format=custom','--file=/tmp/recovery.dump']);
@@ -114,8 +114,8 @@ export async function runRecoveryDrill(c){
     assert.equal(restoredSql("select to_regclass('public.shipments') is null and not exists(select 1 from auth.users) and not exists(select 1 from storage.objects);").trim(),'t','Destination is not empty');
     restoredSql(`create schema recovery_drill;create table recovery_drill.marker(id uuid primary key);insert into recovery_drill.marker values('${runId}');`);
     assert.equal(restoredSql('select id from recovery_drill.marker;').trim(),runId);
-    const targetMount=inspect(targetStorage).Mounts.find(m=>m.Destination==='/var/lib/storage');assert.ok(targetMount);
-    assert.notEqual(targetMount.Source,storageMount.Source,'Storage volumes must be independent');
+    const targetMount=storageMount(inspect(targetStorage),target);
+    assert.notEqual(targetMount.Source,sourceMount.Source,'Storage volumes must be independent');
     const services=containers(target).filter(n=>n!==targetDb);docker(['stop',...services]);
     assert.equal(inspect(targetDb).Id,targetId);assertChecksum(readFileSync(join(backup,'database.dump')),checksums.database);assertChecksum(readFileSync(join(backup,archive)),checksums.storage);
     mark=performance.now();

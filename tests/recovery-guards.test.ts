@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 // Test-only JS utilities, no runtime dependencies or application changes.
-import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,sha256} from './recovery/guards.mjs';
+import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,storageMount,sha256} from './recovery/guards.mjs';
 test('recovery rejects remote Docker, database URLs and foreign container targets',()=>{
   for(const value of ['tcp://127.0.0.1:2375','ssh://host','https://docker.example',''])assert.throws(()=>assertDockerEndpoint(value));
   assertDockerEndpoint('unix:///var/run/docker.sock');assertDockerEndpoint('npipe:////./pipe/docker_engine');
@@ -19,4 +19,13 @@ test('archive verification rejects corruption and missing checksums',()=>{
   const data=Buffer.from('SYNTHETIC BACKUP');const checksum=sha256(data);
   assertChecksum(data,checksum);assert.throws(()=>assertChecksum(Buffer.from('corrupt'),checksum));
   assert.throws(()=>assertChecksum(data,''));
+});
+test('Storage archive only uses the pinned CLI dedicated local file volume',()=>{
+  const project='nexus-e2e-abcd1234';
+  const mount={Destination:'/mnt',Type:'volume',Name:`supabase_storage_${project}`,Source:'/docker/volumes/synthetic'};
+  const info={Config:{Env:['STORAGE_BACKEND=file','FILE_STORAGE_BACKEND_PATH=/mnt']},Mounts:[mount]};
+  assert.deepEqual(storageMount(info,project),mount);
+  assert.throws(()=>storageMount({...info,Mounts:[{...mount,Name:'owner-storage'}]},project));
+  assert.throws(()=>storageMount({...info,Mounts:[{...mount,Type:'bind'}]},project));
+  assert.throws(()=>storageMount({...info,Config:{Env:['STORAGE_BACKEND=s3']}},project));
 });
