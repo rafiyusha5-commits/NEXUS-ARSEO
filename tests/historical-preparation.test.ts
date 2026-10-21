@@ -66,3 +66,58 @@ test("current invoice/packing evidence is projected once, with warnings preserve
   assert.equal(result.rows[0].quantities?.proposals[0].quantity, null);
   assert.ok(result.rows[0].quantities?.warnings.includes("Synthetic incomplete table"));
 });
+
+test("Polish invoice pieces use the shared unit registry without changing source text", () => {
+  const input = preparationFixture("complete");
+  input.sources[0].extracted_data.commodity_invoice = { number: "SYN-10", currency: "EUR", total: 965, warnings: [], items: [{ number: 1, sku: "SYN-A", description: "Synthetic", hsCode: null, quantity: 965, unit: "sztuka", amount: 965, grossKg: null, netKg: null, customsValue: null, warnings: [] }] };
+  input.sources = input.sources.map(preparationSourceValues);
+  const before = JSON.stringify(input), row = preparationPreview(input).rows[0];
+  assert.equal(row.quantities?.proposals[0].quantity, 965);
+  assert.equal(row.lines[0].uom, "sztuka", "the original evidence unit remains visible");
+  assert.equal(JSON.stringify(input), before);
+  for (const unit of ["kg", "box", "unknown"]) {
+    input.sources[0].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 965, uom: unit }];
+    assert.equal(preparationPreview(input).rows[0].quantities?.proposals[0].quantity, null, "never infer pieces from weight or packaging");
+  }
+});
+
+test("965 invoice / 960 packing is a conflict with both sources, not a receiving shortage", () => {
+  const input = preparationFixture("complete");
+  input.sources[1].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 960, uom: "шт" }];
+  const before = JSON.stringify(input), result = preparationPreview(input);
+  const a = result.rows[0].quantityConflicts[0], b = result.rows[1].quantityConflicts[0];
+  assert.equal(a.quantity, 965); assert.equal(a.otherQuantity, 960);
+  assert.equal(b.quantity, 960); assert.equal(b.otherQuantity, 965);
+  assert.equal(a.otherHref, result.rows[1].href);
+  assert.ok(result.actions.some(a => a.includes("есть расхождения")));
+  assert.doesNotMatch(JSON.stringify(result.rows.map(r => r.quantityConflicts)), /недостача/i);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test("quantity comparison never combines copies or crosses operations and vehicle scopes", () => {
+  const input = preparationFixture("complete");
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0);
+  input.sources[1].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 960, uom: "шт" }];
+  input.choices[1].variant = "translation";
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 1, "translation disagreement remains visible");
+  input.choices[1].group = "sale";
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0);
+  input.choices[1].group = "procurement";
+  input.sources[1].shipment_transport_id = "a";
+  input.items[0].shipment_transport_id = "a";
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0, "whole shipment and a single vehicle are distinct scopes");
+});
+
+test("incomplete, ambiguous and unavailable evidence cannot create a quantity conflict", () => {
+  const input = preparationFixture("complete");
+  input.sources[1].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 960, uom: "шт" }];
+  input.sources[1].readingWarnings = ["Partial source"];
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0);
+  input.sources[1].readingWarnings = [];
+  input.sources[1].extracted_data.invoice_items = [{ sku: "UNKNOWN", quantity: 960, uom: "шт" }];
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0);
+  input.sources[1].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 960, uom: "шт" }];
+  const document = input.sources[1].document;
+  assert.ok(document && !Array.isArray(document)); document.archived_at = "2026-10-21";
+  assert.equal(preparationPreview(input).rows[0].quantityConflicts.length, 0);
+});

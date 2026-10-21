@@ -1,7 +1,7 @@
 import { usableSourceContext, type ContextSource } from "../document-extraction/source-context.ts";
 import { SOURCE_FIELD_DEFINITIONS, conflictsAcrossDocuments } from "../document-extraction/rules.ts";
 import { analyseDocumentQuantities, itemsInDocumentScope, type DocumentLine, type QuantityItem } from "./document-quantities.ts";
-import { isCommodityInvoice } from "../document-extraction/commodity-evidence.ts";
+import { commodityUnit, isCommodityInvoice } from "../document-extraction/commodity-evidence.ts";
 import { isPackingEvidence } from "../document-extraction/packing-evidence.ts";
 
 export const preparationGroups = { unknown: "Назначение не установлено", procurement: "Закупка", import_transport: "Импортная перевозка", customs: "Таможня", sale: "Продажа", export_transport: "Экспортная перевозка" } as const;
@@ -10,6 +10,7 @@ export const preparationStates = { documented: "Установлено по до
 export type PreparationChoice = { id: string; version: string; updated: string; group: keyof typeof preparationGroups; variant: keyof typeof preparationVariants };
 export type PreparationSource = ContextSource & { id: string; document_id: string; updated_at: string; reviewed_at: string | null; source_kind: string; extracted_data: Record<string, unknown>; confirmed_data: Record<string, unknown>; readingWarnings?: string[] };
 export type PreparationInput = { shipmentId: string; transportIds: string[]; complete: boolean; sources: PreparationSource[]; choices: PreparationChoice[]; items: QuantityItem[] };
+export type PreparationQuantityConflict = { itemId: string; label: string; unit: string; quantity: number; otherQuantity: number; otherTitle: string; otherHref: string };
 
 export function preparationSourceValues(source: PreparationSource): PreparationSource {
   const project = (data: Record<string, unknown>) => Object.fromEntries(SOURCE_FIELD_DEFINITIONS.flatMap(f => {
@@ -57,14 +58,15 @@ export function preparationPreview(input: PreparationInput) {
       || line.quantity != null && (typeof line.quantity !== "number" || !Number.isFinite(line.quantity)));
     const lines = Array.isArray(rawLines) && !malformed ? rawLines as DocumentLine[] : [];
     const quantities = ["invoice", "specification"].includes(source.source_kind)
-      ? analyseDocumentQuantities(itemsInDocumentScope(input.items, source.shipment_transport_id ?? null), lines) : null;
+      ? analyseDocumentQuantities(itemsInDocumentScope(input.items, source.shipment_transport_id ?? null),
+        lines.map(line => ({ ...line, uom: commodityUnit(line.uom) ?? line.uom }))) : null;
     if (malformed && quantities) quantities.warnings.push("Товарные строки повреждены: требуется повторная проверка источника.");
     if (quantities && source.readingWarnings?.length) {
       quantities.warnings.push(...source.readingWarnings);
       quantities.proposals = quantities.proposals.map(p => ({ ...p, quantity: null, review: "Чтение строк неполно или противоречиво. Проверьте исходный документ." }));
     }
     return { id: source.id, documentId: source.document_id, version: source.document_version_id, title, choice, stale,
-      transportId: source.shipment_transport_id ?? null, fields, quantities, lines,
+      transportId: source.shipment_transport_id ?? null, fields, quantities, lines, quantityConflicts: [] as PreparationQuantityConflict[],
       href: `/documents/${source.document_id}/download?version=${source.document_version_id}` };
   });
   // Do not compare import/export or different vehicles, nor infer their context from filenames.
@@ -84,6 +86,19 @@ export function preparationPreview(input: PreparationInput) {
         (field as { state: keyof typeof preparationStates }).state = "conflict";
       }
     }
+    // Reuse the existing matcher's accepted proposals, never sum original/translation
+    // or convert packaging. Compare only the same item in the same operation/vehicle.
+    for (let i = 0; i < group.length; i++) for (const other of group.slice(i + 1)) {
+      const row = group[i];
+      for (const left of row.quantities?.proposals ?? []) {
+        const right = other.quantities?.proposals.find(p => p.itemId === left.itemId);
+        if (left.quantity === null || right?.quantity == null || Math.abs(left.quantity - right.quantity) <= 0.000001) continue;
+        const item = input.items.find(item => item.id === left.itemId)!;
+        const shared = { itemId: item.id, label: item.product?.internal_sku ?? "Позиция поставки", unit: item.uom };
+        row.quantityConflicts.push({ ...shared, quantity: left.quantity, otherQuantity: right.quantity, otherTitle: other.title, otherHref: other.href });
+        other.quantityConflicts.push({ ...shared, quantity: right.quantity, otherQuantity: left.quantity, otherTitle: row.title, otherHref: row.href });
+      }
+    }
   }
   const actions = new Set<string>(["Фактическую приёмку подтвердить отдельным основанием; этот мастер её не проводит."]);
   for (let n = 0; n < input.transportIds.length; n++) actions.add(`Проверить комплект автомобиля ${n + 1} в штатной «Сверке»; документ другой перевозки его не заменяет.`);
@@ -95,6 +110,7 @@ export function preparationPreview(input: PreparationInput) {
     if (row.choice.variant === "unknown") actions.add(`Установить вид «${row.title}»: оригинал, перевод, копия или новая версия.`);
     if (row.choice.group.endsWith("transport") && !row.transportId) actions.add(`Установить автомобиль для «${row.title}» в существующей форме контекста. Выбор в проекте не меняет привязку.`);
     if (row.fields.some(f => (f.state as string) === "conflict")) actions.add(`Разобрать противоречия «${row.title}»; значения не перезаписывались.`);
+    if (row.quantityConflicts.length) actions.add(`Сверить количества «${row.title}» с другими документами: есть расхождения. Уточнить, относятся ли документы к одной отгрузке; значения не перезаписывались.`);
     if (row.fields.some(f => f.state === "documented")) actions.add(`Проверить прочитанные значения «${row.title}» в штатной форме подтверждения.`);
     if (row.quantities && (!row.lines.length || row.quantities.warnings.length || row.quantities.proposals.some(p => p.review))) actions.add(`Сопоставить товарные строки и единицы «${row.title}»; количества не перенесены.`);
   }

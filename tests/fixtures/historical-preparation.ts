@@ -11,7 +11,10 @@ export function preparationFixture(kind: "complete" | "incomplete" | "conflictin
     { ...source("packing", "procurement", null, { packing_list_number: "SYN-P10", invoice_items: [{ sku: "SYN-A", quantity: 965, uom: "шт" }] }), source_kind: "specification" },
     source("cmr-a", "import_transport", "a", { cmr_number: "SYN-CMR-A", vehicle_plate: "SYN-A" }), source("customs", "customs", null, { invoice_number: "SYN-10" }),
     source("sale", "sale", null, { invoice_number: "SYN-SALE-20" }), source("export", "export_transport", "a", { cmr_number: "SYN-EXPORT", vehicle_plate: "SYN-EXPORT" })];
-  if (kind === "conflicting") sources.push(source("cmr-b", "import_transport", "b", { cmr_number: "SYN-CMR-B", vehicle_plate: "SYN-B" }), source("translation", "import_transport", "a", { cmr_number: "SYN-CONFLICT", vehicle_plate: "SYN-A" }));
+  if (kind === "conflicting") {
+    sources[1].extracted_data.invoice_items = [{ sku: "SYN-A", quantity: 960, uom: "шт" }];
+    sources.push(source("cmr-b", "import_transport", "b", { cmr_number: "SYN-CMR-B", vehicle_plate: "SYN-B" }), source("translation", "import_transport", "a", { cmr_number: "SYN-CONFLICT", vehicle_plate: "SYN-A" }));
+  }
   return { shipmentId: "s", complete: true, transportIds: ["a", "b"], sources,
     choices: sources.map(s => ({ id: s.id, version: s.document_version_id, updated: s.updated_at, group: ["invoice", "packing"].includes(s.id) ? "procurement" : s.id === "customs" ? "customs" : s.id === "sale" ? "sale" : s.id === "export" ? "export_transport" : "import_transport", variant: s.id === "translation" ? "translation" : "original" })),
     items: [{ id: "item-a", uom: "piece", shipment_transport_id: null, product: { internal_sku: "SYN-A", name: { ru: "Вымышленный товар" } } }],

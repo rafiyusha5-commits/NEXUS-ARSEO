@@ -43,12 +43,17 @@ try{
     }
     await page.getByRole('button',{name:'2. Источники значений',exact:true}).click();
     if(set==='complete')assert.match(await page.locator('body').innerText(),/965/);
-    if(set==='conflicting')assert.match(await page.locator('body').innerText(),/Противоречие/);
+    if(set==='conflicting'){
+      assert.equal(await page.getByRole('heading',{name:'Противоречие количества',exact:true}).count(),2);
+      assert.match(await page.locator('[role="status"]').first().innerText(),/965[\s\S]*960/);
+      assert.equal(await page.locator('[role="status"] a[href*="version="]').count(),2);
+    }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     if(process.argv[3]){await mkdir(resolve(process.argv[3]),{recursive:true});await page.screenshot({path:resolve(process.argv[3],`preparation-${set}-${width}.png`),fullPage:true});}
     await page.getByRole('button',{name:'3. Действия перед переносом',exact:true}).click();
     assert.match(await page.locator('body').innerText(),/отдельным основанием/);
     if(set==='incomplete')assert.match(await page.locator('body').innerText(),/Загрузить и проверить/);
+    if(set==='conflicting')assert.match(await page.locator('body').innerText(),/есть расхождения/);
     await page.getByRole('button',{name:'Сохранить черновик',exact:true}).click();
     await page.getByText('Synthetic save requested',{exact:true}).waitFor();
     assert.deepEqual(errors,[]);await page.close();console.log(`PASS preparation ${set} ${width}px`);
