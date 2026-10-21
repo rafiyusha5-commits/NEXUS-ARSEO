@@ -35,6 +35,8 @@ try{
     await page.goto(`${url}?set=${set}`);
     await page.getByRole('heading',{name:'Подготовка исторической поставки',exact:true}).waitFor();
     assert.equal(await page.locator('#result').textContent(),'');
+    await page.getByLabel('Назначение проекта',{exact:true}).selectOption('true');
+    assert.equal(await page.getByLabel('Назначение проекта',{exact:true}).inputValue(),'true');
     if(set!=='incomplete'){
       await page.locator('.historical-card select').first().selectOption('sale');
       await page.locator('.historical-card select').first().selectOption('procurement');
