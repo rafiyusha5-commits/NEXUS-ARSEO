@@ -30,6 +30,8 @@ try {
     docker(['exec', name, 'mkdir', '/pilot']);
     // Copy only SQL and the existing test runner, never .env, keys or user files.
     docker(['cp', resolve(root, 'supabase'), `${name}:/pilot/supabase`]);
+    docker(['exec', name, 'mkdir', '-p', '/pilot/tests/recovery']);
+    docker(['cp', resolve(root, 'tests/recovery/schema.sql'), `${name}:/pilot/tests/recovery/schema.sql`]);
     docker(['exec', name, 'mkdir', '/pilot/scripts']);
     docker(['exec', name, 'mkdir', '/pilot/docs']);
     docker(['cp', resolve(root, 'docs/reference-import.example.json'), `${name}:/pilot/docs/reference-import.example.json`]);

@@ -123,7 +123,10 @@ export async function runRecoveryDrill(c){
     docker(['exec',targetDb,'dropdb','-U','postgres','--force','postgres']);
     docker(['exec',targetDb,'createdb','-U','postgres','--template=template0','postgres']);
     docker(['cp',join(backup,'database.dump'),`${targetDb}:/tmp/recovery.dump`]);
-    docker(['exec',targetDb,'pg_restore','-U','postgres','-d','postgres','--exit-on-error','--clean','--if-exists','/tmp/recovery.dump']);
+    // The destination was recreated from template0 above. --clean would issue
+    // DROP POLICY ... ON storage.objects before the storage schema exists;
+    // IF EXISTS on the policy does not guard its missing parent relation/schema.
+    docker(['exec',targetDb,'pg_restore','-U','postgres','-d','postgres','--exit-on-error','/tmp/recovery.dump']);
     timings.databaseRestoreSeconds=(performance.now()-mark)/1000;
     assert.deepEqual(snapshot(restoredSql),before,'Restored table contents differ');
     assert.deepEqual(JSON.parse(restoredSql(schemaSql)),schemaBefore,'Schema/RLS/ACL/sequences differ');

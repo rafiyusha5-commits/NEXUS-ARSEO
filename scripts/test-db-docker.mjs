@@ -18,8 +18,9 @@ try {
   docker(['exec', name, 'sh', '-c', 'for i in $(seq 1 30); do pg_isready -U postgres >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1']);
   const version = docker(['exec', name, 'psql', '-XAt', '-U', 'postgres', '-c', 'show server_version_num']).trim();
   if (Number(version) < 160000 || Number(version) >= 170000) throw new Error('PostgreSQL 16 required');
-  docker(['exec', name, 'mkdir', '-p', '/pilot/scripts', '/pilot/docs']);
+  docker(['exec', name, 'mkdir', '-p', '/pilot/scripts', '/pilot/docs', '/pilot/tests/recovery']);
   docker(['cp', resolve(root, 'supabase'), `${name}:/pilot/supabase`]);
+  docker(['cp', resolve(root, 'tests/recovery/schema.sql'), `${name}:/pilot/tests/recovery/schema.sql`]);
   docker(['cp', resolve(root, 'scripts/test-db.sh'), `${name}:/pilot/scripts/test-db.sh`]);
   for (const file of readdirSync(resolve(root, 'scripts')).filter(n => /^test-.*\.mjs$/.test(n))) {
     docker(['cp', resolve(root, 'scripts', file), `${name}:/pilot/scripts/${file}`]);
