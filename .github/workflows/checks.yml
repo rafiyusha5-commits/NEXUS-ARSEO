@@ -205,3 +205,35 @@ jobs:
           name: synthetic-historical-evidence
           path: test-results/historical/
           if-no-files-found: warn
+
+  recovery-drill:
+    name: recovery-drill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Isolated restore tooling
+        run: |
+          docker pull postgres:16
+          npm install --prefix "$RUNNER_TEMP/nexus-browser" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/nexus-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual database, Storage and application recovery
+        run: NEXUS_TEST_PLAYWRIGHT="$RUNNER_TEMP/nexus-browser/node_modules/playwright" pnpm run test:recovery
+      - name: Synthetic verification only (never upload database dumps, Auth tokens or local keys)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-recovery-evidence
+          path: |
+            test-results/recovery/recovery-result.json
+            test-results/recovery/restored-*.png
+          if-no-files-found: warn
