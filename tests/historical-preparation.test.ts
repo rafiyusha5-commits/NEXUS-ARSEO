@@ -52,3 +52,17 @@ test("projection strips unknown text/metadata and malformed lines cannot supply 
   assert.equal(row.quantities?.proposals[0].quantity, null);
   assert.ok(row.quantities?.warnings.some(w => w.includes("повреждены")));
 });
+test("current invoice/packing evidence is projected once, with warnings preserved", () => {
+  const input = preparationFixture("complete");
+  input.sources[0].extracted_data.commodity_invoice = { number: "SYN-10", currency: "EUR", total: 965, warnings: [], items: [{ number: 1, sku: "SYN-A", description: "Synthetic", hsCode: null, quantity: 965, unit: "шт", amount: 965, grossKg: null, netKg: null, customsValue: null, warnings: [] }] };
+  input.sources[1].extracted_data.packing_evidence = { number: "SYN-P10", total: 965, warnings: [], items: [{ sku: "SYN-A", quantity: 965, unit: "piece" }] };
+  input.sources = input.sources.map(preparationSourceValues);
+  let result = preparationPreview(input);
+  assert.equal(result.rows[0].lines.length, 1, "legacy and current representations are not added");
+  assert.equal(result.rows[1].lines[0].quantity, 965);
+  assert.equal(result.rows[1].quantities?.proposals[0].quantity, 965);
+  input.sources[0].readingWarnings = ["Synthetic incomplete table"];
+  result = preparationPreview(input);
+  assert.equal(result.rows[0].quantities?.proposals[0].quantity, null);
+  assert.ok(result.rows[0].quantities?.warnings.includes("Synthetic incomplete table"));
+});

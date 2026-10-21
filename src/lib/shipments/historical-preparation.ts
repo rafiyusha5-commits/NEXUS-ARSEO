@@ -1,20 +1,30 @@
 import { usableSourceContext, type ContextSource } from "../document-extraction/source-context.ts";
 import { SOURCE_FIELD_DEFINITIONS, conflictsAcrossDocuments } from "../document-extraction/rules.ts";
 import { analyseDocumentQuantities, itemsInDocumentScope, type DocumentLine, type QuantityItem } from "./document-quantities.ts";
+import { isCommodityInvoice } from "../document-extraction/commodity-evidence.ts";
+import { isPackingEvidence } from "../document-extraction/packing-evidence.ts";
 
 export const preparationGroups = { unknown: "Назначение не установлено", procurement: "Закупка", import_transport: "Импортная перевозка", customs: "Таможня", sale: "Продажа", export_transport: "Экспортная перевозка" } as const;
 export const preparationVariants = { unknown: "Вид не установлен", original: "Оригинал", translation: "Перевод", copy: "Копия", new_version: "Новая версия файла" } as const;
 export const preparationStates = { documented: "Установлено по документу", confirmed: "Подтверждено сотрудником", assumption: "Предположение", unknown: "Не установлено", conflict: "Противоречие" } as const;
 export type PreparationChoice = { id: string; version: string; updated: string; group: keyof typeof preparationGroups; variant: keyof typeof preparationVariants };
-export type PreparationSource = ContextSource & { id: string; document_id: string; updated_at: string; reviewed_at: string | null; source_kind: string; extracted_data: Record<string, unknown>; confirmed_data: Record<string, unknown> };
+export type PreparationSource = ContextSource & { id: string; document_id: string; updated_at: string; reviewed_at: string | null; source_kind: string; extracted_data: Record<string, unknown>; confirmed_data: Record<string, unknown>; readingWarnings?: string[] };
 export type PreparationInput = { shipmentId: string; transportIds: string[]; complete: boolean; sources: PreparationSource[]; choices: PreparationChoice[]; items: QuantityItem[] };
 
 export function preparationSourceValues(source: PreparationSource): PreparationSource {
   const project = (data: Record<string, unknown>) => Object.fromEntries(SOURCE_FIELD_DEFINITIONS.flatMap(f => {
     const v = data?.[f.key]; return typeof v === "string" || typeof v === "number" && Number.isFinite(v) ? [[f.key, v]] : [];
   }));
-  const lines = source.extracted_data?.invoice_items;
-  return { ...source, confirmed_data: project(source.confirmed_data), extracted_data: { ...project(source.extracted_data),
+  const invoice = source.extracted_data?.commodity_invoice, packing = source.extracted_data?.packing_evidence;
+  // Project existing structured evidence into the existing matcher input. Never
+  // add representations together or infer pieces from weight/packaging.
+  const lines = source.source_kind === "invoice" && isCommodityInvoice(invoice)
+    ? invoice.items.map(i => ({ line_number: i.number, sku: i.sku, product_name: i.description, quantity: i.quantity, uom: i.unit, hs_code: i.hsCode }))
+    : source.source_kind === "specification" && isPackingEvidence(packing)
+      ? packing.items.map((i, n) => ({ line_number: n + 1, sku: i.sku, quantity: i.quantity, uom: i.unit })) : source.extracted_data?.invoice_items;
+  const readingWarnings = source.source_kind === "invoice" && isCommodityInvoice(invoice) ? [...invoice.warnings, ...invoice.items.flatMap(i => i.warnings)]
+    : source.source_kind === "specification" && isPackingEvidence(packing) ? packing.warnings : [];
+  return { ...source, readingWarnings, confirmed_data: project(source.confirmed_data), extracted_data: { ...project(source.extracted_data),
     ...(Array.isArray(lines) ? { invoice_items: lines.map(line => {
       if (!line || typeof line !== "object") return null;
       const keys = ["line_number", "product_name", "sku", "hs_code", "uom", "quantity"].filter(k => k in line);
@@ -49,6 +59,10 @@ export function preparationPreview(input: PreparationInput) {
     const quantities = ["invoice", "specification"].includes(source.source_kind)
       ? analyseDocumentQuantities(itemsInDocumentScope(input.items, source.shipment_transport_id ?? null), lines) : null;
     if (malformed && quantities) quantities.warnings.push("Товарные строки повреждены: требуется повторная проверка источника.");
+    if (quantities && source.readingWarnings?.length) {
+      quantities.warnings.push(...source.readingWarnings);
+      quantities.proposals = quantities.proposals.map(p => ({ ...p, quantity: null, review: "Чтение строк неполно или противоречиво. Проверьте исходный документ." }));
+    }
     return { id: source.id, documentId: source.document_id, version: source.document_version_id, title, choice, stale,
       transportId: source.shipment_transport_id ?? null, fields, quantities, lines,
       href: `/documents/${source.document_id}/download?version=${source.document_version_id}` };
