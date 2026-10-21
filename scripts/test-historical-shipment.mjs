@@ -14,6 +14,7 @@ function run(script, args = []) {
 }
 run('scripts/test-shipment-pilot.mjs', ['--historical']);
 run('scripts/test-historical-report-ui.mjs', [playwright]);
+run('scripts/test-preparation-ui.mjs', [playwright, resolve(root, 'test-results/historical')]);
 run('scripts/test-evidence-outcome-ui.mjs', [playwright, resolve(root, 'test-results/historical')]);
 run('scripts/test-historical-browser.mjs');
 const capture = JSON.parse(readFileSync(resolve(root, 'test-results/historical/capture.json'), 'utf8'));

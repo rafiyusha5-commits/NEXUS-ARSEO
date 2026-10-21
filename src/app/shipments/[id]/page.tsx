@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { QuantityProvenancePanel } from "@/components/shipments/quantity-provenance-panel";
 import { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -76,6 +77,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     <OperationTabs activeTab={notices.tab} defaultTab="main" tabs={[
       {id:"main",label:"Основное"},
       {id:"items",label:"Товары",badge:visibleItems.length},
+      {id:"quantities",label:"Откуда количество"},
       {id:"load",label:"Загрузка",badge:loadSummary.warnings.length||undefined},
       {id:"delivery",label:"Доставка",badge:transports?.length??0},
       {id:"documents",label:"Документы"},
@@ -114,6 +116,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
           </div>}
         </article>;})}{!visibleItems.length&&<div className="empty-state">Позиции ещё не добавлены.</div>}</div>
       </section>
+      <QuantityProvenancePanel shipmentId={shipment.id}/>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Расчёт по данным товаров</p><h2>Загрузка поставки</h2></div><span className="page-count">{visibleItems.length} позиций</span></div>
         <div className="load-summary-grid">
           <article className="summary-card"><p>Вес нетто</p><strong>{loadNumber(loadSummary.netWeightKg)} кг</strong><small>сумма по всем позициям</small></article>

@@ -1,4 +1,4 @@
-# Автоматические проверки на каждый push и Pull Request.
+# Автоматические проверки Pull Request и итогового main без двойного прогона веток.
 #
 # CI работает только с синтетическими данными. Здесь нет доступа ни к одному рабочему сервису:
 # проект Supabase, Google Drive и Sheets, OpenAI, движок OCR и бот Telegram недостижимы, секреты
@@ -13,7 +13,7 @@ name: checks
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
 
 # Код Pull Request исполняется только в контексте pull_request с правами на чтение.

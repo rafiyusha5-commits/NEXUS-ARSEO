@@ -149,6 +149,21 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);
     assert.equal(items().reduce((n,i)=>n+Number(i.qty),0),150);
     step('manual confirmations survive repeated recognition');
+    // Explicit employee action, not OCR auto-application: the invoice covers the whole shipment.
+    // Its 100 pieces of Alpha are manually distributed 60/40 across the existing vehicle lines.
+    const invoiceSource=sources().find(s=>s.file.endsWith('_invoice'));
+    for(let attempt=0;attempt<2;attempt++){
+      await go(`/shipments/${shipment}?tab=documents`);
+      const details=page.locator('#source-documents details').filter({has:page.locator(`input[name="extraction_id"][value="${invoiceSource.id}"]`)}).first();
+      if(await details.getAttribute('open')===null)await details.locator('summary').first().click();
+      const quantities=details.locator('form.document-quantities');
+      for(const item of items())await quantities.locator(`[name="qty_${item.id}"]`).fill(String(item.qty));
+      await quantities.locator('[name="target"]').selectOption('both');
+      await quantities.locator('[name="checked"]').check();
+      await submit(quantities,'Записать количества');
+      assert.equal(q(`select count(*) from public.shipment_item_quantity_confirmations where shipment_id='${shipment}';`),6,'repeat confirmation must not add history');
+    }
+    step('document quantities explicitly confirmed through existing form; retry kept six history rows');
     const documents=q(`select jsonb_object_agg(file_id,imported_document_id) from public.shipment_drive_files where shipment_id='${shipment}';`);
     for(const [index,vehicle]of vehicles.entries()){
       const document=documents[fixtures.files.find(x=>x.key===`cmr${index+1}`).id];
@@ -192,6 +207,26 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     const receivedBatches=provenance();assert.equal(receivedBatches.length,3);
     assert.ok(receivedBatches.every(b=>vehicles.some(v=>v.id===b.vehicle)));
     assert.equal(q(`select sum(received_quantity) from public.shipment_items where shipment_id='${shipment}';`),148);
+    const beforeQuantityRead=snapshot();
+    await go(`/shipments/${shipment}?tab=quantities`);
+    const quantityPanel=page.getByRole('region',{name:'Откуда взялось количество',exact:true});
+    assert.equal(await quantityPanel.locator('.quantity-lineage-item').count(),3);
+    assert.match(await quantityPanel.innerText(),/годное 57 · повреждение 1 · недостача 2/);
+    assert.match(await quantityPanel.innerText(),/включая повреждение/);
+    assert.ok(await quantityPanel.locator('a[href^="/documents/"]').count()>=6,'available quantity sources missing');
+    assert.match(await quantityPanel.innerText(),/версия 1/);
+    assert.match(await quantityPanel.innerText(),/Количество подтвердил/);
+    assert.equal(await quantityPanel.locator('form').count(),0);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await quantityPanel.locator('summary').first().click();
+      await page.screenshot({path:join(output,`quantity-provenance-${width}.png`),fullPage:true});
+      assert.ok(await quantityPanel.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'provenance mobile overflow');
+    }
+    await page.reload();await page.waitForLoadState('networkidle');
+    assert.deepEqual(snapshot(),beforeQuantityRead,'read/reload changed stock or receipts');
+    await page.setViewportSize({width:1440,height:1000});
+    evidence.quantityProvenance=true;step('quantity provenance: separate damage and shortage, responsive and read-only');
     await go('/sales');await page.locator('details.create-disclosure > summary').click();
     f=page.locator('form').filter({has:page.locator('select[name="customer_id"]')});
     await fill(f,{customer_id:refs.customer,warehouse_id:refs.warehouse,planned_shipment_date:date(1),currency_id:refs.eur});
@@ -299,6 +334,15 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.equal(await restrictedPage.getByRole('button',{name:'Подтвердить данные',exact:true}).count(),0);
     assert.equal(await restrictedPage.getByText('MANUAL-ORDER-VERIFIED',{exact:true}).count(),0);
     await restrictedPage.screenshot({path:join(output,'restricted-user.png'),fullPage:true});
+    await restrictedPage.goto(`${base}/shipments/prepare?shipment=${shipment}`);await restrictedPage.waitForLoadState('networkidle');
+    assert.match(await restrictedPage.locator('body').innerText(),/Проект или источники недоступны/);
+    assert.equal(await restrictedPage.locator('.historical-card').count(),0);
+    await restrictedPage.goto(`${base}/shipments/${shipment}?tab=quantities`);await restrictedPage.waitForLoadState('networkidle');
+    const restrictedQuantities=restrictedPage.getByRole('region',{name:'Откуда взялось количество',exact:true});
+    assert.match(await restrictedQuantities.innerText(),/Источник не зафиксирован/);
+    assert.equal(await restrictedQuantities.locator('a[href^="/documents/"]').count(),0);
+    assert.doesNotMatch(await restrictedQuantities.innerText(),/MANUAL-ORDER-VERIFIED/);
+    await restrictedPage.screenshot({path:join(output,'quantity-provenance-restricted.png'),fullPage:true});
     await restrictedContext.close();evidence.permissionBoundary=true;step('independent restricted session hides documents and purchase cost');
     // A second, separate purchase proves the owner's paid-quantity rule through forms too.
     await go('/shipments');await page.locator('details.create-disclosure > summary').click();
@@ -336,6 +380,39 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.deepEqual(paidCost,{goods:1000,received:98,basis:100,unitCost:10});
     evidence.paidQuantityRule=paidCost;step('paid 100 received 98 keeps unit cost 10 through forms');
     await page.screenshot({path:join(output,'paid-quantity-cost.png'),fullPage:true});
+    // Same authenticated stack, same synthetic folder and existing document matching.
+    // Preparation writes only a draft, even for the already closed shipment.
+    const preparationBefore=q(`select jsonb_build_object('items',(select jsonb_agg(to_jsonb(i) order by i.id) from public.shipment_items i where shipment_id='${shipment}'),
+      'sources',(select jsonb_agg(to_jsonb(e) order by e.id) from public.shipment_source_extractions e where shipment_id='${shipment}'),
+      'movements',(select count(*) from public.inventory_movements),'expenses',(select count(*) from public.expenses),'documents',(select count(*) from public.documents));`);
+    await go(`/shipments/prepare?shipment=${shipment}`);
+    await page.getByRole('heading',{name:'Подготовка исторической поставки',exact:true}).waitFor();
+    assert.ok(await page.locator('.historical-card').count()>0);
+    await page.getByLabel('Назначение проекта',{exact:true}).selectOption('true');
+    await page.locator('.historical-card select').first().selectOption('procurement');
+    await page.locator('.historical-card select').nth(1).selectOption('original');
+    await submit(buttonForm('Сохранить черновик'),'Сохранить черновик');
+    const draft=new URL(page.url()).searchParams.get('draft');assert.match(draft,/^[a-f0-9-]{36}$/);
+    const saved=q(`select jsonb_build_object('revision',revision,'choices',choices,'prepare_new',prepare_new) from public.historical_shipment_drafts where id='${draft}';`);
+    assert.equal(saved.prepare_new,true);assert.equal(saved.choices[0].group,'procurement');
+    await page.reload();await page.waitForLoadState('networkidle');
+    assert.equal(await page.locator('.historical-card select').first().inputValue(),'procurement');
+    await submit(buttonForm('Сохранить черновик'),'Сохранить черновик');
+    assert.equal(q(`select to_jsonb(revision) from public.historical_shipment_drafts where id='${draft}';`),saved.revision);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await page.getByRole('button',{name:'2. Источники значений',exact:true}).click();
+      assert.ok(await page.getByRole('link',{name:'Источник строки',exact:true}).count()>0,'Existing parsed invoice/packing rows must be visible');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await page.screenshot({path:join(output,`preparation-${width}.png`),fullPage:true});
+    }
+    const reopened=await context.newPage();await reopened.goto(`${base}/shipments/prepare?shipment=${shipment}&draft=${draft}`);
+    await reopened.getByRole('heading',{name:'Подготовка исторической поставки',exact:true}).waitFor();
+    assert.equal(await reopened.locator('.historical-card select').first().inputValue(),'procurement');await reopened.close();
+    assert.deepEqual(q(`select jsonb_build_object('items',(select jsonb_agg(to_jsonb(i) order by i.id) from public.shipment_items i where shipment_id='${shipment}'),
+      'sources',(select jsonb_agg(to_jsonb(e) order by e.id) from public.shipment_source_extractions e where shipment_id='${shipment}'),
+      'movements',(select count(*) from public.inventory_movements),'expenses',(select count(*) from public.expenses),'documents',(select count(*) from public.documents));`),preparationBefore);
+    evidence.historicalPreparation=true;step('preparation draft persisted, reopened, replayed without business writes');
     evidence.fullBrowserE2E=true;step('closed report and refresh verified');return evidence;
   }catch(error){
     writeFileSync(join(output,'browser-progress.json'),JSON.stringify(evidence,null,2));
