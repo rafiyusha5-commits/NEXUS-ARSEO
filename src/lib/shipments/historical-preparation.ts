@@ -17,7 +17,9 @@ export function preparationSourceValues(source: PreparationSource): PreparationS
   return { ...source, confirmed_data: project(source.confirmed_data), extracted_data: { ...project(source.extracted_data),
     ...(Array.isArray(lines) ? { invoice_items: lines.map(line => {
       if (!line || typeof line !== "object") return null;
-      return Object.fromEntries(["line_number", "product_name", "sku", "hs_code", "uom", "quantity"].filter(k => k in line).map(k => [k, line[k]]));
+      const keys = ["line_number", "product_name", "sku", "hs_code", "uom", "quantity"].filter(k => k in line);
+      if (keys.some(k => line[k] !== null && !["string", "number"].includes(typeof line[k]))) return null;
+      return Object.fromEntries(keys.map(k => [k, line[k]]));
     }) } : {}),
   } };
 }
@@ -70,6 +72,7 @@ export function preparationPreview(input: PreparationInput) {
     }
   }
   const actions = new Set<string>(["Фактическую приёмку подтвердить отдельным основанием; этот мастер её не проводит."]);
+  for (let n = 0; n < input.transportIds.length; n++) actions.add(`Проверить комплект автомобиля ${n + 1} в штатной «Сверке»; документ другой перевозки его не заменяет.`);
   if (!input.complete) actions.add("Не удалось загрузить полный доступный комплект. Обновите проверку; готовность не определена.");
   if (!rows.length) actions.add("Загрузить и проверить доступные документы через существующее сопоставление папки.");
   if (input.choices.some(c => !rows.some(r => r.id === c.id)) || rows.some(r => r.stale)) actions.add("Часть ранее выбранных источников изменилась или недоступна. Повторно проверить комплект и назначение; прежние отметки не перенесены.");

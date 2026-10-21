@@ -59,4 +59,4 @@ node scripts/test-historical-shipment.mjs
 
 ## Пересечения
 
-Зависит от PR #58 и транзитивно #52. Общие изменённые файлы: `src/app/shipments/page.tsx`, `src/app/globals.css`, `src/lib/google/shipment-gateway.ts`, `supabase/tests/security_audit.test.sql`, `scripts/test-historical-shipment.mjs`, `tests/pilot/historical-forms.mjs`. Сверить при переносе с PR #9 (пилот), #12 (создание поставки), #13 (чтение документов); PR #36 (себестоимость) бизнес-логикой не затронут. Собственную ветку не объединять автоматически.
+Зависит от PR #58 и транзитивно #52. Общие изменённые файлы: `src/app/shipments/page.tsx`, `src/app/globals.css`, `src/lib/google/shipment-gateway.ts`, `supabase/tests/security_audit.test.sql`, `scripts/test-db.sh`, `scripts/test-historical-shipment.mjs`, `tests/pilot/historical-forms.mjs`. Сверить при переносе с PR #9 (пилот), #12 (создание поставки), #13 (чтение документов); PR #36 (себестоимость) бизнес-логикой не затронут. Собственную ветку не объединять автоматически.

@@ -299,6 +299,9 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.equal(await restrictedPage.getByRole('button',{name:'Подтвердить данные',exact:true}).count(),0);
     assert.equal(await restrictedPage.getByText('MANUAL-ORDER-VERIFIED',{exact:true}).count(),0);
     await restrictedPage.screenshot({path:join(output,'restricted-user.png'),fullPage:true});
+    await restrictedPage.goto(`${base}/shipments/prepare?shipment=${shipment}`);await restrictedPage.waitForLoadState('networkidle');
+    assert.match(await restrictedPage.locator('body').innerText(),/Проект или источники недоступны/);
+    assert.equal(await restrictedPage.locator('.historical-card').count(),0);
     await restrictedContext.close();evidence.permissionBoundary=true;step('independent restricted session hides documents and purchase cost');
     // A second, separate purchase proves the owner's paid-quantity rule through forms too.
     await go('/shipments');await page.locator('details.create-disclosure > summary').click();

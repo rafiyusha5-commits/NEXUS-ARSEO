@@ -6,7 +6,7 @@ import { preparationFixture } from "./fixtures/historical-preparation.ts";
 test("complete synthetic set uses existing quantity matching and explicit source provenance", () => {
   const input = preparationFixture("complete"), before = JSON.stringify(input);
   const result = preparationPreview(input);
-  assert.equal(result.rows.length, 3);
+  assert.equal(result.rows.length, 6);
   assert.equal(result.rows[0].quantities?.proposals[0].quantity, 965);
   assert.equal(result.rows[0].fields.find(f => f.key === "invoice_number")?.state, "confirmed");
   assert.match(result.rows[0].href, /doc-invoice.*v-invoice/);
@@ -24,7 +24,7 @@ test("incomplete or truncated set never means ready, absent fields are not zero"
 });
 test("two vehicles are separate; conflicting translation is neither merged nor added to quantity", () => {
   const result = preparationPreview(preparationFixture("conflicting"));
-  assert.equal(result.rows.length, 5);
+  assert.equal(result.rows.length, 8);
   assert.equal(result.rows.find(r => r.id === "cmr-a")?.fields.find(f => f.key === "cmr_number")?.state, "conflict");
   assert.equal(result.rows.find(r => r.id === "cmr-b")?.fields.find(f => f.key === "cmr_number")?.state, "confirmed");
   assert.equal(result.rows.find(r => r.id === "translation")?.choice.variant, "translation");
