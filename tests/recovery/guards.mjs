@@ -15,4 +15,13 @@ export function storageMount(info,project){
   return mount;
 }
 export function assertChecksum(bytes,expected){assert.match(expected,/^[a-f0-9]{64}$/);assert.equal(sha256(bytes),expected,'Backup checksum mismatch');}
+export async function waitForHealthyServices(readStates,{attempts=120,pause=()=>new Promise(r=>setTimeout(r,1000))}={}){
+  for(let attempt=0;attempt<attempts;attempt++){
+    const states=readStates();assert.ok(states.length>0,'No restored services to verify');
+    for(const service of states)assert.ok(!['exited','dead'].includes(service.State.Status),`Restored service stopped: ${service.Name}`);
+    if(states.every(s=>s.State.Status==='running'&&(!s.State.Health||s.State.Health.Status==='healthy')))return;
+    if(attempt+1<attempts)await pause();
+  }
+  throw new Error('Restored services did not become healthy');
+}
 export function assertLocalApi(value){const u=new URL(value);assert.ok(['127.0.0.1','localhost'].includes(u.hostname)&&u.protocol==='http:'&&u.port==='54321'&&!u.username&&!u.password);return u;}

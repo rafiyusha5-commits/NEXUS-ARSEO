@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
-import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,storageMount,sha256} from './guards.mjs';
+import {assertDockerEndpoint,assertProject,assertContainer,assertChecksum,assertLocalApi,storageMount,sha256,waitForHealthyServices} from './guards.mjs';
 
 export function assertLocalDocker(command){
   const contexts=JSON.parse(command('docker',['context','inspect']));
@@ -142,6 +142,9 @@ export async function runRecoveryDrill(c){
     assert.deepEqual([refs.user,restricted].map(u=>permissionSnapshot(restoredSql,u)),rights,'Personal denies changed');
     mark=performance.now();volumeTar(targetStorage,['restore']);timings.fileRestoreSeconds=(performance.now()-mark)/1000;
     docker(['start',...services]);
+    // Auth can be ready while Storage/PostgREST are still restarting. A healthy
+    // Auth endpoint alone cannot establish that restored files are available.
+    await waitForHealthyServices(()=>JSON.parse(docker(['inspect',...services])));
     for(let i=0;i<120;i++){try{const r=await fetch(new URL('/auth/v1/health',c.api),{headers:{apikey:targetKeys.ANON_KEY}});if(r.ok)break;}catch{}if(i===119)throw new Error('Restored HTTP services unavailable');await new Promise(r=>setTimeout(r,500));}
     const restoredToken=await login(targetKeys,email),deniedToken=await login(targetKeys,restrictedEmail);
     assert.deepEqual(await checkFiles(targetKeys,restoredToken,versions),fileManifest);
