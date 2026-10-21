@@ -31,8 +31,14 @@ function command(bin,args,options={}){
 const cli=args=>command('supabase',['--workdir',stack,...args]);
 let started=false, server, log;
 async function stopApp(){
-  if(server){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.exitCode!==null?r():server.once('exit',r)),
-    new Promise(r=>{const timer=setTimeout(()=>{server.kill('SIGKILL');r();},15000);timer.unref();})]);server=undefined;}
+  if(server){
+    const child=server;let timer;
+    try{
+      child.kill('SIGTERM');
+      await Promise.race([new Promise(r=>child.exitCode!==null?r():child.once('exit',r)),
+        new Promise(r=>{timer=setTimeout(()=>{child.kill('SIGKILL');r();},15000);timer.unref();})]);
+    }finally{clearTimeout(timer);server=undefined;}
+  }
   log?.end();log=undefined;
 }
 try{
