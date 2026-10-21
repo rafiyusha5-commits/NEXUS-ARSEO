@@ -17,6 +17,8 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
   const report=()=>writeFileSync(join(output,'document-faults.json'),JSON.stringify({fullHttpMatrix:results.length===FAULT_CASES.length,cases:results},null,2));
   const baseline=q(`select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]') from public.shipment_source_extractions e where status='confirmed';`);
   assert.equal(baseline.length,5,'Existing manually reviewed historical fixtures must exist');
+  const auditMax=q('select coalesce(max(id),0) from public.audit_log;');
+  const originalAudit=q(`select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]') from public.audit_log a where id<=${auditMax};`);
   const business=()=>q(`select jsonb_build_object('items',(select coalesce(jsonb_agg(to_jsonb(t) order by id),'[]') from public.shipment_items t),
     'stock',(select coalesce(jsonb_agg(to_jsonb(t) order by batch_id,warehouse_id,uom),'[]') from public.inventory_balances t),
     'movements',(select coalesce(jsonb_agg(to_jsonb(t) order by id),'[]') from public.inventory_movements t),
@@ -30,6 +32,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
   function submit(p,form,label){
     const promise=(async()=>{
       const responsePromise=p.waitForResponse(r=>r.request().method()==='POST'&&r.url().startsWith(base),{timeout:110000});
+      responsePromise.catch(()=>{}); // A killed server/page may reject the click before this waiter.
       await (label?form.getByRole('button',{name:label,exact:true}):form.locator('button[type="submit"],button:not([type])').last()).click({noWaitAfter:true});
       const response=await responsePromise;assert.ok(response.status()<500,`Action HTTP ${response.status()}`);
       const target=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
@@ -91,6 +94,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     assert.deepEqual(business(),businessBefore,'Document faults must not change business quantities, stock or sales');
     const ids=baseline.map(e=>`'${e.id}'`).join(',');
     assert.deepEqual(q(`select jsonb_agg(to_jsonb(e) order by id) from public.shipment_source_extractions e where id in(${ids});`),baseline,'Existing manual confirmations must remain byte-for-byte identical');
+    assert.deepEqual(q(`select coalesce(jsonb_agg(to_jsonb(a) order by id),'[]') from public.audit_log a where id<=${auditMax};`),originalAudit,'Previously saved history was changed');
     results.push({name,status:'passed',...detail});report();console.log('FAULT PASS:',name,JSON.stringify(detail));
   }
   try {
@@ -134,12 +138,15 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     assert.ok(url.searchParams.has('error'));assert.equal(count(),0);assert.deepEqual(objects(),before);
     await docs(page);await submit(page,buttonForm(page,'Проверить папку'),'Проверить папку');await importAll();passed(FAULT_CASES[5],{staleRegistrationRejected:true,explicitRescanSucceeded:true});
 
-    await setup(FAULT_CASES[6]);await importAll();gate=http.arm('ocr');pending=ocr(page);await gate.wait();
+    await setup(FAULT_CASES[6]);before=objects();gate=http.arm('drive-media');pending=submit(page,await importForm(page,fixtures.files[0]));await gate.wait();
+    fixtures.files[0].parents=[];gate.release();url=await pending;
+    assert.ok(url.searchParams.has('error'));assert.equal(count(),0);assert.deepEqual(objects(),before,'Revoked Drive source was uploaded');
+    fixtures.files[0].parents=[fixtures.folder];await importAll();gate=http.arm('ocr');pending=ocr(page);await gate.wait();
     sql(`insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select '${refs.user}',id,'deny','FAULT temporary deny','${refs.user}' from public.permissions where code='source_documents.extract';`);
     const denied=sources();gate.release();await pending;assert.deepEqual(sources(),denied,'Revoked employee persisted OCR result');
     sql(`delete from public.user_permission_overrides where user_id='${refs.user}' and reason='FAULT temporary deny';`);
     expire();await ocr(page);assert.ok(['extracted','needs_review'].includes(sources()[0].status));await verifyFiles(1);
-    passed(FAULT_CASES[6],{personalDenyDuringHttp:true,resultRejected:true});
+    passed(FAULT_CASES[6],{driveScopeRevokedDuringHttp:true,personalDenyDuringHttp:true,resultRejected:true});
 
     await setup(FAULT_CASES[7]);const first=await importForm(page,fixtures.files[0]),second=await importForm(other,fixtures.files[0]);
     gate=http.arm('import-rpc');pending=submit(page,first);await gate.wait();url=await submit(other,second);
@@ -150,7 +157,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
 
     await setup(FAULT_CASES[8]);await importAll();before=objects();gate=http.arm('ocr');pending=ocr(page);await gate.wait();
     const interrupted=sources();assert.equal(interrupted[0].status,'pending');
-    await restart();gate.release(true);await pending.catch(()=>{});
+    await restart();gate.release(true);await page.close();await pending.catch(()=>{});page=await login();
     assert.deepEqual(objects(),before);assert.deepEqual(sources(),interrupted,'App restart altered saved lease');
     await ocr(other);assert.equal(sources()[0].status,'pending','Unexpired lease must stay busy');
     expire();await docs(other);assert.match(await other.locator('#source-documents').innerText(),/Требуется действие|Ожидает повторения|прерван/i);
