@@ -21,6 +21,9 @@ export function processingErrorCode(error: unknown, stage: ProcessingStage): Pro
 }
 export type ProcessingReceipt = { id: string; kind: string; state: string; stage: string; started_at: string; updated_at: string; lease_until: string; finished_at: string | null; error_code: ProcessingErrorCode | null };
 export function processingState(receipt: ProcessingReceipt, now: number) {
+  // Presentation only: never claim a lease, restart work or change a persisted receipt.
+  if (receipt.state === "failed") return receipt.error_code &&
+    ["STORAGE_FAILED", "SOURCE_UNAVAILABLE", "INTERRUPTED"].includes(receipt.error_code) ? "waiting_retry" : "needs_action";
   return receipt.state === "running" && Date.parse(receipt.lease_until) <= now ? "needs_action" : receipt.state;
 }
 export function processingDiagnostic(id: string, stage: ProcessingStage, started: number, now: number, code: ProcessingErrorCode | null) {

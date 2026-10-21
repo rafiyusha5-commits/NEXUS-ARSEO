@@ -27,4 +27,29 @@ select public.finish_shipment_source_ocr_fenced('eb603000-0000-4000-8000-0000000
 do $$begin
  assert (select extracted_data->>'invoice_number'='CURRENT' and status='extracted' from public.shipment_source_extractions where id='eb603000-0000-4000-8000-000000000001');
 end $$;
+-- An old response is still refused after the newer attempt has already succeeded,
+-- and after a human has reviewed that result. Compare the entire row, not just status.
+do $$declare before_row jsonb; rejected boolean:=false;begin
+ select to_jsonb(e) into before_row from public.shipment_source_extractions e where id='eb603000-0000-4000-8000-000000000001';
+ begin
+  perform public.finish_shipment_source_ocr_fenced('eb603000-0000-4000-8000-000000000001',(select lease from leases where label='old'),'extracted','{"invoice_number":"LATE"}');
+ exception when others then rejected:=true; end;
+ assert rejected;
+ assert (select to_jsonb(e)=before_row from public.shipment_source_extractions e where id='eb603000-0000-4000-8000-000000000001');
+end $$;
+select public.review_shipment_source_extraction('eb603000-0000-4000-8000-000000000001','{"invoice_number":"HUMAN"}',false);
+do $$declare before_row jsonb; rejected boolean:=false; result jsonb;begin
+ select to_jsonb(e) into before_row from public.shipment_source_extractions e where id='eb603000-0000-4000-8000-000000000001';
+ assert before_row->>'status'='confirmed';
+ begin
+  perform public.finish_shipment_source_ocr_fenced('eb603000-0000-4000-8000-000000000001',(select lease from leases where label='new'),'failed','{}','{}','[]','Late timeout');
+ exception when others then rejected:=true; end;
+ assert rejected;
+ result:=public.begin_shipment_source_ocr('eb300000-0000-4000-8000-000000000001','eb503000-0000-4000-8000-000000000001','eb513000-0000-4000-8000-000000000001','invoice',repeat('a',64),'synthetic','v1',3,60,false);
+ assert result->>'action'='reuse';
+ assert (select to_jsonb(e)=before_row from public.shipment_source_extractions e where id='eb603000-0000-4000-8000-000000000001');
+ assert (select count(*)=4 from public.documents where id::text like 'eb50%');
+ assert (select count(*)=4 from public.document_versions where document_id::text like 'eb50%');
+ assert (select count(*)=4 from public.document_links where document_id::text like 'eb50%' and removed_at is null);
+end $$;
 rollback;

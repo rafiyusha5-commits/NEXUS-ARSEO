@@ -215,6 +215,7 @@ node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: current document evidence under concurrent source edits"
 node "$ROOT/scripts/test-source-integrity-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-ocr-recovery-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: order fulfillment under concurrency (duplicates and cancellation)"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
