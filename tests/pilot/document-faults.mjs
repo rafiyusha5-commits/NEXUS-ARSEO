@@ -80,7 +80,12 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     return versions;
   }
   async function importAll(){for(const file of fixtures.files){const result=await submit(page,await importForm(page,file));assert.ok(!result.searchParams.has('error'),result.href);}await verifyFiles(fixtures.files.length);}
-  async function ocr(p){await docs(p);return submit(p,buttonForm(p,'Распознать и сверить'),'Распознать и сверить');}
+  function ocr(p){
+    // Observe the OUTER promise as well as submit's promise before deliberately
+    // killing the server or closing its page. Awaiters still receive the rejection.
+    const pending=(async()=>{await docs(p);return submit(p,buttonForm(p,'Распознать и сверить'),'Распознать и сверить');})();
+    pending.catch(()=>{});return pending;
+  }
   const expire=()=>sql(`update public.shipment_source_extractions set processing_started_at=clock_timestamp()-interval '2 hours',ocr_lease_until=clock_timestamp()-interval '1 minute' where shipment_id='${shipment}' and status='pending';`);
   async function confirmed(p){
     await docs(p);const s=sources()[0];
