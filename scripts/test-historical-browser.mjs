@@ -10,9 +10,11 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {runHistoricalForms} from '../tests/pilot/historical-forms.mjs';
 import {makeExternalFixtures} from '../tests/pilot/external-fixtures.mjs';
+import {runRecoveryDrill, assertLocalDocker} from '../tests/recovery/drill.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-assert.equal(process.argv.length,2,'No database URLs or external endpoints accepted');
+const recovery=process.argv.length===3&&process.argv[2]==='--recovery';
+assert.ok(process.argv.length===2||recovery,'Only --recovery is accepted; no database URLs');
 const work=mkdtempSync(join(tmpdir(),'nexus-historical-'));
 const project='nexus-e2e-'+randomUUID().slice(0,8);
 const output=join(root,'test-results/historical');
@@ -28,7 +30,19 @@ function command(bin,args,options={}){
 }
 const cli=args=>command('supabase',['--workdir',stack,...args]);
 let started=false, server, log;
+async function stopApp(){
+  if(server){
+    const child=server;let timer;
+    try{
+      child.kill('SIGTERM');
+      await Promise.race([new Promise(r=>child.exitCode!==null?r():child.once('exit',r)),
+        new Promise(r=>{timer=setTimeout(()=>{child.kill('SIGKILL');r();},15000);timer.unref();})]);
+    }finally{clearTimeout(timer);server=undefined;}
+  }
+  log?.end();log=undefined;
+}
 try{
+  if(recovery)assertLocalDocker(command);
   cli(['init','--yes']);
   const config=join(stack,'supabase/config.toml');
   let toml=readFileSync(config,'utf8').replace(/^project_id = .*$/m,`project_id = "${project}"`);
@@ -38,6 +52,7 @@ try{
   writeFileSync(config,toml);
   cpSync(join(root,'supabase/migrations'),join(stack,'supabase/migrations'),{recursive:true});
   console.log('Starting a new isolated Supabase stack',project);
+  if(recovery)assert.equal(command('docker',['ps','-a','--filter',`name=_${project}$`,'--format','{{.ID}}']).trim(),'','Project already exists; refusing to touch it');
   started=true;
   cli(['start','--exclude','studio,imgproxy,realtime,edge-runtime,logflare,vector,supavisor']);
   const keys=JSON.parse(cli(['status','-o','json']));
@@ -117,13 +132,35 @@ try{
   assert.ok(requests.filter(r=>r.kind==='drive').every(r=>r.method==='GET'),'Drive is read-only');
   writeFileSync(join(output,'browser-result.json'),JSON.stringify({...evidence,backend:`Local Supabase, PostgreSQL ${version}`,externalRequests:requests.length},null,2));
   console.log('PASS full authenticated browser scenario',JSON.stringify(evidence));
+  if(recovery){
+    await stopApp();
+    await runRecoveryDrill({root,work,project,stack,command,sql,keys,api,refs,email,restrictedEmail,password,fixtures,
+      stopSource:()=>{cli(['stop','--no-backup']);started=false;},
+      async verifyApp(restoredKeys,recoveryOutput){
+        // Public backend/key are build-time values: rebuild, never reuse a bundle with the old project key.
+        const restoredEnv={...hostEnv,NODE_ENV:'production',NEXT_TELEMETRY_DISABLED:'1',
+          NEXT_PUBLIC_SUPABASE_URL:api.origin,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:restoredKeys.ANON_KEY,
+          APP_ORIGIN:'http://127.0.0.1:3100',AGENT_ENABLED:'false',TELEGRAM_ENABLED:'false',NEXT_FONT_GOOGLE_MOCKED_RESPONSES:fonts};
+        const buildLog=openSync(join(recoveryOutput,'restored-build.log'),'w');
+        const built=spawnSync(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'build','--webpack'],
+          {cwd:app,env:restoredEnv,timeout:300000,windowsHide:true,stdio:['ignore',buildLog,buildLog]});
+        closeSync(buildLog);assert.equal(built.status,0,'Restored app build failed');
+        log=createWriteStream(join(recoveryOutput,'restored-server.log'));
+        server=spawn(process.execPath,['--import',join(root,'tests/recovery/offline-boundary.mjs'),join(root,'node_modules/next/dist/bin/next'),'start','-H','127.0.0.1','-p','3100'],
+          {cwd:app,env:{...restoredEnv,NEXUS_RECOVERY_NETWORK_LOG:join(recoveryOutput,'network.jsonl')},windowsHide:true,stdio:['ignore','pipe','pipe']});
+        server.stdout.pipe(log);server.stderr.pipe(log);
+        try{
+          for(let i=0;i<120;i++){try{if((await fetch('http://127.0.0.1:3100/login')).ok)break}catch{}if(i===119)throw new Error('Restored app did not start');await new Promise(r=>setTimeout(r,500));}
+          const {verifyRecoveredBrowser}=await import('../tests/recovery/browser.mjs');
+          await verifyRecoveredBrowser({chromium,email,restrictedEmail,password,output:recoveryOutput});
+        }finally{await stopApp();}
+      }});
+  }
 }catch(error){
   console.error('BROWSER E2E FAILED:',error.message);
   if(log)await new Promise(r=>setTimeout(r,200));
   throw error;
 }finally{
-  if(server){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.exitCode!==null?r():server.once('exit',r)),
-    new Promise(r=>{const timer=setTimeout(()=>{server.kill('SIGKILL');r();},15000);timer.unref();})]);}
-  log?.end();
+  await stopApp();
   if(started){try{cli(['stop','--no-backup'])}catch{console.error('Could not stop isolated stack',project)}}
 }
