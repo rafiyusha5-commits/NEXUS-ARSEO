@@ -24,6 +24,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
   const customers=counterparties?.filter((party)=>party.roles?.includes("customer"))??[];
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Закупки и логистика</p><h1>Поступления и поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>
+    <Link className="ghost button-link" href="/shipments/prepare">Подготовить историческую поставку</Link>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609270003_phase2_shipments.sql</strong> в Supabase.</div>}
     <details className="panel admin-section create-disclosure"><summary><span><small>Новая операция</small><strong>Оформить поступление или поставку</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">

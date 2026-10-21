@@ -336,6 +336,38 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.deepEqual(paidCost,{goods:1000,received:98,basis:100,unitCost:10});
     evidence.paidQuantityRule=paidCost;step('paid 100 received 98 keeps unit cost 10 through forms');
     await page.screenshot({path:join(output,'paid-quantity-cost.png'),fullPage:true});
+    // Same authenticated stack, same synthetic folder and existing document matching.
+    // Preparation writes only a draft, even for the already closed shipment.
+    const preparationBefore=q(`select jsonb_build_object('items',(select jsonb_agg(to_jsonb(i) order by i.id) from public.shipment_items i where shipment_id='${shipment}'),
+      'sources',(select jsonb_agg(to_jsonb(e) order by e.id) from public.shipment_source_extractions e where shipment_id='${shipment}'),
+      'movements',(select count(*) from public.inventory_movements),'expenses',(select count(*) from public.expenses),'documents',(select count(*) from public.documents));`);
+    await go(`/shipments/prepare?shipment=${shipment}`);
+    await page.getByRole('heading',{name:'Подготовка исторической поставки',exact:true}).waitFor();
+    assert.ok(await page.locator('.historical-card').count()>0);
+    await page.getByLabel('Назначение проекта',{exact:true}).selectOption('true');
+    await page.locator('.historical-card select').first().selectOption('procurement');
+    await page.locator('.historical-card select').nth(1).selectOption('original');
+    await submit(buttonForm('Сохранить черновик'),'Сохранить черновик');
+    const draft=new URL(page.url()).searchParams.get('draft');assert.match(draft,/^[a-f0-9-]{36}$/);
+    const saved=q(`select jsonb_build_object('revision',revision,'choices',choices,'prepare_new',prepare_new) from public.historical_shipment_drafts where id='${draft}';`);
+    assert.equal(saved.prepare_new,true);assert.equal(saved.choices[0].group,'procurement');
+    await page.reload();await page.waitForLoadState('networkidle');
+    assert.equal(await page.locator('.historical-card select').first().inputValue(),'procurement');
+    await submit(buttonForm('Сохранить черновик'),'Сохранить черновик');
+    assert.equal(q(`select to_jsonb(revision) from public.historical_shipment_drafts where id='${draft}';`),saved.revision);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await page.getByRole('button',{name:'2. Источники значений',exact:true}).click();
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await page.screenshot({path:join(output,`preparation-${width}.png`),fullPage:true});
+    }
+    const reopened=await context.newPage();await reopened.goto(`${base}/shipments/prepare?shipment=${shipment}&draft=${draft}`);
+    await reopened.getByRole('heading',{name:'Подготовка исторической поставки',exact:true}).waitFor();
+    assert.equal(await reopened.locator('.historical-card select').first().inputValue(),'procurement');await reopened.close();
+    assert.deepEqual(q(`select jsonb_build_object('items',(select jsonb_agg(to_jsonb(i) order by i.id) from public.shipment_items i where shipment_id='${shipment}'),
+      'sources',(select jsonb_agg(to_jsonb(e) order by e.id) from public.shipment_source_extractions e where shipment_id='${shipment}'),
+      'movements',(select count(*) from public.inventory_movements),'expenses',(select count(*) from public.expenses),'documents',(select count(*) from public.documents));`),preparationBefore);
+    evidence.historicalPreparation=true;step('preparation draft persisted, reopened, replayed without business writes');
     evidence.fullBrowserE2E=true;step('closed report and refresh verified');return evidence;
   }catch(error){
     writeFileSync(join(output,'browser-progress.json'),JSON.stringify(evidence,null,2));
