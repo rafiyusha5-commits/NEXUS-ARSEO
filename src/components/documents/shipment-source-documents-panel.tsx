@@ -7,7 +7,7 @@ import { CustomsReviewForm } from "./customs-review-form";
 import { CustomsRevisionForm } from "./customs-revision-form";
 import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
 import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
-import { currentCommoditySource, isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
+import { confirmedCommoditySource, currentCommoditySource, isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
 import { createClient } from "@/lib/supabase/server";
 import { loadPermissions } from "@/lib/permissions";
 import { assignSourceTransportAction, confirmShipmentSourceAction, extractShipmentSourcesAction, retryShipmentSourceOcrAction } from "@/app/shipments/source-document-actions";
@@ -72,8 +72,8 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
   type CommodityDocument = { title: string; original_filename: string | null; archived_at: string | null; status: string; current_version: number; versions: Array<{ id: string; is_current: boolean; version_number: number }>; links: Array<{ entity_type: string; entity_id: string; removed_at: string | null }> };
   const completeComparison = !itemsError && !error && !transportsError && transportCount === vehicles.length && !historyError && historyCount === (quantityHistory ?? []).length && itemCount === quantityItems.length && sourceCount === rows.length;
   const current = (row: typeof rows[number]) => completeComparison && currentCommoditySource(row, one(row.document), shipmentId, vehicles.map(vehicle => vehicle.id));
-  const invoices = rows.filter(row => row.source_kind === "invoice" && current(row)).map(row => row.extracted_data?.commodity_invoice).filter(isCommodityInvoice);
-  const packing = rows.filter(row => row.source_kind === "specification" && current(row)).map(row => row.extracted_data?.packing_evidence).filter(isPackingEvidence);
+  const invoices = rows.filter(row => row.source_kind === "invoice" && confirmedCommoditySource(row, current(row))).map(row => row.extracted_data?.commodity_invoice).filter(isCommodityInvoice);
+  const packing = rows.filter(row => row.source_kind === "specification" && confirmedCommoditySource(row, current(row))).map(row => row.extracted_data?.packing_evidence).filter(isPackingEvidence);
   const quantity = (value: unknown) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
   const shipmentCommodities = quantityItems.filter(item => !item.shipment_transport_id || vehicleById.has(item.shipment_transport_id)).map(item => ({
     sku: item.product?.internal_sku ?? null, unit: item.uom, hsCode: item.product?.hs_code ?? null,

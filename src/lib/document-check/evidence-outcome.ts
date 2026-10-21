@@ -4,7 +4,7 @@ import type { CommodityComparison } from "../document-extraction/commodity-evide
 export function evidenceOutcome(comparisons: CommodityComparison[], current: boolean, reviewed: boolean, warnings: string[]) {
   if (!current) return { reading: "Актуальность и доступ не подтверждены", comparison: "Сверка недоступна", differences: [] as string[] };
   const differences = comparisons.flatMap(row => row.orderedDelta === null || row.orderedDelta === 0 ? [] : [
-    `${row.line.sku ?? "Строка"}: ${row.orderedDelta > 0 ? "+" : ""}${row.orderedDelta.toLocaleString("ru-RU", { maximumFractionDigits: 6 })} ${row.line.unit ?? ""} к заказу`,
+    `${row.line.sku ?? "Строка"}: ${row.orderedDelta > 0 ? "+" : ""}${row.orderedDelta.toLocaleString("ru-RU", { maximumFractionDigits: 6 })} ${/^(piece|шт|штук|штука|штуки|pcs|sztuka)$/iu.test(row.line.unit ?? "") ? "шт." : row.line.unit ?? ""} к первоначальному заказу (информация)`,
   ]);
   const complete = comparisons.length > 0 && warnings.length === 0 && comparisons.every(row => row.line.warnings.length === 0);
   return {

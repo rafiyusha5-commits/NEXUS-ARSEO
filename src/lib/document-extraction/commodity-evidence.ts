@@ -127,6 +127,10 @@ export function currentCommoditySource(source: { status: string; document_versio
     && document.links?.some(link => !link.removed_at && (link.entity_type === "shipment" && link.entity_id === shipmentId || link.entity_type === "shipment_transport" && transportIds.includes(link.entity_id))));
 }
 export type CommodityComparison = { line: CommodityLine; invoice: string; shipment: string; invoiceMatched: boolean; orderedMatched: boolean; orderedDelta: number | null; status: "matched" | "different" | "review" };
+// A readable OCR result is not yet an approved supplier baseline.
+export function confirmedCommoditySource(source: { status: string; reviewed_at: string | null }, current: boolean) {
+  return current && source.status === "confirmed" && Boolean(source.reviewed_at);
+}
 export function compareCommodities(items: CommodityLine[], currency: string | null, invoices: CommodityInvoice[], shipment: ShipmentCommodity[]): CommodityComparison[] {
   return items.map(line => {
     let status: CommodityComparison["status"] = line.warnings.length ? "review" : "matched";
@@ -153,12 +157,14 @@ export function compareCommodities(items: CommodityLine[], currency: string | nu
     else {
       const parts: string[] = [];
       for (const [field, label] of [["ordered", "Заказано"], ["confirmed", "Подтверждено"], ["shipped", "Отгружено"]] as const) {
-        if (positions.some(item => item[field] === null)) { parts.push(`${label}: не заполнено`); review(); continue; }
+        if (positions.some(item => item[field] === null)) { parts.push(`${label}: не заполнено`); if (field !== "ordered") review(); continue; }
         const sum = positions.reduce((total, item) => total + item[field]!, 0);
         const equal = Math.abs(sum - line.quantity) < 0.000001;
         if (field === "ordered") { orderedMatched = equal; orderedDelta = equal ? 0 : Number((line.quantity - sum).toFixed(6)); }
-        parts.push(`${label}: ${sum}${equal ? " — совпадает" : " — расхождение"}`);
-        if (!equal) status = "different";
+        parts.push(`${label}: ${sum}${equal ? " — совпадает" : field === "ordered" ? " — отличие от потребности (информация)" : " — расхождение"}`);
+        // The order records demand. Only confirmed/shipped quantities and document
+        // evidence determine shipment consistency; never rewrite the original order.
+        if (!equal && field !== "ordered") status = "different";
       }
       for (const code of new Set(positions.map(item => item.hsCode))) {
         const card = code?.replace(/\s/gu, "") ?? "";

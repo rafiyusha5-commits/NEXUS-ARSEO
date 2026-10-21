@@ -28,7 +28,10 @@ try {
   await page.getByText('1. Проверка чтения',{exact:true}).waitFor();
   const text=await page.locator('body').innerText();
   assert.match(text,/Чтение декларации подтверждено/);
-  assert.match(text,/SYNTH-A: -35 piece/);
+  assert.match(text,/SYNTH-A: -35 шт\. к первоначальному заказу \(информация\)/);
+  assert.match(text,/Основа сверки отгрузки — актуальные подтверждённые инвойс и упаковочный лист/);
+  assert.match(text,/строк без замечаний: 1; расхождения: 0; нужна проверка или заполнение данных: 0/);
+  assert.match(text,/Заказано: 1000 — отличие от потребности \(информация\)/);
   assert.match(text,/ДТ и упаковочный лист: состав и количества совпадают/);
   assert.match(text,/Не заполнено обязательных реквизитов/);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'page overflows');
