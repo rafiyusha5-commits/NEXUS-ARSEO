@@ -73,6 +73,8 @@ returns integer language plpgsql security invoker set search_path='' as $$
 declare d public.historical_shipment_drafts%rowtype;
 begin
  if not private.shipment_drive_allowed() then raise exception 'Недостаточно прав' using errcode='42501'; end if;
+ if p_id is null or p_shipment_id is null or p_revision is null or p_revision<0 or p_prepare_new is null or p_choices is null
+ then raise exception 'Некорректный проект'; end if;
  perform pg_advisory_xact_lock(hashtextextended('historical-draft:'||p_id::text,0));
  select * into d from public.historical_shipment_drafts where id=p_id for update;
  if found then

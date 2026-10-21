@@ -26,6 +26,7 @@ select public.scan_shipment_drive_folder(shipment_id,generation,'[]') from publi
 select public.save_historical_shipment_draft('ef000000-0000-4000-8000-000000000001','eb300000-0000-4000-8000-000000000001',false,0,current_setting('tests.choices')::jsonb);
 do $$ begin if (select revision from public.historical_shipment_drafts where id='ef000000-0000-4000-8000-000000000001')<>1 then raise exception 'Duplicate save'; end if; end $$;
 select public.save_historical_shipment_draft('ef000000-0000-4000-8000-000000000001','eb300000-0000-4000-8000-000000000001',true,1,current_setting('tests.choices')::jsonb);
+select pg_temp.refuses($q$select public.save_historical_shipment_draft('ef000000-0000-4000-8000-000000000001','eb300000-0000-4000-8000-000000000001',false,null,'[]')$q$);
 select pg_temp.refuses($q$select public.save_historical_shipment_draft('ef000000-0000-4000-8000-000000000001','eb300000-0000-4000-8000-000000000001',false,1,'[]')$q$);
 -- No arbitrary values, fake confirmation flags, duplicate references or stale extraction.
 select pg_temp.refuses($q$update public.historical_shipment_drafts set revision=revision+1,choices=jsonb_build_array((choices->0)||'{"confirmed":true}')$q$);
