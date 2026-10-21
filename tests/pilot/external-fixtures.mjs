@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
-function syntheticPng(key){
+export function syntheticPng(key){
   const chunk=(type,data)=>{
     const payload=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
     for(const byte of payload){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
