@@ -21,7 +21,7 @@ function provider(behaviour: (input: OcrInput, signal: AbortSignal) => Promise<O
 const document = (bytes: Uint8Array): OcrDocument => ({ shipmentId: "s1", documentId: "d1", versionId: "v1", hintedKind: "driver_document", bytes });
 const sha = async () => "a".repeat(64);
 const deps = (overrides: Partial<PipelineDeps> & Pick<PipelineDeps, "db">): PipelineDeps => ({ provider: null, limits: limits(), now: (() => { let t = 1000; return () => (t += 250); })(), sha256: sha, ...overrides });
-const claim = (action: string) => ({ begin_shipment_source_ocr: () => ({ data: { action, extraction_id: "e1" } }) });
+const claim = (action: string) => ({ begin_shipment_source_ocr: () => ({ data: { action, extraction_id: "e1", lease_started_at: "2030-01-01T00:00:00Z" } }) });
 
 describe("OCR pipeline: nothing leaves without a provider and a valid file", () => {
   it("does not call the database or any provider when OCR is not configured", async () => {
@@ -102,7 +102,7 @@ describe("OCR pipeline: errors and storing the proposal", () => {
     assert.equal(prepared.state, "failed");
     const stored = await persistOcrOutcome(deps({ db, provider: failing.instance }), prepared);
     assert.equal(stored.status, "failed");
-    const finish = calls.find(call => call.name === "finish_shipment_source_ocr")!;
+    const finish = calls.find(call => call.name === "finish_shipment_source_ocr_fenced")!;
     assert.equal(finish.args.p_status, "failed");
     assert.equal(finish.args.p_error_message, "Сервис распознавания вернул ошибку 503");
     assert.equal(typeof finish.args.p_processing_ms, "number");
@@ -129,7 +129,7 @@ describe("OCR pipeline: errors and storing the proposal", () => {
     const prepared = await recognizeDocument(deps({ db, provider: provider(async () => ocrResult(0.97)).instance }), document(pngBytes(800, 600)));
     const stored = await persistOcrOutcome(deps({ db }), prepared);
     assert.equal(stored.status, "extracted");
-    const finish = calls.find(call => call.name === "finish_shipment_source_ocr")!;
+    const finish = calls.find(call => call.name === "finish_shipment_source_ocr_fenced")!;
     assert.equal(finish.args.p_extraction_id, "e1");
     assert.equal(finish.args.p_status, "extracted");
     assert.notEqual(finish.args.p_status, "confirmed");
@@ -147,11 +147,11 @@ describe("OCR pipeline: errors and storing the proposal", () => {
     const { db, calls } = fakeDb(claim("run"));
     const prepared = await recognizeDocument(deps({ db, provider: provider(async () => ocrResult(0.97)).instance }), document(pngBytes(800, 600)));
     await persistOcrOutcome(deps({ db }), prepared, [{ field: "vehicle_plate", values: ["a", "b"], documents: ["d1", "d2"] }]);
-    assert.equal(calls.find(call => call.name === "finish_shipment_source_ocr")!.args.p_status, "needs_review");
+    assert.equal(calls.find(call => call.name === "finish_shipment_source_ocr_fenced")!.args.p_status, "needs_review");
   });
 
   it("reports a store failure instead of pretending the result was saved", async () => {
-    const { db } = fakeDb({ ...claim("run"), finish_shipment_source_ocr: () => ({ error: { message: "lease lost" } }) });
+    const { db } = fakeDb({ ...claim("run"), finish_shipment_source_ocr_fenced: () => ({ error: { message: "lease lost" } }) });
     const prepared = await recognizeDocument(deps({ db, provider: provider(async () => ocrResult(0.97)).instance }), document(pngBytes(800, 600)));
     assert.deepEqual(await persistOcrOutcome(deps({ db }), prepared), { ok: false, status: "failed" });
   });

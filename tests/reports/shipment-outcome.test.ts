@@ -83,14 +83,14 @@ describe("final report sheets", () => {
     const sheets = outcomeWorkbookSheets({
       today: "2026-10-13", inventoryVisible: true, salesVisible: true, outcomes: [outcome], products: new Map([["p1", { internal_sku: "SKU-1", name: "Товар" }]]),
       summary: summarizeOutcomes([outcome]),
-      cost: { version: 2, status: "approved", approvedAt: "2026-09-01T00:00:00Z", currency: "KZT", goodsTotal: 1000, expensesTotal: 200, landedTotal: 1200, items: [{ shipmentItemId: "i1", quantity: 100, landedAmount: 1200, unitLandedCost: 12 }] },
+      cost: { version: 2, status: "approved", approvedAt: "2026-09-01T00:00:00Z", currency: "KZT", goodsTotal: 1000, expensesTotal: 200, landedTotal: 1200, items: [{ shipmentItemId: "i1", quantity: 98, costQuantity: 100, landedAmount: 1200, unitLandedCost: 12 }] },
       documentCheck: { lastRunAt: null, findings: [{ severity: "error", message: "Вес не совпадает", transport_no: 1, document_title: "CMR" }], counts: { errors: 1, warnings: 0 } },
       shelfLife: [{ batchId: "b1", state: "soon", firstDeadline: "2026-11-01" }],
     }, [{ id: "i1", uom: "piece", product: { internal_sku: "SKU-1" } }]);
     assert.deepEqual(sheets.map(sheet => sheet.name), ["Итог", "Движение партий", "Себестоимость", "Сверка"]);
     assert.deepEqual(sheets[1].rows[1].slice(0, 15), ["L-1", "SKU-1", "Товар", "2026-12-31", 50.27, "Скоро ниже требований", "piece", 100, 10, 0, 0, 0, 90, 5, "да"]);
     assert.match(String(sheets[1].rows[1][15]), /SO-7 Small: резерв 5 piece/);
-    assert.deepEqual(sheets[2].rows.at(-1), ["SKU-1", "piece", 100, 1200, 12]);
+    assert.deepEqual(sheets[2].rows.at(-1), ["SKU-1", "piece", 98, 100, 1200, 12]);
     assert.deepEqual(sheets[3].rows[1], ["Ошибка", 1, "Вес не совпадает", "CMR"]);
   });
 });

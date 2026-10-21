@@ -128,6 +128,9 @@ do $$ declare r jsonb; v_run uuid; begin
  assert (select decided_by='ed000000-0000-4000-8000-000000000001' and decided_at is not null from public.logist_proposals where id=pg_temp.proposal('complete_stage','%')),'decision recorded';
  r := public.accept_logist_proposal(pg_temp.proposal('bind_document_vehicle','%'));
  assert (select shipment_transport_id=pg_temp.id('t2') from public.shipment_source_extractions where id='ed600000-0000-4000-8000-000000000003'),'document bound to vehicle 2';
+ assert exists(select 1 from public.shipment_source_context_history
+  where extraction_id='ed600000-0000-4000-8000-000000000003' and changed_by=auth.uid()
+   and reason like 'Сотрудник принял предложение логиста %'),'explicit proposal acceptance preserves reason and actor';
 end $$;
 select pg_temp.fails($$select public.accept_logist_proposal(pg_temp.proposal('complete_stage','%'))$$,'уже рассмотрено');
 

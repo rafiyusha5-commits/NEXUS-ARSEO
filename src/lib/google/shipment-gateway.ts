@@ -13,7 +13,7 @@ export async function shipmentDriveGateway(session: SupabaseClient) {
       headers: { Authorization: `Bearer ${data.session.access_token}`, "x-nexus-drive-gateway": secret },
       fetch: (input, init) => {
         const target = new URL(String(input));
-        if (target.origin !== new URL(url).origin || !/^\/rest\/v1\/(shipment_drive_folders|shipment_drive_files|rpc\/(bind_shipment_drive_folder|scan_shipment_drive_folder|import_shipment_drive_file))$/.test(target.pathname)) throw new Error("Недопустимый запрос Drive");
+        if (target.origin !== new URL(url).origin || !/^\/rest\/v1\/(shipment_drive_folders|shipment_drive_files|shipment_drive_operations|rpc\/(bind_shipment_drive_folder|scan_shipment_drive_folder|import_shipment_drive_file|check_shipment_drive_content|link_shipment_drive_document|begin_shipment_drive_operation|record_shipment_drive_operation))$/.test(target.pathname)) throw new Error("Недопустимый запрос Drive");
         return fetch(input, { ...init, redirect: "error", cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(20000), ...(init?.signal ? [init.signal] : [])]) });
       },
     },

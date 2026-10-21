@@ -46,7 +46,39 @@ do $$declare d uuid;begin
  assert (select count(*) from public.document_versions where checksum_sha256=repeat('1',64))=1;
  assert (select count(*) from public.document_links where document_id=d and removed_at is null)=1;
 end $$;
+-- Explicit checksum review/link uses the same receipt and no Storage object.
+select public.check_shipment_drive_content('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64));
+select pg_temp.refuses($q$select public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),'fd000000-0000-4000-8000-000000000001',(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current))$q$);
+-- The test gateway attests the Nexus byte check; production attestation comes
+-- only after a session-scoped Storage download and SHA-256 comparison.
+select public.check_shipment_drive_content('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),
+ array(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current));
+do $$declare version_id uuid; before_versions integer; before_objects integer; linked uuid;begin
+ select id into version_id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current;
+ select count(*) into before_versions from public.document_versions;
+ select count(*) into before_objects from storage.objects;
+ linked:=public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),'fd000000-0000-4000-8000-000000000001',version_id);
+ assert linked='fd000000-0000-4000-8000-000000000001';
+ perform public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),linked,version_id);
+ assert (select count(*) from public.document_versions)=before_versions;
+ assert (select count(*) from storage.objects)=before_objects;
+ perform pg_temp.refuses(format('select public.link_shipment_drive_document(%L,%L,%L,%L,%L,%L)',
+ 'eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('2',64),linked,version_id));
+ perform pg_temp.refuses(format('select public.link_shipment_drive_document(%L,%L,%L,%L,%L,%L)',
+ 'eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),linked,gen_random_uuid()));
+end $$;
 -- Changing the Drive version cannot replace an imported document or its confirmations.
+savepoint rejected_target;
+reset role;
+update public.documents set status='rejected' where id='fd000000-0000-4000-8000-000000000001';
+set role authenticated;
+select pg_temp.refuses($q$select public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),'fd000000-0000-4000-8000-000000000001',(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current))$q$);
+rollback to savepoint rejected_target;
+savepoint removed_link;
+update public.document_links set removed_at=now(),removed_by=auth.uid()
+where document_id='fd000000-0000-4000-8000-000000000001' and entity_type='shipment';
+select pg_temp.refuses($q$select public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','Copy_123456789','20',repeat('1',64),'fd000000-0000-4000-8000-000000000001',(select id from public.document_versions where document_id='fd000000-0000-4000-8000-000000000001' and is_current))$q$);
+rollback to savepoint removed_link;
 select public.scan_shipment_drive_folder(shipment_id,generation,
  '[{"file_id":"File_123456789","name":"renamed.pdf","path":"renamed.pdf","mime_type":"application/pdf","revision":"11","size":200}]')
  from public.shipment_drive_folders where shipment_id='eb300000-0000-4000-8000-000000000001';
@@ -66,6 +98,8 @@ do $$declare denied_code text;begin
   assert (select count(*) from public.shipment_drive_folders)=0;
   assert (select count(*) from public.shipment_drive_files)=0;
   perform pg_temp.refuses($q$select public.bind_shipment_drive_folder('eb300000-0000-4000-8000-000000000001','Folder_123456789','Shipment')$q$);
+  perform pg_temp.refuses($q$select public.check_shipment_drive_content('eb300000-0000-4000-8000-000000000001','File_123456789','11',repeat('1',64))$q$);
+  perform pg_temp.refuses($q$select public.link_shipment_drive_document('eb300000-0000-4000-8000-000000000001','File_123456789','11',repeat('1',64),'fd000000-0000-4000-8000-000000000001',gen_random_uuid())$q$);
   reset role;
   delete from public.user_permission_overrides o using public.permissions p where o.permission_id=p.id and p.code=denied_code and o.user_id='eb000000-0000-4000-8000-000000000001';
  end loop;

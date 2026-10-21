@@ -51,3 +51,26 @@ assert.equal(await run("select count(*) from public.document_versions where chec
 assert.equal(await run("select count(*) from public.document_links where document_id::text like 'd941%' and removed_at is null;"), '2');
 assert.equal(await run("select count(*) from public.shipment_drive_files where imported_checksum=repeat('8',64);"), '10');
 console.log('shipment-drive: ten copied files across two shipments -> one document, two links');
+// Reuse the same fixture and RPC: explicit content-review/link needs no additional Storage copy.
+const target = await run("select document_id from public.document_versions where checksum_sha256=repeat('8',64);");
+const version = await run("select id from public.document_versions where checksum_sha256=repeat('8',64);");
+const before = await run("select count(*) from storage.objects;");
+await run(`${who} select public.check_shipment_drive_content('${shipment}','Concurrent_copy_0','1',repeat('8',64),array['${version}'::uuid]);`);
+await Promise.all(Array.from({ length: 10 }, () => run(`${who}
+select public.link_shipment_drive_document('${shipment}','Concurrent_copy_0','1',repeat('8',64),'${target}','${version}');`)));
+assert.equal(await run("select count(*) from storage.objects;"), before);
+assert.equal(await run("select count(*) from public.document_versions where checksum_sha256=repeat('8',64);"), "1");
+assert.equal(await run(`select count(*) from public.document_links where document_id='${target}' and entity_id='${shipment}' and removed_at is null;`), "1");
+console.log('shipment-drive: ten concurrent explicit links -> same receipt, no additional Storage/version/link');
+const operationId = 'dc900000-0000-4000-8000-000000000001';
+const claims = await Promise.all(Array.from({ length: 10 }, () => run(`${who}
+select public.begin_shipment_drive_operation('${operationId}','${shipment}','scan')->>'action';`)));
+assert.equal(claims.filter(result => result.split('\n').at(-1) === 'run').length, 1);
+assert.equal(claims.filter(result => result.split('\n').at(-1) === 'busy').length, 9);
+await run(`${who}
+select public.scan_shipment_drive_folder(shipment_id,generation,'${JSON.stringify(copies)}') from public.shipment_drive_folders where shipment_id='${shipment}';
+select public.record_shipment_drive_operation('${operationId}',1,'finished','completed');`);
+const repeats = await Promise.all(Array.from({ length: 2 }, () => run(`${who}
+select public.begin_shipment_drive_operation('${operationId}','${shipment}','scan')->>'action';`)));
+assert.ok(repeats.every(result => result.split('\n').at(-1) === 'completed'));
+console.log('shipment-drive operations: one of ten claims runs, two concurrent retries return saved completion');

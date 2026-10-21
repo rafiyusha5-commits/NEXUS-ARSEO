@@ -6,7 +6,7 @@
 //     this vehicle (mergeConfirmedSources);
 //   * invoice lines are used for prices and HS codes of this vehicle's items, never to add goods.
 
-import { mergeConfirmedSources } from "../document-extraction/rules.ts";
+import { mergeConfirmedSources, scopeConfirmedSources } from "../document-extraction/rules.ts";
 import { buildShipmentGenerationData } from "./generation.ts";
 import { selectGenerationScope } from "./generation-scope.ts";
 
@@ -58,14 +58,16 @@ export function assembleGenerationData(input: AssemblyInput) {
     transports: generationTransports as Row[], includePrices: input.includePrices,
   });
   const vehicleCount = input.transports.length;
-  const confirmed = input.sources.map(row => (row.confirmed_data ?? {}) as Row);
   const bound = input.sources.map(row => ({ data: (row.confirmed_data ?? {}) as Row, transportId: row.shipment_transport_id ?? null }));
+  const scope = { transportId: selectedTransport?.id as string | undefined ?? null, transportCount: vehicleCount };
+  const confirmed = scopeConfirmedSources(bound, scope).own;
   const unallocated = vehicleCount > 1 ? input.items.filter(item => !item.shipment_transport_id).length : 0;
   const invoiceLines = input.sourcesUnavailable ? [] : input.sources.flatMap(row => {
+    if (row.shipment_transport_id && row.shipment_transport_id !== scope.transportId) return [];
     const lines = (row.extracted_data as Row | null)?.invoice_items;
     return Array.isArray(lines) ? lines : [];
   });
-  const merged = input.sourcesUnavailable ? baseData : mergeConfirmedSources(baseData, bound, { transportId: selectedTransport?.id as string | undefined ?? null, transportCount: vehicleCount });
+  const merged = input.sourcesUnavailable ? baseData : mergeConfirmedSources(baseData, bound, scope);
   const data = {
     ...merged,
     invoice_lines: invoiceLines,
