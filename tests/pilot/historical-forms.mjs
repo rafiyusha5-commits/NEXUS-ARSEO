@@ -149,6 +149,21 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);
     assert.equal(items().reduce((n,i)=>n+Number(i.qty),0),150);
     step('manual confirmations survive repeated recognition');
+    // Explicit employee action, not OCR auto-application: the invoice covers the whole shipment.
+    // Its 100 pieces of Alpha are manually distributed 60/40 across the existing vehicle lines.
+    const invoiceSource=sources().find(s=>s.file.endsWith('_invoice'));
+    for(let attempt=0;attempt<2;attempt++){
+      await go(`/shipments/${shipment}?tab=documents`);
+      const details=page.locator('#source-documents details').filter({has:page.locator(`input[name="extraction_id"][value="${invoiceSource.id}"]`)}).first();
+      if(await details.getAttribute('open')===null)await details.locator('summary').first().click();
+      const quantities=details.locator('form.document-quantities');
+      for(const item of items())await quantities.locator(`[name="qty_${item.id}"]`).fill(String(item.qty));
+      await quantities.locator('[name="target"]').selectOption('both');
+      await quantities.locator('[name="checked"]').check();
+      await submit(quantities,'Записать количества');
+      assert.equal(q(`select count(*) from public.shipment_item_quantity_confirmations where shipment_id='${shipment}';`),6,'repeat confirmation must not add history');
+    }
+    step('document quantities explicitly confirmed through existing form; retry kept six history rows');
     const documents=q(`select jsonb_object_agg(file_id,imported_document_id) from public.shipment_drive_files where shipment_id='${shipment}';`);
     for(const [index,vehicle]of vehicles.entries()){
       const document=documents[fixtures.files.find(x=>x.key===`cmr${index+1}`).id];
@@ -192,6 +207,26 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     const receivedBatches=provenance();assert.equal(receivedBatches.length,3);
     assert.ok(receivedBatches.every(b=>vehicles.some(v=>v.id===b.vehicle)));
     assert.equal(q(`select sum(received_quantity) from public.shipment_items where shipment_id='${shipment}';`),148);
+    const beforeQuantityRead=snapshot();
+    await go(`/shipments/${shipment}?tab=quantities`);
+    const quantityPanel=page.getByRole('region',{name:'Откуда взялось количество',exact:true});
+    assert.equal(await quantityPanel.locator('.quantity-lineage-item').count(),3);
+    assert.match(await quantityPanel.innerText(),/годное 57 · повреждение 1 · недостача 2/);
+    assert.match(await quantityPanel.innerText(),/включая повреждение/);
+    assert.ok(await quantityPanel.locator('a[href^="/documents/"]').count()>=6,'available quantity sources missing');
+    assert.match(await quantityPanel.innerText(),/версия 1/);
+    assert.match(await quantityPanel.innerText(),/Количество подтвердил/);
+    assert.equal(await quantityPanel.locator('form').count(),0);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await quantityPanel.locator('summary').first().click();
+      await page.screenshot({path:join(output,`quantity-provenance-${width}.png`),fullPage:true});
+      assert.ok(await quantityPanel.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'provenance mobile overflow');
+    }
+    await page.reload();await page.waitForLoadState('networkidle');
+    assert.deepEqual(snapshot(),beforeQuantityRead,'read/reload changed stock or receipts');
+    await page.setViewportSize({width:1440,height:1000});
+    evidence.quantityProvenance=true;step('quantity provenance: separate damage and shortage, responsive and read-only');
     await go('/sales');await page.locator('details.create-disclosure > summary').click();
     f=page.locator('form').filter({has:page.locator('select[name="customer_id"]')});
     await fill(f,{customer_id:refs.customer,warehouse_id:refs.warehouse,planned_shipment_date:date(1),currency_id:refs.eur});
@@ -302,6 +337,12 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await restrictedPage.goto(`${base}/shipments/prepare?shipment=${shipment}`);await restrictedPage.waitForLoadState('networkidle');
     assert.match(await restrictedPage.locator('body').innerText(),/Проект или источники недоступны/);
     assert.equal(await restrictedPage.locator('.historical-card').count(),0);
+    await restrictedPage.goto(`${base}/shipments/${shipment}?tab=quantities`);await restrictedPage.waitForLoadState('networkidle');
+    const restrictedQuantities=restrictedPage.getByRole('region',{name:'Откуда взялось количество',exact:true});
+    assert.match(await restrictedQuantities.innerText(),/Источник не зафиксирован/);
+    assert.equal(await restrictedQuantities.locator('a[href^="/documents/"]').count(),0);
+    assert.doesNotMatch(await restrictedQuantities.innerText(),/MANUAL-ORDER-VERIFIED/);
+    await restrictedPage.screenshot({path:join(output,'quantity-provenance-restricted.png'),fullPage:true});
     await restrictedContext.close();evidence.permissionBoundary=true;step('independent restricted session hides documents and purchase cost');
     // A second, separate purchase proves the owner's paid-quantity rule through forms too.
     await go('/shipments');await page.locator('details.create-disclosure > summary').click();

@@ -293,3 +293,16 @@ input,select,textarea{border-radius:var(--radius-control)}
 .historical-values dd { margin: 0; overflow-wrap: anywhere; }
 .historical-values small { display: block; opacity: .8; }
 @media(max-width:600px) { .historical-values > div { grid-template-columns: 1fr; } .historical-steps button { width:100%; } }
+/* Quantity provenance: read-only evidence cards, same units, no implied totals. */
+.quantity-lineage-item { border-top: 1px solid var(--border, #ddd); padding: 24px 0; min-width: 0; }
+.quantity-lineage-item h3 { margin-bottom: 6px; }
+.quantity-lineage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.quantity-lineage-grid > div { padding: 16px; background: var(--surface-muted, #f6f5f2); border-radius: 12px; }
+.quantity-lineage-grid dt { font-size: 13px; }
+.quantity-lineage-grid dd { margin: 8px 0; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.quantity-lineage-grid small, .quantity-source { display: block; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.quantity-differences { border-left: 3px solid #b69b6e; padding: 1px 14px; margin: 16px 0; }
+.quantity-receipt { border: 1px solid var(--border, #ddd); border-radius: 12px; padding: 14px; margin: 12px 0; overflow-wrap: anywhere; }
+.quantity-timeline summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
+.quantity-timeline li { padding: 8px 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .quantity-lineage-grid { grid-template-columns: 1fr; } .quantity-lineage-item { padding: 18px 0; } }
