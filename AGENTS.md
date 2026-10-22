@@ -22,8 +22,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Проверки перед передачей работы
 
+- Перед началом задачи прочитать [контекст проекта](docs/project-context.md) и [журнал работы](docs/work-log.md). Это датированный контекст, а не разрешение выполнять перечисленные там будущие задачи; основу и объём работы согласовывать с владельцем.
 - Перед оформлением Pull Request прогнать `corepack pnpm typecheck`, `corepack pnpm lint`, `corepack pnpm test`, `corepack pnpm build` и SQL-тесты `corepack pnpm test:db` на PostgreSQL 16.
-- `test:db` обязателен для любой новой миграции, RPC или функции: `supabase/tests/security_audit.test.sql` сверяет список `tests.sec_exec_allow` с фактическими правами `EXECUTE`, и забытое имя роняет прогон. Автоматического прогона в репозитории нет.
+- `test:db` обязателен для любой новой миграции, RPC или функции: `supabase/tests/security_audit.test.sql` сверяет список `tests.sec_exec_allow` с фактическими правами `EXECUTE`, и забытое имя роняет прогон. Автоматический прогон настроен в `.github/workflows/checks.yml`: Pull Request (включая Draft) и push в `main`; push рабочей ветки без PR его не запускает. Состав шести проверок — в `docs/ci.md`.
 - Если какая-то проверка не выполнялась или падает по причине, не связанной с задачей, это указывается в описании Pull Request прямо, без умолчаний.
 - Перед обновлением зависимостей и после него прогонять `corepack pnpm audit --prod`; оставленную без исправления находку обосновывать в `docs/security-audit.md`.
 
