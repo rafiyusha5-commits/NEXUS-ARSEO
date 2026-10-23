@@ -136,6 +136,31 @@ describe("a report that cannot be trusted fails the check", () => {
 });
 
 describe("only the exact justified finding is waived", () => {
+  for (const [id, severity] of [
+    ["GHSA-2464-fhr4-w9xw", "critical"],
+    ["GHSA-673q-mjm6-r5xr", "critical"],
+    ["GHSA-p3m5-59mp-jv5r", "high"],
+  ]) {
+    it(`blocks ${id} even alongside the justified ExcelJS finding`, () => {
+      const nextFinding = advisory({
+        github_advisory_id: id,
+        module_name: "next",
+        severity,
+        title: "Next.js security regression fixture",
+        url: `https://github.com/advisories/${id}`,
+        vulnerable_versions: ">=16.0.0 <=16.4.0",
+        patched_versions: ">=16.4.1",
+        findings: [{ version: "16.3.8", paths: [".>next"] }],
+      });
+      const verdict = evaluateAudit(run(report({ uuid: advisory(), next: nextFinding }, {
+        moderate: 1, [severity]: 1,
+      }), 1));
+      assert.equal(verdict.ok, false);
+      assert.match(verdict.lines.join("\n"), new RegExp(`НЕ ДОПУЩЕНО\\s+${id}\\s+next@16\\.3\\.8`));
+      assert.doesNotMatch(verdict.lines.join("\n"), /Проверка пройдена/);
+    });
+  }
+
   it("blocks an advisory that is not justified at all", () => {
     const other = advisory({
       github_advisory_id: "GHSA-aaaa-bbbb-cccc",
