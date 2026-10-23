@@ -3,8 +3,10 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
+import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
+import { readDateChanges } from "@/lib/shipments/date-corrections";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(formData: FormData, name: string) { const value=formData.get(name); return typeof value==="string"?value.trim():""; }
@@ -36,6 +38,7 @@ export async function changeStageStatus(formData: FormData) {
   if(["blocked","skipped","not_applicable"].includes(status)&&!reason) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Для этого действия укажите причину")}`);
   const {error}=await supabase.rpc("change_shipment_stage_status",{p_run_id:runId,p_status:status,p_reason:reason||null,p_performed_by_name:text(formData,"performed_by_name")||null});
   if(error) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус этапа."))}`);
+  await refreshLogistAfterChange(supabase,shipmentId!);
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус этапа обновлён")}`);
 }
@@ -82,7 +85,7 @@ export async function allocateShipmentItem(formData:FormData){
   const quantity=Number(text(formData,"quantity"));
   if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество для распределения должно быть больше нуля")}`);
   const {error}=await supabase.rpc("allocate_shipment_item",{p_item_id:uuid(formData,"item_id"),p_transport_id:uuid(formData,"transport_id",false),p_quantity:quantity});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось распределить товар по перевозкам."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось распределить товар по перевозкам."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Товар распределён по перевозкам")}`);
 }
 
@@ -93,14 +96,14 @@ export async function updateShipmentItem(formData:FormData){
   if(!Number.isFinite(quantity)||quantity<=0)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Количество должно быть больше нуля")}`);
   if(price!==null&&(!Number.isFinite(price)||price<0))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Цена не может быть отрицательной")}`);
   const {error}=await supabase.rpc("update_shipment_item",{p_item_id:uuid(formData,"item_id"),p_quantity:quantity,p_unit_price:price});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось обновить позицию поставки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось обновить позицию поставки."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция обновлена")}`);
 }
 
 export async function deleteShipmentItem(formData:FormData){
   const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id");
   const {error}=await supabase.rpc("delete_shipment_item",{p_item_id:uuid(formData,"item_id")});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось удалить позицию поставки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось удалить позицию поставки."))}`);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Позиция удалена")}`);
 }
 
@@ -109,7 +112,8 @@ export async function changeShipmentTransportStatus(formData:FormData){
   const status=text(formData,"status");
   if(!["planned","loading","in_transit","at_customs","arrived","unloaded","cancelled"].includes(status))redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Некорректный статус перевозки")}`);
   const {error}=await supabase.rpc("change_shipment_transport_status",{p_transport_id:uuid(formData,"transport_id"),p_status:status});
-  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось изменить статус перевозки."))}`);
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось изменить статус перевозки."))}`);
+  await refreshLogistAfterChange(supabase,shipmentId!);
   revalidatePath(`/shipments/${shipmentId}`); redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Статус перевозки обновлён")}`);
 }
 
@@ -123,6 +127,16 @@ export async function changeShipmentOperationalState(formData:FormData){
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
   const messages:Record<string,string>={hold:"Поставка приостановлена",resume:"Поставка возобновлена",cancel:"Поставка отменена"};
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(messages[action])}`);
+}
+
+// Reopening needs shipments.view, shipments.reopen and a reason; the database checks them and returns the closing stage to work.
+export async function reopenShipment(formData:FormData){
+  const {supabase}=await requireUser(); const shipmentId=uuid(formData,"shipment_id"); const reason=text(formData,"reason");
+  if(!reason)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Укажите причину повторного открытия")}`);
+  const {error}=await supabase.rpc("reopen_shipment",{p_shipment_id:shipmentId,p_reason:reason});
+  if(error)redirect(`/shipments/${shipmentId}?error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось открыть поставку повторно."))}`);
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/");
+  redirect(`/shipments/${shipmentId}?tab=stages&success=${encodeURIComponent("Поставка открыта повторно: этап «Закрытие поставки» снова в работе")}`);
 }
 
 export async function receiveShipmentTransport(formData:FormData){
@@ -176,4 +190,22 @@ export async function receiveShipmentTransport(formData:FormData){
   revalidatePath("/shipments");
   revalidatePath("/");
   redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Автомобиль принят. Партии и остатки зарегистрированы.")}`);
+}
+
+// Real dates of an executed shipment (shipments.backdate): only changed days are sent, with a mandatory reason.
+export async function correctShipmentDates(formData: FormData) {
+  const shipmentId=uuid(formData,"shipment_id");
+  const back=(kind:"error"|"success",message:string)=>`/shipments/${shipmentId}?tab=stages&${kind}=${encodeURIComponent(message)}#actual-dates`;
+  const reason=text(formData,"reason");
+  if(!reason) redirect(back("error","Укажите причину исправления дат"));
+  let parsed:ReturnType<typeof readDateChanges>;
+  try { parsed=readDateChanges(formData.entries()); }
+  catch(error) { redirect(back("error",error instanceof Error?error.message:"Проверьте даты")); }
+  if(!parsed.count) redirect(back("error","Даты не изменены"));
+  const {supabase}=await requireUser();
+  const {data,error}=await supabase.rpc("correct_shipment_dates",{p_shipment_id:shipmentId,p_changes:parsed.changes,p_reason:reason});
+  if(error) redirect(back("error",ruleViolationMessage(error,"Не удалось исправить даты поставки.")));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/shipments/${shipmentId}/report`);
+  const changed=Number((data as {changed?:number}|null)?.changed??0);
+  redirect(back("success",changed?`Фактические даты исправлены: ${changed}`:"Даты совпадают с записанными, изменений нет"));
 }

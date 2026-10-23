@@ -98,7 +98,7 @@
 | 12 | Шаблоны | `templates` | `templates.*` (миграция 202609271700) |
 | 13 | Финансы | `finance` | `finance.view`, `finance.manage` |
 | 14 | Себестоимость | `costing` | — |
-| 15 | Дебиторская задолженность | `receivables` | — |
+| 15 | Дебиторская задолженность | `receivables` | `receivables.view`, `receivables.manage` (миграция 202609277600, см. `docs/receivables.md`) |
 | 16 | Отчёты | `reports` | — |
 | 17 | Прогнозы | `forecasts` | — |
 | 18 | Интеграции | `integrations` | — |

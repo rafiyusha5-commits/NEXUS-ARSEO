@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { createShipment } from "./actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 const statusLabels:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 function localizedName(value:unknown){if(!value||typeof value!=="object")return "—";const name=value as Record<string,unknown>;return String(name.ru??name.en??"—");}
@@ -13,7 +14,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
   if(params.status)query=query.eq("status",params.status);
   const [{data:shipments,error},{data:counterparties},{data:routes},{data:warehouses},{data:currencies},{data:profiles}]=await Promise.all([
     query,
-    supabase.from("counterparties").select("id,legal_name,short_name,roles").eq("status","active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name,roles").eq("status","active").order("legal_name").order("id").range(from,to)),
     supabase.from("routes").select("id,name").eq("status","active").order("origin_country"),
     supabase.from("warehouses").select("id,name,is_virtual").eq("status","active").eq("is_virtual",false).order("code"),
     supabase.from("currencies").select("id,code").eq("is_active",true).order("code"),
@@ -23,6 +24,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
   const customers=counterparties?.filter((party)=>party.roles?.includes("customer"))??[];
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Закупки и логистика</p><h1>Поступления и поставки</h1></div><div className="topbar-actions"><span className="page-count">{shipments?.length??0} поставок</span></div></header>
+    <Link className="ghost button-link" href="/shipments/prepare">Подготовить историческую поставку</Link>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609270003_phase2_shipments.sql</strong> в Supabase.</div>}
     <details className="panel admin-section create-disclosure"><summary><span><small>Новая операция</small><strong>Оформить поступление или поставку</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">

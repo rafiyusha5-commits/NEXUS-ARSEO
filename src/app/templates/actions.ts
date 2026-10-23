@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
+import { businessToday } from "@/lib/dates/business-day";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import type { UploadedFile } from "@/lib/documents/operations.ts";
 import { randomHex, sha256Hex } from "@/lib/documents/supabase-gateway.ts";
@@ -138,7 +139,7 @@ export async function generateDocumentAction(formData:FormData){
  const documentId=crypto.randomUUID(),generationId=crypto.randomUUID();const filename=generatedFileName(String(version.original_filename),String(preview.data.shipment_number));const path=buildDocumentStoragePath(documentId,normalizeFileName(filename),randomHex());
  const outputMime=mime===XLSX_MIME?XLSX_MIME:DOCX_MIME;const{error:uploadError}=await storage.upload(path,bytes,{contentType:outputMime,upsert:false,cacheControl:"0"});if(uploadError)redirect(withMessage(back,"error",publicErrorMessage(uploadError,"Не удалось сохранить сформированный файл.")));
  const checksum=await sha256Hex(bytes);const title=text(formData,"title")||`${preview.template.name} · ${preview.data.shipment_number}`;const number=text(formData,"document_number")||null;
- const{error:registerError}=await supabase.rpc("register_generated_document",{p_generation_id:generationId,p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_document_id:documentId,p_title:title.slice(0,300),p_storage_path:path,p_original_filename:filename,p_document_number:number,p_document_date:new Date().toISOString().slice(0,10),p_language:preview.template.language,p_checksum_sha256:checksum,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
+ const{error:registerError}=await supabase.rpc("register_generated_document",{p_generation_id:generationId,p_template_id:templateId,p_template_version_id:String(version.id),p_shipment_id:shipmentId,p_document_id:documentId,p_title:title.slice(0,300),p_storage_path:path,p_original_filename:filename,p_document_number:number,p_document_date:businessToday(),p_language:preview.template.language,p_checksum_sha256:checksum,p_contains_prices:includePrices,p_fields_snapshot:preview.data});
  if(registerError){await storage.remove([path]);redirect(withMessage(back,"error",publicErrorMessage(registerError,"Не удалось зарегистрировать сформированный документ.")));}
  revalidatePath("/templates");revalidatePath(`/templates/${templateId}`);revalidatePath("/documents");revalidatePath(`/shipments/${shipmentId}`);redirect(`/documents/${documentId}?success=${encodeURIComponent("Документ сформирован из шаблона")}`);
 }

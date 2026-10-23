@@ -303,7 +303,7 @@ $$, 'entity_type_check|Недопустимый тип связанного об
 select tests.expect_error($$
   insert into public.document_links (document_id, entity_type, entity_id)
   values ('d0000000-0000-4000-8000-000000000001', 'customer_return', 'c0000000-0000-4000-8000-000000000001')
-$$, 'Возвраты ещё не реализованы');
+$$, 'не найден');  -- returns exist since 202609277500: an unknown return is simply not found
 select tests.expect_error($$
   insert into public.document_links (document_id, entity_type, entity_id)
   values ('d0000000-0000-4000-8000-000000000001', 'supplier', 'b0000000-0000-4000-8000-000000000002')

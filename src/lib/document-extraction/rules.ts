@@ -1,6 +1,9 @@
 import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
+import { isCustomsForm, parseCustomsForm } from "./customs.ts";
+import { parseCommodityInvoice } from "./commodity-evidence.ts";
+import { parsePackingEvidence } from "./packing-evidence.ts";
 
-export const EXTRACTION_VERSION = "rules-v2";
+export const EXTRACTION_VERSION = "rules-v6";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -91,6 +94,10 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 }
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
+  if (hintedKind !== "other") return hintedKind;
+  if (isCustomsForm(rawText)) return "other";
+  if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
+  if (/despatch\s+note|dispatch\s+note/iu.test(rawText)) return "specification";
   if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
@@ -125,6 +132,7 @@ const LABEL_INSIDE = new RegExp(`(?<![\p{L}\p{N}])(?:${LABEL_WORDS})`, "iu");
 const LABEL_SENSITIVE = new Set(["driver_name", "driver_document", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "seals", "carrier_name"]);
 
 export function cleanFieldValue(field: string, value: string) {
+  if (field.endsWith("_number") && !/\d/u.test(value)) return "";
   if (!LABEL_SENSITIVE.has(field)) return value;
   if (LABEL_AT_START.test(value)) return "";
   const inside = LABEL_INSIDE.exec(value);
@@ -143,6 +151,7 @@ export function looksPlausible(field: string, value: string) {
 export type ExtractOptions = {
   /** The text comes from the OCR service, which may prepend its own marker lines (see NEXUS_DOCUMENT_NUMBER). */
   fromOcr?: boolean;
+  hintedKind?: string;
 };
 
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
@@ -151,6 +160,10 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   const text = rawText.replace(/\r/g, "\n").replace(/[\t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n");
   const data: Record<string, unknown> = {};
   const evidence: Record<string, ExtractionEvidence> = {};
+  // A customs declaration needs a dedicated form parser: transport patterns
+  // otherwise mistake numbered box headings and exporter names for facts.
+  const customs = parseCustomsForm(text);
+  if (customs) return { data: { customs_record: customs }, evidence, conflicts: [] };
   for (const pattern of patterns) {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);
@@ -203,6 +216,34 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
       break;
     }
   }
+  const add = (field: string, value: string | undefined, confidence = 0.85) => {
+    if (!value) return;
+    const cleaned = cleanFieldValue(field, clean(value));
+    if (!cleaned) return;
+    const definition = SOURCE_FIELD_DEFINITIONS.find(item => item.key === field);
+    if (!definition) return;
+    const parsed = definition.type === "number" ? Number(cleaned.replace(/\s/g, "").replace(",", ".")) : cleaned;
+    if (typeof parsed === "number" && !Number.isFinite(parsed)) return;
+    data[field] = parsed;
+    evidence[field] = { label: definition.label, value: cleaned, confidence };
+  };
+  add("invoice_number", text.match(/\bINVOICE[ \t]+(?:NO\.?|NUMBER)\)?[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9/_.-]*\d[A-Z0-9/_.-]*)/iu)?.[1]);
+  add("invoice_date", text.match(/\bINVOICE[ \t]+DATE\)?[ \t]*:?[ \t]*(\d{4}-\d{2}-\d{2})/iu)?.[1]);
+  const kind = detectShipmentSourceKind(text, options.hintedKind);
+  if (kind === "waybill") {
+    add("cmr_number", text.match(/\bCMR\s*[)\]:№#-]*\s*(\d[A-Z0-9/_.-]*)/iu)?.[1]);
+    add("pallet_count", text.match(/\bTOTAL\s*:\s*(\d+)\s*(?:Palet|Pallets?)\b/iu)?.[1]);
+    const plates = text.match(/\b([A-Z]{2,3}\d{3,5}[A-Z]{0,2})\s*\/\s*([A-Z]{2,3}\d{3,5}[A-Z]{0,2})\b/iu);
+    add("vehicle_plate", plates?.[1]?.toUpperCase(), 0.65);
+    add("trailer_plate", plates?.[2]?.toUpperCase(), 0.65);
+    // CMR total: pallet count, pieces, then gross kilograms. Require all columns.
+    add("gross_weight_kg", text.match(/\bTOTAL\s*:\s*\d+\s*Palet\s+\d+\s+szt\.?\s+(\d[\d ]*[,.]\d{3})(?:\s*\n|$)/iu)?.[1], 0.75);
+  }
+  if (kind === "specification") {
+    add("packing_list_number", text.match(/\bWZ[ \t]*[:#]?[ \t]*(\d[\d/A-Z.-]+)/iu)?.[1]);
+  }
+  add("gross_weight_kg", text.match(/\b(?:total\s+)?gross\s+weight(?:\s*\(?kg\)?)?\s*[:=]\s*(\d[\d .,]*)/iu)?.[1]);
+  add("net_weight_kg", text.match(/\b(?:total\s+)?net\s+weight(?:\s*\(?kg\)?)?\s*[:=]\s*(\d[\d .,]*)/iu)?.[1]);
   if (isElectronicInvoice(text)) {
     // The electronic invoice is a fixed form: its boxes are more reliable than free-text patterns.
     const esf = parseElectronicInvoice(text);
@@ -213,6 +254,10 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
     }
     if (esf.items.length) data.invoice_items = esf.items;
   }
+  const commodityInvoice = kind === "invoice" ? parseCommodityInvoice(text) : null;
+  if (commodityInvoice) data.commodity_invoice = commodityInvoice;
+  const packing = parsePackingEvidence(text);
+  if (packing) data.packing_evidence = packing;
   return { data, evidence, conflicts: [] };
 }
 
@@ -257,8 +302,12 @@ export const VEHICLE_SCOPED_FIELDS = [
   "carrier_name", "vehicle_plate", "vehicle_make", "trailer_plate", "trailer_make", "driver_name", "driver_phone", "driver_document",
   "temperature_setpoint", "seals", "cmr_number", "ttn_number", "waybill_number", "packing_list_number", "shipping_date",
   "pallet_count", "gross_weight_kg", "net_weight_kg",
+  "loading_address", "unloading_address", "loading_city", "loading_country", "unloading_country",
 ] as const;
 const vehicleScoped = new Set<string>(VEHICLE_SCOPED_FIELDS);
+// A shipment-wide contract may explicitly supply a shared route. Preserve this existing case;
+// once the source is assigned to a vehicle, its route must stay with that vehicle.
+const sharedRouteFields = new Set(["loading_address", "unloading_address", "loading_city", "loading_country", "unloading_country"]);
 
 export type ConfirmedSource = { data: Record<string, unknown>; transportId?: string | null };
 
@@ -273,23 +322,27 @@ export function mergeConfirmedSources(
   sources: ConfirmedSource[],
   scope: { transportId?: string | null; transportCount: number },
 ) {
-  const own: Record<string, unknown>[] = [];
+  const { own, skipped } = scopeConfirmedSources(sources, scope);
+  const merged = mergeConfirmedSourceData(base, own);
+  if (skipped.size) merged.unassigned_vehicle_fields = [...skipped];
+  return merged;
+}
+
+/** One scope calculation shared by generation values and their provenance/readiness labels. */
+export function scopeConfirmedSources(sources: ConfirmedSource[], scope: { transportId?: string | null; transportCount: number }) {
   const skipped = new Set<string>();
-  const filtered = sources.map(source => {
+  const own = sources.map(source => {
     const data: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(source.data)) {
       if (!vehicleScoped.has(key)) { data[key] = value; continue; }
       const bound = source.transportId ?? null;
-      const applies = bound ? bound === scope.transportId : scope.transportCount <= 1;
+      const applies = bound ? bound === scope.transportId : sharedRouteFields.has(key) || scope.transportCount <= 1;
       if (applies) data[key] = value;
       else if (!bound && value !== null && value !== "" && value !== undefined) skipped.add(key);
     }
     return data;
   });
-  for (const data of filtered) own.push(data);
-  const merged = mergeConfirmedSourceData(base, own);
-  if (skipped.size) merged.unassigned_vehicle_fields = [...skipped];
-  return merged;
+  return { own, skipped };
 }
 
 export function mergeConfirmedSourceData(base: Record<string, unknown>, sources: Array<Record<string, unknown>>) {

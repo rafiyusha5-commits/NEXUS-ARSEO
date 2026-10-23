@@ -15,7 +15,7 @@ function number(value:unknown){const parsed=Number(value);return Number.isFinite
 const zoneNames:Record<string,string>={receiving:"Приёмка",storage:"Хранение",picking:"Комплектация",quarantine:"Карантин",stickering:"Стикеровка",shipping:"Отгрузка"};
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 const shelfStates:Record<string,string>={normal:"Норма",warning:"Менее 90 дней",critical:"Менее 30 дней",expired:"Просрочено",quarantine:"Карантин",blocked:"Заблокировано"};
-const movementNames:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",adjustment:"Корректировка"};
+const movementNames:Record<string,string>={receipt:"Приход",transfer:"Перемещение",issue:"Расход FIFO",write_off:"Списание",customer_return:"Возврат от клиента",adjustment:"Корректировка"};
 const shipmentStatuses:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 const saleStatuses:Record<string,string>={draft:"Черновик",reserved:"Зарезервирован",confirmed:"Подтверждён",shipped:"Отгружен",cancelled:"Отменён"};
 

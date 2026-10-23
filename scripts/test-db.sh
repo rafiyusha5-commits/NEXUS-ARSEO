@@ -33,7 +33,9 @@ trap cleanup EXIT
 "${RUN[@]}" "$PGBIN/pg_ctl" -D "$WORKDIR/data" -l "$WORKDIR/server.log" \
   -o "-k $WORKDIR -p $PORT -c listen_addresses=''" -w start >/dev/null
 
-export PGOPTIONS="-c client_min_messages=warning"
+# The business day of the application is Kazakhstan's (202609278300): tests live in it too, so that their own
+# current_date is the "today" the functions use at any hour. business_date.test.sql sets other session zones itself.
+export PGOPTIONS="-c client_min_messages=warning -c timezone=Asia/Almaty"
 PSQL=(psql -h "$WORKDIR" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X)
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/supabase_stub.sql"
@@ -67,6 +69,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272300_database_security_hardening.sql" >/dev/null
 # Receiving is applied after hardening so its explicitly granted RPC remains available.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272400_shipment_transport_receiving.sql" >/dev/null
+# Date corrections replace the protection trigger of 2100 re-applied above and are granted after 2300.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277300_shipment_date_corrections.sql" >/dev/null
 # Customer orders and FEFO reservations are safe to re-apply before their tests.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609272500_customer_orders_fefo.sql" >/dev/null
 # Sticker layouts, print orders and marking orders are idempotent and re-applied before tests.
@@ -94,16 +98,27 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273700_export_document_package.sql" >/dev/null
 # Warehouse operation documents and their posting/reversal RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273800_inventory_operation_documents.sql" >/dev/null
+# Restocking depleted batches: trigger, write-off and the repair are idempotent; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277800_depleted_batch_restock.sql" >/dev/null
+# Write-off and transfer only through a warehouse document: closes the direct RPCs granted by 2300 and 7800 above
+# and replaces the line RPC of 3800.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278400_inventory_direct_operations.sql" >/dev/null
 # Supplier assortment and its integrity triggers are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609273900_product_supplier_catalog.sql" >/dev/null
 # Import customs-stage recovery is a repeatable data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274000_import_customs_stages.sql" >/dev/null
 # Purchase price visibility is permission-based and safe to re-apply.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274100_purchase_price_access.sql" >/dev/null
+# Quantities from source documents: the hardening re-applied above resets function grants; idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277200_document_quantities.sql" >/dev/null
 # The final portal hardening restores combined employee/client policies and pinned files.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274200_external_document_security.sql" >/dev/null
 # Master-calculator storage and its guarded import/RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274300_calculator_master_data.sql" >/dev/null
+# Expense cancellation replaces the costing functions of 2700 and 4100 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278000_expense_cancel_costing.sql" >/dev/null
+# The purchase price at the rate of the day the goods came replaces the calculation of 8000 above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278700_purchase_rate_date.sql" >/dev/null
 # Froosh/Fazer catalogue cleanup is a repeatable, non-destructive data correction.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609274400_froosh_fazer_supplier_cleanup.sql" >/dev/null
 # Calculator barcode reconciliation only replaces guarded functions.
@@ -120,6 +135,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275000_reopen_confirmed_ocr.sql" >/dev/null
 # Several vehicles per shipment: columns, replaceable RPCs and the review function are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275100_multi_vehicle_shipments.sql" >/dev/null
+# Received shipment items: replaces the item RPCs of 2100 and 4100 re-applied above; grants follow the hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277700_received_shipment_items.sql" >/dev/null
 # Assistant permissions, limits and traces: settings and grants are kept; functions are replaceable.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275200_agent_web_mvp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275300_agent_telegram.sql" >/dev/null
@@ -127,6 +144,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275400_telegram_reliability.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275500_agent_catalog.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275600_agent_archivist.sql" >/dev/null
+# Receivables: tables, the sales trigger and RPCs are idempotent; grants are reset by the hardening re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277600_receivables.sql" >/dev/null
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275700_calculator_purchase_prices.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609275800_agent_drive_archive.sql" >/dev/null
@@ -134,17 +153,92 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276000_drive_catalog_safeupdate.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276100_drive_catalog_ocr.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276200_drive_archive_access.sql" >/dev/null
+# Customer returns: grants are reset by the hardening re-applied above; tables and functions are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277500_customer_returns.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276300_telegram_delivery_authorization.sql" >/dev/null
+# Logist proposals: grants are reset by the hardening re-applied above; tables and functions are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277400_logist_assistant.sql" >/dev/null
 # Document check agent: its state table, rules and RPCs are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276400_document_check_agent.sql" >/dev/null
 # Shelf life control agent: replaceable read-only rules and the daily summary RPC are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276500_shelf_life_control_agent.sql" >/dev/null
 # Shipment number allocation replaces the existing guarded RPC and retains its grants.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276800_shipment_number_generation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276600_customer_order_fulfillment.sql" >/dev/null
+# The list of shipping blockers is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278900_order_shipping_blockers.sql" >/dev/null
+# Order notifications and rescheduling replace the list function of 8900 and add the notification type after 2200.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279000_order_blocker_notifications.sql" >/dev/null
+# Shipment closing: permission, trigger, reopen RPC and the one-time repair are repeatable.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609276650_shipment_closing.sql" >/dev/null
+# The operational summary is granted again after the hardening (2300) re-applied above revoked it.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278600_operational_summary.sql" >/dev/null
+# Unit conversion replaces the reservation RPCs of 2500 and the fulfillment of 6600 re-applied above; it must follow them.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277100_uom_conversion.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609277900_reviewed_batch_integrity.sql" >/dev/null
+# The Kazakhstan business day is a setting of every function that reads current_date: re-applying older migrations
+# above re-creates those functions without it, so this one must follow them (8100 below reads no current_date).
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278300_kazakhstan_business_date.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278100_order_recovery_business_date.sql" >/dev/null
+# The transport status rule replaces the function of 2100, 2300 and 8100 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609278200_transport_status_after_receipt.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279100_reviewed_customs_costing.sql"
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279200_source_evidence_integrity.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279300_confirmed_invoice_evidence_refresh.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279400_customs_evidence_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279600_receivables_import_safety.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279500_reservation_replacement.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279700_customs_review_validation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279800_opening_import_revisions.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202609279900_customs_evidence_revision.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610190100_shipment_drive_folders.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200100_drive_folder_reconciliation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200200_document_transport_context.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200300_document_processing_reliability.sql" >/dev/null
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200400_integrated_document_operations.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610200500_purchase_cost_quantity.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610210200_historical_preparation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610210300_quantity_provenance.sql" >/dev/null
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
 done
+
+echo "test: confirmed-order reservation replacement under concurrency"
+node "$ROOT/scripts/test-reservation-replacement-concurrency.mjs" "${PSQL[@]}"
+echo "test: cost calculation and approval under concurrent source edits"
+node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
+
+echo "test: current document evidence under concurrent source edits"
+node "$ROOT/scripts/test-source-integrity-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-ocr-recovery-concurrency.mjs" "${PSQL[@]}"
+
+echo "test: order fulfillment under concurrency (duplicates and cancellation)"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
+fulfill_pids=()
+for i in $(seq 1 10); do
+  "${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.fulfill_customer_order(id) from tests.fulfillment_context where k='sale';" \
+    >"$WORKDIR/fulfill_$i.out" 2>&1 &
+  fulfill_pids+=("$!")
+done
+for pid in "${fulfill_pids[@]}"; do
+  if ! wait "$pid"; then cat "$WORKDIR"/fulfill_*.out; exit 1; fi
+done
+"${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.fulfill_customer_order(id) from tests.fulfillment_context where k='other';" >"$WORKDIR/ship_race.out" 2>&1 &
+ship_pid=$!
+"${PSQL[@]}" -tA -c "set role authenticated; select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false); select public.cancel_customer_order(id,'Synthetic race') from tests.fulfillment_context where k='other';" >"$WORKDIR/cancel_race.out" 2>&1 &
+cancel_pid=$!
+ship_ok=0; cancel_ok=0
+if wait "$ship_pid"; then ship_ok=1; fi
+if wait "$cancel_pid"; then cancel_ok=1; fi
+if [[ $((ship_ok + cancel_ok)) != 1 ]]; then cat "$WORKDIR/ship_race.out" "$WORKDIR/cancel_race.out"; exit 1; fi
+"${PSQL[@]}" -f "$ROOT/supabase/tests/order_fulfillment_concurrency_check.sql" >/dev/null
 
 # Parallel server calls for one employee must not exceed the daily assistant limit (accounting RPCs
 # are executable only by service_role, the Nexus server key): the reservation
@@ -217,3 +311,6 @@ done
 "${PSQL[@]}" -f "$ROOT/supabase/tests/shipment_number_concurrency_check.sql" >/dev/null
 
 echo "database tests passed"
+node "$ROOT/scripts/test-receivables-import-concurrency.mjs" "${PSQL[@]}"
+
+node "$ROOT/scripts/test-shipment-drive-concurrency.mjs" "${PSQL[@]}"

@@ -21,6 +21,8 @@ values('fe210000-0000-4000-8000-000000000001','fe200000-0000-4000-8000-000000000
 insert into public.shipment_source_extractions(id,shipment_id,document_id,document_version_id,source_kind,status,extracted_data,extractor_version,requested_by)
 values('fe400000-0000-4000-8000-000000000001','fe300000-0000-4000-8000-000000000001','fe200000-0000-4000-8000-000000000001','fe210000-0000-4000-8000-000000000001',
  'contract','extracted','{"supplier_address":"Тестландия, г. Тестоград, ул. Заводская, 2"}','rules-v1','fe000000-0000-4000-8000-000000000001');
+insert into public.document_links(document_id,entity_type,entity_id,created_by) values
+ ('fe200000-0000-4000-8000-000000000001','shipment','fe300000-0000-4000-8000-000000000001','fe000000-0000-4000-8000-000000000001');
 set session_replication_role=origin;
 
 set role authenticated;

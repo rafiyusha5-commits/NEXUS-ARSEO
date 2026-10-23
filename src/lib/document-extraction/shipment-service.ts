@@ -12,6 +12,8 @@ import { extractDocumentText } from "./text";
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
 
 function sourceKind(code: string) {
+  if (code === "cmr" || code === "ttn") return "waybill";
+  if (code === "packing_list") return "specification";
   if (["invoice", "specification", "waybill", "transport_order", "vehicle_document", "driver_document"].includes(code)) return code;
   if (["supplier_contract", "customer_contract"].includes(code)) return "contract";
   return "other";
@@ -33,35 +35,37 @@ type Scan = OcrDocument & { code: string };
 export async function extractShipmentSources(
   supabase: SupabaseClient,
   shipmentId: string,
-  options: { documentId?: string; force?: boolean } = {},
+  options: { documentId?: string; force?: boolean; customsRevision?: { extractionId: string; versionId: string; updatedAt: string; requestId: string; reason: string } } = {},
 ): Promise<ShipmentExtractionSummary> {
-  const { data: transports } = await supabase.from("shipment_transports").select("id").eq("shipment_id", shipmentId);
+  const { data: transports, error: transportError, count: transportCount } = await supabase.from("shipment_transports").select("id", { count: "exact" }).eq("shipment_id", shipmentId).neq("status", "cancelled");
+  if (transportError || transportCount !== transports?.length) throw new Error("Не удалось прочитать полный список автомобилей");
   const transportIds = (transports ?? []).map(row => row.id as string);
   const linkFilter = transportIds.length
     ? `and(entity_type.eq.shipment,entity_id.eq.${shipmentId}),and(entity_type.eq.shipment_transport,entity_id.in.(${transportIds.join(",")}))`
     : `and(entity_type.eq.shipment,entity_id.eq.${shipmentId})`;
-  const { data: links, error: linkError } = await supabase.from("document_links").select("document_id").is("removed_at", null).or(linkFilter);
-  if (linkError) throw new Error(`Не удалось прочитать документы: ${linkError.message}`);
+  const { data: links, error: linkError, count: linkCount } = await supabase.from("document_links").select("document_id", { count: "exact" }).is("removed_at", null).or(linkFilter);
+  if (linkError || linkCount !== links?.length) throw new Error("Не удалось прочитать полный список связей документов");
   const documentIds = [...new Set((links ?? []).map(row => row.document_id as string))].filter(id => !options.documentId || id === options.documentId);
   if (!documentIds.length) throw new Error("Сначала загрузите исходные документы поставки");
 
-  const [{ data: documents, error: documentsError }, { data: generated }] = await Promise.all([
+  const [{ data: documents, error: documentsError, count: documentCount }, { data: generated, error: generatedError, count: generatedCount }] = await Promise.all([
     supabase
       .from("documents")
-      .select("id,title,archived_at,type:document_types(code),versions:document_versions!document_versions_document_id_fkey(id,storage_path,mime_type,is_current,version_number)")
+      .select("id,title,archived_at,status,current_version,type:document_types(code),versions:document_versions!document_versions_document_id_fkey(id,storage_path,mime_type,is_current,version_number)", { count: "exact" })
       .in("id", documentIds),
-    supabase.from("document_generations").select("document_id").in("document_id", documentIds),
+    supabase.from("document_generations").select("document_id", { count: "exact" }).in("document_id", documentIds),
   ]);
-  if (documentsError) throw new Error(documentsError.message);
+  if (documentsError || generatedError || documentCount !== documents?.length || generatedCount !== generated?.length || documents.length !== documentIds.length) throw new Error("Не удалось прочитать полный список исходных документов");
   const generatedIds = new Set((generated ?? []).map(row => row.document_id as string));
-  const sourceDocuments = (documents ?? []).filter(document => !document.archived_at && !generatedIds.has(document.id));
+  const sourceDocuments = (documents ?? []).filter(document => !document.archived_at && document.status !== "rejected" && !generatedIds.has(document.id));
   if (!sourceDocuments.length) throw new Error("В поставке нет исходных документов для распознавания");
 
   // Phase 1: read every document. Text documents are recognised here; scans and photos are queued for OCR.
   const prepared: Prepared[] = [];
   const scans: Scan[] = [];
   for (const document of sourceDocuments) {
-    const version = (document.versions as Array<{ id: string; storage_path: string; mime_type: string; is_current: boolean }> | null)?.find(item => item.is_current);
+    const currentVersions = (document.versions as Array<{ id: string; storage_path: string; mime_type: string; is_current: boolean; version_number: number }> | null)?.filter(item => item.is_current) ?? [];
+    const version = currentVersions.length === 1 && currentVersions[0].version_number === document.current_version ? currentVersions[0] : null;
     const code = one(document.type as { code: string } | Array<{ code: string }> | null)?.code ?? "other";
     if (!version) {
       prepared.push({ documentId: document.id, versionId: "", sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: "У документа нет текущей версии" });
@@ -73,19 +77,34 @@ export async function extractShipmentSources(
       const bytes = new Uint8Array(await file.arrayBuffer());
       try {
         const rawText = await extractDocumentText(bytes, version.mime_type);
-        const result = extractShipmentFields(rawText);
+        const result = extractShipmentFields(rawText, { hintedKind: sourceKind(code) });
         prepared.push({ documentId: document.id, versionId: version.id, sourceKind: detectShipmentSourceKind(rawText, sourceKind(code)), result, error: Object.keys(result.data).length ? null : "Реквизиты не распознаны автоматически" });
       } catch (error) {
         if (!(error instanceof NeedsOcrError)) throw error;
         scans.push({ shipmentId, documentId: document.id, versionId: version.id, hintedKind: sourceKind(code), bytes, code });
       }
-    } catch (error) {
-      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: error instanceof Error ? error.message : "Не удалось прочитать файл" });
+    } catch {
+      // Provider/Storage/parser errors can contain document text, paths, tokens or SQL.
+      prepared.push({ documentId: document.id, versionId: version.id, sourceKind: sourceKind(code), result: { data: {}, evidence: {}, conflicts: [] }, error: "Не удалось прочитать файл. Проверьте доступ и формат, затем повторите чтение." });
     }
   }
 
   // Phase 2: OCR. Nothing leaves the server unless a provider is configured; the pipeline validates the
   // file first and claims an idempotent job in the database before the provider is called.
+  if (options.customsRevision) {
+    const item = prepared[0];
+    const revision = options.customsRevision;
+    if (!options.documentId || scans.length || prepared.length !== 1 || item.error || item.versionId !== revision.versionId || !item.result.data.customs_record) {
+      throw new Error("Новую редакцию текстовой декларации прочитать не удалось. Сохранённые подтверждения не изменены");
+    }
+    const { error } = await supabase.rpc("revise_shipment_customs_evidence", {
+      p_shipment_id: shipmentId, p_extraction_id: revision.extractionId, p_document_version_id: revision.versionId,
+      p_expected_updated_at: revision.updatedAt, p_request_id: revision.requestId,
+      p_record: item.result.data.customs_record, p_reason: revision.reason,
+    });
+    if (error) throw error;
+    return { ready: 0, review: 1, failed: 0, total: 1, processing: 0, deferred: 0, reused: 0 };
+  }
   const config = loadOcrConfig();
   const deps: PipelineDeps = {
     db: supabase, provider: createOcrProvider(config), limits: config.limits, now: Date.now,
@@ -116,16 +135,23 @@ export async function extractShipmentSources(
   for (const item of prepared) {
     if (!item.versionId) { summary.failed++; continue; }
     const conflicts = commonConflicts.filter(conflict => conflict.documents?.includes(item.documentId));
-    const status = item.error ? "failed" : conflicts.length ? "needs_review" : "extracted";
-    const { error } = await supabase.rpc("upsert_shipment_source_extraction", {
+    const status = item.error ? "failed" : conflicts.length || item.result.data.customs_record ? "needs_review" : "extracted";
+    const { data: extractionId, error } = await supabase.rpc("upsert_shipment_source_extraction", {
       p_shipment_id: shipmentId, p_document_id: item.documentId, p_document_version_id: item.versionId,
       p_source_kind: item.sourceKind, p_status: status, p_extracted_data: item.result.data,
       p_field_evidence: item.result.evidence, p_conflicts: conflicts, p_error_message: item.error,
       p_extractor_version: EXTRACTION_VERSION,
     });
-    if (error) summary.failed++;
-    else if (status === "extracted") summary.ready++;
-    else if (status === "needs_review") summary.review++;
+    if (error || !extractionId) { summary.failed++; continue; }
+    // The RPC preserves manual confirmations and may retain an active OCR lease.
+    // Report the stored outcome, not the proposal we just parsed.
+    const { data: stored, error: storedError } = await supabase.from("shipment_source_extractions")
+      .select("status").eq("id", extractionId).single();
+    if (storedError || !stored) summary.failed++;
+    else if (stored.status === "confirmed") summary.reused++;
+    else if (stored.status === "pending") summary.processing++;
+    else if (stored.status === "extracted") summary.ready++;
+    else if (stored.status === "needs_review") summary.review++;
     else summary.failed++;
   }
 

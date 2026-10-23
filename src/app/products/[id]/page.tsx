@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { packagingContentsLabel, sortPackagingLevels } from "@/lib/products/packaging";
 import { addProductIdentifier, addProductPackaging } from "../actions";
+import { selectAll } from "@/lib/supabase/select-all";
 
 function one<T>(value: T | T[] | null | undefined) { return Array.isArray(value) ? value[0] : value ?? undefined; }
 function localName(value: unknown) { if (!value || typeof value !== "object") return "—"; const row = value as Record<string, unknown>; return String(row.ru ?? row.en ?? row.kk ?? "—"); }
@@ -20,7 +21,7 @@ const identifierNames: Record<string, string> = { supplier_sku: "Артикул 
 const uomNames: Record<string, string> = { piece: "шт.", box: "короб", layer: "слой", pallet: "паллета", truck: "машина" };
 const temperatureNames: Record<string, string> = { frozen: "Замороженный", chilled: "Охлаждённый", ambient: "Без охлаждения" };
 const batchStatuses: Record<string, string> = { available: "Доступна", quarantine: "Карантин", blocked: "Заблокирована", depleted: "Израсходована" };
-const movementNames: Record<string, string> = { receipt: "Приход", transfer: "Перемещение", issue: "Расход", write_off: "Списание", adjustment: "Корректировка" };
+const movementNames: Record<string, string> = { receipt: "Приход", transfer: "Перемещение", issue: "Расход", write_off: "Списание", customer_return: "Возврат от клиента", adjustment: "Корректировка" };
 const shipmentStatuses: Record<string, string> = { planning: "Планирование", in_production: "У производителя", preparing_transport: "Подготовка перевозки", in_transit: "В пути", customs: "Таможня", receiving: "Приёмка", sales: "Реализация", closed: "Закрыта", on_hold: "Приостановлена", cancelled: "Отменена" };
 const saleStatuses: Record<string, string> = { draft: "Черновик", reserved: "Зарезервирован", confirmed: "Подтверждён", shipped: "Отгружен", cancelled: "Отменён" };
 const cardStatuses: Record<string, string> = { draft: "Черновик", submitted: "Отправлена", approved_by_customer: "Согласована", rejected_by_customer: "Отклонена", cancelled: "Отменена", superseded: "Заменена" };
@@ -56,7 +57,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
     supabase.from("sticker_templates").select("id,name,sticker_level,languages,status,created_at,customer:counterparties(id,legal_name,short_name),current_version:sticker_template_versions!sticker_templates_current_version_fk(version_number,status)").eq("product_id", id).is("archived_at", null).order("name"),
     supabase.from("marking_code_orders").select("id,order_number,status,quantity_requested,quantity_received,quantity_applied,code_type,created_at,shipment:shipments(id,shipment_number),partner:counterparties(id,legal_name,short_name)").eq("product_id", id).order("created_at", { ascending: false }),
     supabase.from("product_suppliers").select("supplier_id,status,is_primary,supplier:counterparties!product_suppliers_supplier_id_fkey(id,legal_name,short_name)").eq("product_id", id).order("status"),
-    supabase.from("counterparties").select("id,legal_name,short_name").contains("roles", ["manufacturer"]).eq("status", "active").order("legal_name"),
+    selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name").contains("roles", ["manufacturer"]).eq("status", "active").order("legal_name").order("id").range(from,to)),
   ]);
 
   const documentIds = [...new Set((links ?? []).map((link) => link.document_id))];

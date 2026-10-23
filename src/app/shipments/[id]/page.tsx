@@ -1,28 +1,35 @@
 import Link from "next/link";
+import { QuantityProvenancePanel } from "@/components/shipments/quantity-provenance-panel";
+import { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ShipmentDocumentsPanel } from "@/components/documents/shipment-documents-panel";
 import { ShipmentTransportsPanel } from "@/components/shipments/shipment-transports-panel";
+import { ShipmentActualDatesPanel } from "@/components/shipments/shipment-actual-dates-panel";
+import { ShipmentDriveFolderPanel } from "@/components/documents/shipment-drive-folder-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
+import { LogistShipmentPanel } from "@/components/logist/logist-shipment-panel";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/load-summary";
 import { loadGenerationPreview } from "@/lib/templates/generation-service";
+import { selectAll } from "@/lib/supabase/select-all";
 import {
   addShipmentItem,
   allocateShipmentItem,
   changeShipmentOperationalState,
   changeStageStatus,
   deleteShipmentItem,
+  reopenShipment,
   updateShipmentItem,
 } from "../actions";
 
 const shipmentStatus:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
 const stageStatus:Record<string,string>={pending:"Ожидает",in_progress:"В работе",blocked:"Заблокирован",completed:"Завершён",skipped:"Пропущен",not_applicable:"Не требуется"};
-const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"Налог",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
+const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"НДС",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const v=value as Record<string,unknown>;return String(v.ru??v.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—":value.toLocaleString("ru-RU",{maximumFractionDigits});
@@ -30,11 +37,11 @@ const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"сло�
 
 export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;check_error?:string;check_success?:string;tab?:string}>}){
   const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
-  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view"] as const);
+  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen"] as const);
   const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
-    supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
+    supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,closed_at,closer:profiles!shipments_closed_by_fkey(full_name),planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
-    supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku"),
+    selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku").order("id").range(from,to)),
     supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes,driver_name,driver_phone,driver_document,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
@@ -60,14 +67,17 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const generationTemplates=(templates??[]).filter(template=>{const current=one(template.current)?.mime_type;const partyMatches=!template.counterparty_id||(template.flow_direction==="input"?template.counterparty_id===shipment.supplier_id:template.counterparty_id===shipment.customer_id);return partyMatches&&["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(current));});
   let generationPreview:Awaited<ReturnType<typeof loadGenerationPreview>>|null=null;
   if(generationTemplates.length){try{generationPreview=await loadGenerationPreview(supabase,generationTemplates[0].id,id,false);}catch{generationPreview=null;}}
+  const documentReadiness=generationPreview?buildShipmentDocumentReadiness(generationPreview.data,generationPreview.confirmedSourceFields):null;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поставка · {shipment.type}</p><h1>{shipment.shipment_number}</h1></div><div className="topbar-actions"><span className={`status shipment-${shipment.status}`}>{shipmentStatus[shipment.status]??shipment.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}/report`}>Отчёт</Link><Link className="ghost button-link" href={`/tasks?view=all&shipment=${shipment.id}`}>Задачи поставки</Link><Link className="ghost button-link" href="/shipments">К реестру</Link></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
     {shipment.status==="on_hold"&&shipment.hold_reason&&<div className="setup-notice"><strong>Поставка приостановлена:</strong> {shipment.hold_reason}</div>}
+    {shipment.status==="closed"&&<section className="setup-notice shipment-closed-notice"><div><strong>Поставка закрыта</strong>{shipment.closed_at?` ${new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Qyzylorda"}).format(new Date(shipment.closed_at))}`:""}{one(shipment.closer)?.full_name?` · ${one(shipment.closer)?.full_name}`:""}. Изменения позиций, автомобилей и этапов недоступны.</div>{permissions["shipments.reopen"]&&<form action={reopenShipment} className="inline-item-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input name="reason" required maxLength={500} placeholder="Причина повторного открытия" aria-label="Причина повторного открытия"/><button className="ghost compact" type="submit">Открыть повторно</button></form>}</section>}
     {shipment.status==="cancelled"&&shipment.cancel_reason&&<div className="login-error admin-message"><strong>Поставка отменена:</strong> {shipment.cancel_reason}</div>}
     <OperationTabs activeTab={notices.tab} defaultTab="main" tabs={[
       {id:"main",label:"Основное"},
       {id:"items",label:"Товары",badge:visibleItems.length},
+      {id:"quantities",label:"Откуда количество"},
       {id:"load",label:"Загрузка",badge:loadSummary.warnings.length||undefined},
       {id:"delivery",label:"Доставка",badge:transports?.length??0},
       {id:"documents",label:"Документы"},
@@ -86,21 +96,27 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       <article className="summary-card"><p>Ответственный</p><strong>{responsible?.full_name||"—"}</strong><small>Валюта: {currency?.code||"—"}</small></article>
       <article className="summary-card"><p>Плановое прибытие</p><strong>{shipment.planned_arrival_date?new Intl.DateTimeFormat("ru-RU").format(new Date(shipment.planned_arrival_date)):"—"}</strong><small>Готовность: {shipment.planned_ready_date?new Intl.DateTimeFormat("ru-RU").format(new Date(shipment.planned_ready_date)):"—"}</small></article>
     </section>
+    <LogistShipmentPanel shipmentId={shipment.id}/>
     </>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Заказ поставщику</p><h2>Позиции</h2></div><span className="page-count">{visibleItems.length}</span></div>
         {canEdit&&<form action={addShipmentItem} className="shipment-subform"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="currency_id" value={currency?.id??""}/>
           <label>Товар<select name="product_id" required defaultValue=""><option value="" disabled>Выберите товар поставщика</option>{availableProducts.map((product)=><option value={product.id} key={product.id}>{product.internal_sku} · {name(product.name)}</option>)}</select></label>
           <label>Количество<input name="ordered_quantity" type="number" min="0.001" step="0.001" required/></label><label>Ед. изм.<select name="uom" defaultValue="piece"><option value="piece">Штуки</option><option value="box">Коробки</option><option value="pallet">Паллеты</option></select></label>{permissions["prices.purchase.view"]&&<label>Закупочная цена за единицу<input name="unit_price" type="number" min="0" step="0.0001"/></label>}<button className="primary" type="submit">Добавить</button>
         </form>}{canEdit&&shipment.type==="import"&&!availableProducts.length&&<p className="form-help">У этого поставщика нет активных товаров. Сначала привяжите товары в карточке поставщика или товара.</p>}
-        <div className="shipment-item-list">{visibleItems.map((item)=>{const product=one(item.product);const transport=one(item.transport);return <article className="shipment-item-card" key={item.id}>
-          <div className="shipment-item-heading"><div><strong>{name(product?.name)}</strong><small>{product?.internal_sku} · {product?.brand||"Без бренда"}</small></div><span className={transport?"allocation-badge allocated":"allocation-badge"}>{transport?`Автомобиль №${transport.sequence_no}`:"Не распределено"}</span></div>
-          {canEdit&&<div className="shipment-item-actions">
+        <div className="shipment-item-list">{visibleItems.map((item)=>{const product=one(item.product);const transport=one(item.transport);const received=item.received_quantity!=null;return <article className="shipment-item-card" key={item.id}>
+          <div className="shipment-item-heading"><div><strong>{name(product?.name)}</strong><small>{product?.internal_sku} · {product?.brand||"Без бренда"}</small></div><span className={transport?"allocation-badge allocated":"allocation-badge"}>{transport?`Автомобиль №${transport.sequence_no}`:"Не распределено"}{received?` · принято ${Number(item.received_quantity).toLocaleString("ru-RU")}`:""}</span></div>
+          {canEdit&&received&&<div className="shipment-item-actions">
+            {permissions["prices.purchase.view"]&&<form action={updateShipmentItem} className="inline-item-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><input type="hidden" name="quantity" value={Number(item.ordered_quantity)}/><label>Закупочная цена<input name="unit_price" type="number" min="0" step="0.0001" defaultValue={item.unit_price??""}/></label><button className="ghost compact" type="submit">Обновить цену</button></form>}
+            <p className="form-help">Позиция принята на склад: количество, автомобиль и удаление больше не меняются.</p>
+          </div>}
+          {canEdit&&!received&&<div className="shipment-item-actions">
             <form action={updateShipmentItem} className="inline-item-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><label>Количество<input name="quantity" type="number" min="0.001" step="0.001" defaultValue={Number(item.ordered_quantity)} required/></label>{permissions["prices.purchase.view"]&&<label>Закупочная цена<input name="unit_price" type="number" min="0" step="0.0001" defaultValue={item.unit_price??""}/></label>}<button className="ghost compact" type="submit">Обновить</button></form>
-            {!!transports?.length&&<form action={allocateShipmentItem} className="inline-item-form allocation-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><label>Распределить<select name="transport_id" required defaultValue=""><option value="" disabled>Выберите автомобиль</option>{transports.filter((option)=>option.id!==item.shipment_transport_id&&option.status!=="cancelled").map((option)=><option value={option.id} key={option.id}>Автомобиль №{option.sequence_no}</option>)}</select></label><label>Количество<input name="quantity" type="number" min="0.001" max={Number(item.ordered_quantity)} step="0.001" defaultValue={Number(item.ordered_quantity)} required/></label><button className="primary compact" type="submit">Распределить</button></form>}
+            {!!transports?.length&&<form action={allocateShipmentItem} className="inline-item-form allocation-form"><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><label>Распределить<select name="transport_id" required defaultValue=""><option value="" disabled>Выберите автомобиль</option>{transports.filter((option)=>option.id!==item.shipment_transport_id&&option.status!=="cancelled"&&option.status!=="unloaded").map((option)=><option value={option.id} key={option.id}>Автомобиль №{option.sequence_no}</option>)}</select></label><label>Количество<input name="quantity" type="number" min="0.001" max={Number(item.ordered_quantity)} step="0.001" defaultValue={Number(item.ordered_quantity)} required/></label><button className="primary compact" type="submit">Распределить</button></form>}
             <form action={deleteShipmentItem}><input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="item_id" value={item.id}/><button className="text-danger" type="submit">Удалить</button></form>
           </div>}
         </article>;})}{!visibleItems.length&&<div className="empty-state">Позиции ещё не добавлены.</div>}</div>
       </section>
+      <QuantityProvenancePanel shipmentId={shipment.id}/>
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Расчёт по данным товаров</p><h2>Загрузка поставки</h2></div><span className="page-count">{visibleItems.length} позиций</span></div>
         <div className="load-summary-grid">
           <article className="summary-card"><p>Вес нетто</p><strong>{loadNumber(loadSummary.netWeightKg)} кг</strong><small>сумма по всем позициям</small></article>
@@ -118,14 +134,16 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       <ShipmentTransportsPanel shipmentId={shipment.id} transports={transports??[]} receivedIds={[...receivedTransports]} canEdit={canEdit} canReceive={!!permissions["inventory.receive"]} loadLines={loadSummary.lines}/>
     <>
     <ShipmentDocumentCheckPanel shipmentId={shipment.id} notice={notices.check_error?{kind:"error",message:notices.check_error}:notices.check_success?{kind:"success",message:notices.check_success}:undefined}/>
-    <ShipmentSourceDocumentsPanel shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
-    {generationPreview&&<ShipmentDocumentReadiness shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
+    <ShipmentSourceDocumentsPanel readiness={documentReadiness} shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
+    {generationPreview&&<ShipmentDocumentReadiness result={documentReadiness??undefined} shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
     {permissions["templates.generate"]&&permissions["documents.create"]&&<section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Выходной комплект</p><h2>Сформировать документы перевозки</h2></div><span className="page-count">{generationTemplates.length}</span></div><p className="form-help">Система использует подтверждённые данные из загруженных инвойсов, договор-заявок и транспортных документов.</p><div className="compact-list">{generationTemplates.map(template=>{const type=one(template.type);return <div className="doc-link-row" key={template.id}><div><strong>{template.name}</strong><small>{type?.name_ru??"Документ"} · {template.flow_direction==="input"?"от поставщика":"для покупателя"}</small></div><Link className="primary button-link compact" href={`/templates/${template.id}/generate?shipment=${shipment.id}`}>Сформировать</Link></div>})}{!generationTemplates.length&&<div className="empty-state">Нет подходящих утверждённых DOCX/XLSX-шаблонов для этой поставки.</div>}</div></section>}
+    <ShipmentDriveFolderPanel shipmentId={shipment.id}/>
     <ShipmentDocumentsPanel shipmentId={shipment.id}/>
     </>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Финансы поставки</p><h2>Расходы</h2></div><span className="page-count">{expenses?.length??0}</span></div>
       {permissions["finance.view"]?<><div className="compact-list">{expenses?.map(expense=>{const expenseCurrency=one(expense.currency);const payee=one(expense.payee);return <article className="operation-history-row" key={expense.id}><div><strong>{expenseType[expense.expense_type]??expense.expense_type}</strong><small>{expense.incurred_at} · {expense.is_planned?"план":"факт"} · {expense.status}</small></div><strong>{Number(expense.amount).toLocaleString("ru-RU")} {expenseCurrency?.code}</strong><small>{payee?.short_name||payee?.legal_name||"Получатель не указан"}</small></article>})}{!expenses?.length&&<div className="empty-state">Расходов по этой поставке пока нет.</div>}</div><div className="panel-footer-actions"><Link className="primary button-link" href={`/finance?shipment=${shipment.id}`}>Открыть расходы и себестоимость</Link></div></>:<div className="empty-state">Для просмотра расходов требуется право «Финансы: просмотр».</div>}
     </section>
+    <>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Процесс RVI</p><h2>Этапы поставки</h2></div><span className="page-count">{runs?.filter((run)=>run.status==="completed").length??0} из {runs?.length??0} завершено</span></div>
       <div className="stage-list">{runs?.sort((a,b)=>(one(a.stage)?.sequence_order??0)-(one(b.stage)?.sequence_order??0)).map((run)=>{const stage=one(run.stage);const stageTransport=one(run.transport);return <article className={`stage-row stage-${run.status}`} key={run.id} id={`stage-${run.id}`}>
         <div className="stage-number">{stage?.sequence_order}</div><div className="stage-copy"><strong>{name(stage?.name)}</strong><small>{stage?.scope==="transport"?(stageTransport?`Автомобиль №${stageTransport.sequence_no}`:"По перевозке"):"По поставке"} · {stage?.requirement==="required"?"обязательный":stage?.requirement==="conditional"?"по условию":"необязательный"}</small>{run.status_reason&&<p>{run.status_reason}</p>}</div>
@@ -133,6 +151,8 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
         {canEdit&&<form action={changeStageStatus} className="stage-action"><input type="hidden" name="run_id" value={run.id}/><input type="hidden" name="shipment_id" value={shipment.id}/><select name="status" defaultValue={run.status}><option value="pending">Ожидает</option><option value="in_progress">В работе</option><option value="completed">Завершён</option><option value="blocked">Заблокирован</option><option value="skipped">Пропущен</option><option value="not_applicable">Не требуется</option></select><input name="reason" placeholder="Причина, если требуется"/><button className="ghost compact" type="submit">Сохранить</button></form>}
       </article>;})}</div>
     </section>
+    <ShipmentActualDatesPanel shipmentId={shipment.id} shipmentStatus={shipment.status}/>
+    </>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Хронология</p><h2>История поставки</h2></div><span className="page-count">{stageHistory?.length??0}</span></div>
       <div className="operation-history-list">
         <article className="operation-history-row"><time>{new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeStyle:"short"}).format(new Date(shipment.created_at))}</time><div><strong>Поставка создана</strong><small>{shipment.shipment_number}</small></div></article>

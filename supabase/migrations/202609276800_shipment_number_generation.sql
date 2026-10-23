@@ -1,10 +1,12 @@
 -- Allocate after the greatest existing number, including imported historical rows.
 -- Keep the RPC's permissions, validation, transaction and per-year lock unchanged.
+-- CREATE OR REPLACE replaces function settings. Keep the Kazakhstan business date
+-- explicit even when this older migration is reapplied after 202609278300.
 begin;
 create or replace function public.create_shipment_with_stages(
   p_project_code text,p_type text,p_supplier_id uuid,p_customer_id uuid,p_route_id uuid,
   p_currency_id uuid,p_warehouse_id uuid,p_responsible_user_id uuid,p_planned_ready_date date default null,p_planned_arrival_date date default null
-) returns uuid language plpgsql security definer set search_path='' as $$
+) returns uuid language plpgsql security definer set search_path='' set timezone='Asia/Almaty' as $$
 declare v_template uuid; v_shipment uuid; v_number text; v_year text; v_serial text;
 begin
   if not private.can_write_shipments('create') then raise exception 'Недостаточно прав для создания поставки'; end if;

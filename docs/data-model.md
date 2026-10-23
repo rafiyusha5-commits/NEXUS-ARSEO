@@ -395,7 +395,7 @@
 | id | uuid | да | PK |
 | product_id | uuid | да | FK → `products.id` |
 | uom | text | да | `piece`, `box`, `layer`, `pallet`, `truck` |
-| units_per_parent | numeric(12,3) | да | сколько единиц предыдущего уровня в этой (штук в коробе, коробов в слое, слоёв в паллете, паллет в фуре) |
+| units_per_parent | numeric(12,3) | да | сколько **штук** в одной единице этого уровня (в коробе, слое, паллете, фуре); для штуки — 1. Так поле заполняют импорт калькулятора и карточка товара; пересчёт единиц — `private.convert_uom` |
 | gross_weight_kg / net_weight_kg | numeric(10,3) | нет | |
 | volume_m3 | numeric(10,4) | нет | |
 | length_cm / width_cm / height_cm | numeric(8,2) | нет | |
@@ -528,7 +528,9 @@
 | product_id | uuid | да | FK |
 | batch_id | uuid | нет | FK; подбирается по FEFO |
 | warehouse_id | uuid | да | FK |
-| quantity | numeric(14,3) | да | |
+| quantity | numeric(14,3) | да | в единице остатка (`uom`) |
+| uom | text | да | единица остатка, с которого взят резерв |
+| sale_quantity | numeric(14,3) | да | покрытая часть строки заказа в её единице (пересчёт через упаковку) |
 | reserved_for_type | text | да | `sale_item`, `transfer`, `promo`, `manual_block` |
 | reserved_for_id | uuid | нет | полиморфная ссылка |
 | is_fefo_override | boolean | да | выбрана не та партия, которую предлагает FEFO |
@@ -996,8 +998,10 @@ Append-only.
 | exchange_rate_id | uuid | нет | FK |
 | document_id | uuid | нет | FK |
 | incurred_at | date | да | |
-| is_planned | boolean | да | плановый (до счёта) или фактический |
-| status | text | да | `draft`, `confirmed`, `allocated`, `paid` |
+| is_planned | boolean | да | плановый (до счёта) или фактический; в себестоимость входят только фактические |
+| status | text | да | `draft`, `confirmed`, `allocated`, `paid`, `cancelled` (отменён до оплаты), `reversed` (сторнирован после оплаты) |
+| cancelled_by / cancelled_at / cancellation_reason | uuid / timestamptz / text | нет | кто, когда и почему отменил; обязательны для `cancelled` |
+| reversed_by / reversed_at / reversal_reason | uuid / timestamptz / text | нет | кто, когда и почему сторнировал; обязательны для `reversed` |
 
 - **audit_log**: create, update, status_changed
 
@@ -1551,3 +1555,9 @@ integrations ──< integration_mappings
 
 (*) audit_log, comments, notifications, approvals, documents ссылаются на сущности полиморфно.
 ```
+
+## Индексы внешних ключей
+
+У внешних ключей растущих таблиц есть индекс (миграция `202609278500_foreign_key_indexes.sql`, аудит, находка Н15). Это журнал движений, остатки, партии и резервы, позиции и этапы поставок с историей, строки приёмки, себестоимости, продаж, возвратов, гарантийных писем и банковских выписок, коды маркировки и уведомления. Без индекса удаление или изменение родительской строки и любая выборка «строки этой поставки, партии, позиции» читают всю таблицу. Если ключ в основном пуст, индекс частичный (`where … is not null`): им пользуются и поиск по значению, и проверка внешнего ключа.
+
+Ссылки на сотрудников (`created_by`, `decided_by` и т. п.) и на справочник валют без индекса намеренно: такие строки не удаляют и по этим полям не ищут. Небольшие справочные таблицы тоже оставлены без индекса. Тест `supabase/tests/foreign_key_indexes.test.sql` следит, чтобы у нового внешнего ключа в этих таблицах тоже появился индекс.

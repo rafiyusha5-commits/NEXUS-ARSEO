@@ -1,19 +1,19 @@
-# Автоматические проверки на каждый push и Pull Request.
-#
-# CI работает только с синтетическими данными. Здесь нет доступа ни к одному рабочему сервису:
-# проект Supabase, Google Drive и Sheets, OpenAI, движок OCR и бот Telegram недостижимы, секреты
-# не передаются (`secrets` в этом файле не используется), ассистент, OCR и Telegram остаются
-# выключенными, потому что включающие их переменные отсутствуют. SQL-тесты поднимают собственный
-# одноразовый кластер PostgreSQL 16 в каталоге задания и не обращаются к рабочей базе.
-#
-# Названия проверок для будущей защиты ветки: app, database, audit. Менять их не следует:
-# на них ссылается настройка «Require status checks to pass». См. docs/ci.md.
+# Проверки PR (включая Draft) и итогового main без второго push-прогона рабочей ветки.
+# Все шесть заданий обязательны по политике проекта и запускаются без фильтров путей.
+# Supabase/PostgreSQL/Storage — одноразовые локальные стенды. Drive/OCR в браузерном
+# пилоте подменены синтетическими HTTP-границами; рабочих секретов и deployments нет.
+# Имена app, database, audit, pilot-docker, historical-readiness, recovery-drill
+# сохранены для будущей защиты main. Наличие workflow само по себе main не защищает.
+# Actions закреплены на тех же коммитах, что исполнялись в успешном прогоне #260.
+# Кеш содержит только store pnpm: не node_modules, .next, .env, БД или тестовые данные.
+# Ключ учитывает ОС/архитектуру, Node 24, lockfile, packageManager и настройки workspace.
+# Попадание в кеш не отменяет install, audit или тесты. См. docs/ci.md.
 
 name: checks
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
 
 # Код Pull Request исполняется только в контексте pull_request с правами на чтение.
@@ -38,13 +38,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Токен проверки не остаётся в .git/config после выгрузки.
           persist-credentials: false
 
       - name: Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
@@ -57,11 +57,11 @@ jobs:
         run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
       - name: Кеш зависимостей ровно для этого lockfile
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.PNPM_STORE }}
-          # Без restore-keys: кеш используется только при совпадении lockfile, иначе собирается заново.
-          key: pnpm-${{ runner.os }}-node24-${{ hashFiles('pnpm-lock.yaml') }}
+          # Без restore-keys: используем только точное совпадение ключа.
+          key: pnpm-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
 
       - name: pnpm install --frozen-lockfile
         run: pnpm install --frozen-lockfile
@@ -89,12 +89,12 @@ jobs:
       LC_ALL: C.UTF-8
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
@@ -118,18 +118,50 @@ jobs:
         # повторное применение и выполняет SQL-тесты. Рабочая база не используется и не изменяется.
         run: pnpm run test:db
 
+  pilot-docker:
+    name: pilot-docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: pnpm из packageManager проекта
+        run: corepack enable
+      - name: Путь к хранилищу pnpm
+        run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+      - name: Кеш пакетов pnpm (установка и тесты выполняются всегда)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          key: pnpm-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Prepare PostgreSQL 16 and Node 24 test image
+        run: |
+          docker pull postgres:16
+          docker build -f scripts/Dockerfile.db-test -t nexus-db-test:pg16-node24 scripts
+      - name: Isolated Docker runners, including full SQL and concurrency helpers
+        run: |
+          node scripts/test-db-docker.mjs
+          node scripts/test-shipment-pilot.mjs
+          node scripts/test-shipment-pilot.mjs --all-sql
+
   audit:
     name: audit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
@@ -140,10 +172,10 @@ jobs:
         run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
       - name: Кеш зависимостей ровно для этого lockfile
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.PNPM_STORE }}
-          key: pnpm-${{ runner.os }}-node24-${{ hashFiles('pnpm-lock.yaml') }}
+          key: pnpm-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
 
       - name: pnpm install --frozen-lockfile
         run: pnpm install --frozen-lockfile
@@ -153,3 +185,85 @@ jobs:
         # разобранное исключение, перечисленное в scripts/audit-policy.mts; любая новая находка
         # роняет проверку. См. docs/security-audit.md, раздел «Зависимости».
         run: pnpm run audit:ci
+
+  historical-readiness:
+    name: historical-readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: pnpm из packageManager проекта
+        run: corepack enable
+      - name: Путь к хранилищу pnpm
+        run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+      - name: Кеш пакетов pnpm (установка и тесты выполняются всегда)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          key: pnpm-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.121.0
+      - name: Disposable browser tooling and PostgreSQL 16
+        run: |
+          docker pull postgres:16
+          npm install --prefix "$RUNNER_TEMP/nexus-browser" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/nexus-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Historical contract (must fail while owner rule or browser coverage is unmet)
+        run: NEXUS_TEST_PLAYWRIGHT="$RUNNER_TEMP/nexus-browser/node_modules/playwright" node scripts/test-historical-shipment.mjs
+      - name: Synthetic evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-historical-evidence
+          path: test-results/historical/
+          if-no-files-found: warn
+
+  recovery-drill:
+    name: recovery-drill
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: pnpm из packageManager проекта
+        run: corepack enable
+      - name: Путь к хранилищу pnpm
+        run: echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+      - name: Кеш пакетов pnpm (установка и тесты выполняются всегда)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          key: pnpm-v2-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.121.0
+      - name: Isolated restore tooling
+        run: |
+          docker pull postgres:16
+          npm install --prefix "$RUNNER_TEMP/nexus-browser" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/nexus-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual database, Storage and application recovery
+        run: NEXUS_TEST_PLAYWRIGHT="$RUNNER_TEMP/nexus-browser/node_modules/playwright" pnpm run test:recovery
+      - name: Synthetic verification only (never upload database dumps, Auth tokens or local keys)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-recovery-evidence
+          path: |
+            test-results/recovery/recovery-result.json
+            test-results/recovery/restored-*.png
+          if-no-files-found: warn

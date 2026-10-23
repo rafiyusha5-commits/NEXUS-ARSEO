@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAccessManager } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { appOrigin } from "@/lib/auth/redirect";
 
 function usersRedirect(kind: "success" | "error", message: string): never {
   redirect(`/admin/users?${kind}=${encodeURIComponent(message)}`);
@@ -28,7 +29,7 @@ export async function inviteUser(formData: FormData) {
   }
 
   const requestHeaders = await headers();
-  const origin = requestHeaders.get("origin") ?? "http://localhost:3000";
+  const origin = appOrigin(process.env, requestHeaders);
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
     redirectTo: `${origin}/auth/callback?next=/update-password`,

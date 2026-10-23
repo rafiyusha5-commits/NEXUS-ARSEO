@@ -97,7 +97,7 @@ export function summarizeFindings(findings: CheckFinding[]) {
 }
 
 export const CHECK_STATE_LABEL: Record<CheckState, string> = {
-  ok: "Расхождений нет",
+  ok: "Реквизиты: замечаний по выполненным проверкам нет",
   warning: "Есть замечания",
   error: "Есть ошибки",
 };
