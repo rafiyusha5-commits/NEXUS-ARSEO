@@ -205,6 +205,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610210200_historical_preparation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610210300_quantity_provenance.sql" >/dev/null
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610230100_assistant_operations.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -311,6 +312,7 @@ done
 "${PSQL[@]}" -f "$ROOT/supabase/tests/shipment_number_concurrency_check.sql" >/dev/null
 
 echo "database tests passed"
+node "$ROOT/scripts/test-assistant-operation-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-receivables-import-concurrency.mjs" "${PSQL[@]}"
 
 node "$ROOT/scripts/test-shipment-drive-concurrency.mjs" "${PSQL[@]}"

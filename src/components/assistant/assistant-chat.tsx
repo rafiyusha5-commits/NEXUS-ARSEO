@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import type { AgentAnswer } from "@/lib/agent/types";
 import { RequestProgress } from "./request-progress";
+import { OperationReview } from "./operation-review";
 
 type Event =
   | { type: "stage"; label: string }
@@ -13,7 +14,7 @@ type Event =
 // Only server-built relative links to known Nexus pages are rendered.
 const SAFE_LINK = /^\/assistant\/archive\/[A-Za-z0-9_-]{10,120}$|^\/(shipments|documents|products|counterparties|warehouses|sales|templates|listing-cards)\/[0-9a-f-]{36}$|^\/(tasks|routes|suppliers|notifications|calendar|inventory|inventory\/movements|stickers|forecasts|purchase-plans|commercial-programs|finance|integrations|audit|admin\/users|admin\/roles)$|^\/products\?q=[^\s]*$/;
 
-export function AssistantChat({ initialUsed, limit }: { initialUsed: number; limit: number }) {
+export function AssistantChat({ initialUsed, limit, operationsEnabled = false }: { initialUsed: number; limit: number; operationsEnabled?: boolean }) {
   const [question, setQuestion] = useState("");
   const [stages, setStages] = useState<string[]>([]);
   const [answer, setAnswer] = useState<AgentAnswer | null>(null);
@@ -71,7 +72,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
   return (
     <section className="panel admin-section assistant-panel">
       <div className="panel-heading">
-        <div><p className="eyebrow">Только чтение · ваши права</p><h2>Вопрос ассистенту</h2></div>
+        <div><p className="eyebrow">{operationsEnabled ? "Ваши права · действия после подтверждения" : "Только чтение · ваши права"}</p><h2>Вопрос ассистенту</h2></div>
         <span className="page-count">{used} из {limit} сегодня</span>
       </div>
       <form className="doc-form" onSubmit={submit} aria-busy={busy}>
@@ -91,6 +92,7 @@ export function AssistantChat({ initialUsed, limit }: { initialUsed: number; lim
         </ol>
       )}
       {error && <div className="login-error admin-message">{error}</div>}
+      {operationsEnabled && <OperationReview intent={answer?.operationIntent} />}
 
       {answer && (
         <div className="assistant-answer">

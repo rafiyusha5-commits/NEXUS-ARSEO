@@ -27,6 +27,7 @@ export async function runWebAssistant(supabase: SupabaseClient, userId: string, 
   const serverClient = createAdminClient();
   if (!serverClient) return { ok: false, code: "AGENT_DISABLED", message: "Ассистент выключен.", refunded: false };
   return runAgent(question, {
+    operationsEnabled: process.env.AGENT_OPERATIONS_ENABLED === "true",
     channel: "web",
     conversationKey: conversationId,
     userId,

@@ -41,7 +41,7 @@ export default async function AssistantPage() {
         )}
 
         {can["agent.use"] && !migrationMissing && config.enabled && usage?.budget_configured && (
-          <AssistantChat initialUsed={Number(usage.requests_used ?? 0)} limit={Number(usage.request_limit ?? 0)} />
+          <AssistantChat initialUsed={Number(usage.requests_used ?? 0)} limit={Number(usage.request_limit ?? 0)} operationsEnabled={process.env.AGENT_OPERATIONS_ENABLED === "true"} />
         )}
 
         {can["agent.use"] && !migrationMissing && (

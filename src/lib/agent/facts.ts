@@ -3,6 +3,7 @@
 // subject (built by the tool from the data) and the selected values. Anything the model writes in its
 // own words is commentary and is always shown separately as unverified.
 import { SYSTEM_BY_KEY } from "./system-registry.ts";
+import { OPERATION_INTENT_SCHEMA, parseOperationIntent, type OperationIntent } from "./operations.ts";
 import { maskSensitive } from "./masking.ts";
 import { AGENT_TIME_ZONE } from "./time.ts";
 import type { AgentAnswer, AgentTool, Commentary, FactValue, ToolField, ToolResult, VerifiedFact } from "./types.ts";
@@ -15,8 +16,9 @@ const MAX_LIMITATIONS = 5;
 export const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["facts", "commentary", "limitations"],
+  required: ["facts", "commentary", "limitations", "operation"],
   properties: {
+    operation: OPERATION_INTENT_SCHEMA,
     facts: {
       type: "array",
       maxItems: MAX_FACTS,
@@ -49,7 +51,7 @@ export type CallRecord = { tool: AgentTool; result: ToolResult; access?: { all: 
 
 type RawFact = { call: string; row: number; fields: string[] };
 type RawCommentary = { kind: "assumption" | "explanation"; text: string };
-type RawAnswer = { facts: RawFact[]; commentary: RawCommentary[]; limitations: string[] };
+type RawAnswer = { facts: RawFact[]; commentary: RawCommentary[]; limitations: string[]; operation?: OperationIntent | null };
 
 const exact = (object: unknown, keys: string[]) =>
   typeof object === "object" && object !== null && !Array.isArray(object)
@@ -64,8 +66,13 @@ export function parseAnswer(content: string | null): RawAnswer | null {
   } catch {
     return null;
   }
-  if (!exact(value, ["facts", "commentary", "limitations"])) return null;
+  if (!exact(value, ["facts", "commentary", "limitations"]) && !exact(value, ["facts", "commentary", "limitations", "operation"])) return null;
   const answer = value as RawAnswer;
+  if (answer.operation !== undefined && answer.operation !== null) {
+    const intent = parseOperationIntent(answer.operation);
+    if (!intent) return null;
+    answer.operation = intent;
+  }
   if (!Array.isArray(answer.facts) || answer.facts.length > MAX_FACTS) return null;
   if (!Array.isArray(answer.commentary) || answer.commentary.length > MAX_COMMENTARY) return null;
   if (!Array.isArray(answer.limitations) || answer.limitations.length > MAX_LIMITATIONS) return null;
@@ -214,5 +221,5 @@ export function verifyAnswer(raw: RawAnswer, calls: ReadonlyMap<string, CallReco
     }
   }
   if (!facts.length) limitations.unshift("Проверенных данных Nexus в ответе нет.");
-  return { facts, commentary, rejected, limitations, toolsUsed: [...new Set([...calls.values()].map((call) => call.tool.name))] };
+  return { facts, commentary, rejected, limitations, toolsUsed: [...new Set([...calls.values()].map((call) => call.tool.name))], ...(raw.operation ? { operationIntent: raw.operation } : {}) };
 }

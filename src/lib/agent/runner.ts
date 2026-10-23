@@ -14,6 +14,7 @@ import {
 } from "./types.ts";
 
 export type RunnerDeps = {
+  operationsEnabled?: boolean;
   channel: "web" | "telegram";
   userId: string;
   /** Optional process-local conversation, scoped again by user and channel. */
@@ -229,7 +230,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
     let previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
     const messages: ModelMessage[] = [
-      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.` },
+      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.\nКанал: ${deps.channel}. Подготовка операций ${deps.operationsEnabled && deps.channel === "web" ? "включена" : "выключена: operation всегда null"}.` },
       { role: "user", content: userMessage(question.text) },
     ];
 
@@ -346,6 +347,9 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
         return fail("AGENT_BAD_ANSWER");
       }
       const answer = verifyAnswer(raw, calls);
+      // A command is untrusted input, not a verified fact. Only the web's explicit
+      // review endpoint can prepare it; there is deliberately no execution tool.
+      if (deps.channel !== "web" || !deps.operationsEnabled) delete answer.operationIntent;
       const requirements = [...previous.map(ref => ref.access), ...[...calls.values()].flatMap(call => call.access ? [call.access] : [])];
       const finalGrants = await deps.permissions(["agent.use", ...requirements.flatMap(group => [...group.all,...group.any])]);
       if (!finalGrants.has("agent.use") || requirements.some(group => !group.all.every(code => finalGrants.has(code)) || (group.any.length && !group.any.some(code => finalGrants.has(code))))) return fail("AGENT_FORBIDDEN");

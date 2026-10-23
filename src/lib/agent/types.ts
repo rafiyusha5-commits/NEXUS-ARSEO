@@ -186,6 +186,7 @@ export type VerifiedFact = {
 export type Commentary = { kind: "assumption" | "explanation"; text: string };
 
 export type AgentAnswer = {
+  operationIntent?: import("./operations.ts").OperationIntent;
   accessRequirements?: { all: string[]; any: string[] }[];
   accessRecords?: { section: string; ids: string[]; versions?: Record<string,string> }[];
   facts: VerifiedFact[];
