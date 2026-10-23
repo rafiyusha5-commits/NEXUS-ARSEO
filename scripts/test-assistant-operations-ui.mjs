@@ -27,12 +27,13 @@ try{
  await new Promise(done=>server.listen(0,'127.0.0.1',done));const url=`http://127.0.0.1:${server.address().port}`;
  browser=await chromium.launch({headless:true});
  for(const width of [1440,390]){
-  const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],calls=[];let completed=false;
+  const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],calls=[];let completed=false,failPreparation=width===1440;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    if(!route.request().url().startsWith(url))return route.abort();
    if(!route.request().url().endsWith('/api/assistant/operations'))return route.continue();
    const body=route.request().postDataJSON();calls.push(body);
+   if(body.action==='prepare'&&failPreparation){failPreparation=false;return route.abort();}
    if(body.action==='confirm'){completed=true;return route.abort();} // committed, response lost
    const result=completed?{id:body.id,status:'completed',result_id:'10000000-0000-4000-8000-000000000099'}:
     {id:body.id,status:'awaiting_confirmation',review_token:'10000000-0000-4000-8000-000000000098',preview:{
@@ -43,6 +44,7 @@ try{
   });
   await page.goto(url);await page.getByRole('heading',{name:'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
   await page.getByRole('button',{name:'Проверить параметры и партии'}).click();
+  if(width===1440)await page.getByRole('button',{name:'Повторить подготовку с прежним ID'}).click();
   const confirm=page.getByRole('button',{name:'Подтвердить и выполнить перемещение'});await confirm.waitFor();
   assert.equal(await confirm.isDisabled(),true);assert.match(await page.locator('body').innerText(),/6 шт\.[\s\S]*18 шт\./);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -50,7 +52,7 @@ try{
   await page.getByRole('checkbox').check();await confirm.click();await page.getByRole('alert').waitFor();
   assert.match(await page.getByRole('alert').innerText(),/Ответ не получен/);assert.equal(calls.filter(c=>c.action==='confirm').length,1);
   await page.reload();await page.getByRole('button',{name:'Проверить параметры и партии'}).click();
-  assert.equal(calls.filter(c=>c.action==='prepare').length,1); // reload must not create another request
+  assert.equal(calls.filter(c=>c.action==='prepare').length,width===1440?2:1); // reload must not create another request
   await page.getByRole('button',{name:'Проверить состояние',exact:true}).click();
   await page.getByRole('link',{name:'Открыть складской документ'}).waitFor();
   assert.equal(calls.filter(c=>c.action==='confirm').length,1);assert.equal(new Set(calls.map(c=>c.id)).size,1);

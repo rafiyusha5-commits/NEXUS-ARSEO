@@ -23,7 +23,7 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
    setError("В этой вкладке сохранена предыдущая операция. Сначала нажмите «Проверить состояние»."); return;
   }
   if (action === "confirm" && (!checked || !review?.review_token || unknown)) return;
-  if (action === "prepare" && requestId.current && preparedIntent.current !== JSON.stringify(intent)) {
+  if (action === "prepare" && requestId.current && preparedIntent.current !== null && preparedIntent.current !== JSON.stringify(intent)) {
    setError("Сначала проверьте результат предыдущей операции или начните новый просмотр."); return;
   }
   if (action === "review" && !requestId.current) requestId.current = sessionStorage.getItem("nexus-assistant-operation-id");
@@ -47,6 +47,7 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
   <p className="eyebrow">Действие только после вашего подтверждения</p><h3>Подготовка перемещения</h3>
   <p className="form-help">Предложение ассистента ещё не является документом. Просмотр не меняет остатки. Google Drive и Sheets — только чтение.</p>
   {intent && !review && !unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>Проверить параметры и партии</button>}
+  {intent && unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>Повторить подготовку с прежним ID</button>}
   <button type="button" disabled={busy} onClick={() => void act("review")}>Проверить состояние</button>
   {error && <p role="alert" className="login-error admin-message">{error}</p>}
   {review?.status === "completed" && review.result_id && /^[0-9a-f-]{36}$/i.test(review.result_id) && <p className="login-success">Перемещение выполнено. <Link href={`/inventory/movements/${review.result_id}`}>Открыть складской документ</Link></p>}
