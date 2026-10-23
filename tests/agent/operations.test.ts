@@ -15,9 +15,16 @@ test("commands use explicit quantities, identities and units", () => {
 test("model cannot select SQL, RPC, Google writes or confirmation", () => {
  for (const kind of ["confirm", "execute_sql", "rpc", "drive.upload", "sheets.update", "fulfill_customer_order"])
   assert.equal(parseOperationIntent({ ...command, kind }), null);
- assert.deepEqual(OPERATION_KINDS, ["inventory_transfer"]);
+ assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment"]);
  assert.equal(parseOperationIntent({ ...command, confirmed: true }), null);
  assert.equal(parseOperationIntent({ ...command, params: { ...command.params, rpc: "delete" } }), null);
+});
+
+test("order shipment is a closed proposal, not a price/quantity/reserve edit", () => {
+ const order = { kind: "customer_order_fulfillment", params: { sale_id: command.params.product_id } };
+ assert.deepEqual(parseOperationIntent(order), order);
+ for (const params of [{ sale_id: "заказ 12" }, {}, { ...order.params, quantity: "1" }, { ...order.params, confirmed: true }, { ...order.params, price: 100 }])
+  assert.equal(parseOperationIntent({ ...order, params }), null);
 });
 test("ambiguous identities and unknown units fail closed", () => {
  for (const patch of [{ product_id: "Merba" }, { uom: "kg" }, { to_warehouse_id: command.params.from_warehouse_id }])

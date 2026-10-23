@@ -26,36 +26,50 @@ try{
  });
  await new Promise(done=>server.listen(0,'127.0.0.1',done));const url=`http://127.0.0.1:${server.address().port}`;
  browser=await chromium.launch({headless:true});
- for(const width of [1440,390]){
-  const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],calls=[];let completed=false,failPreparation=width===1440;
+ for(const order of [false,true])for(const width of [1440,390]){
+  const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],calls=[];let completed=false,rejectConfirmation=false,failPreparation=width===1440;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    if(!route.request().url().startsWith(url))return route.abort();
    if(!route.request().url().endsWith('/api/assistant/operations'))return route.continue();
    const body=route.request().postDataJSON();calls.push(body);
    if(body.action==='prepare'&&failPreparation){failPreparation=false;return route.abort();}
+   if(body.action==='confirm'&&rejectConfirmation)return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:'Заказ или права изменились. Обновите просмотр.'})});
    if(body.action==='confirm'){completed=true;return route.abort();} // committed, response lost
    const result=completed?{id:body.id,status:'completed',result_id:'10000000-0000-4000-8000-000000000099'}:
     {id:body.id,status:'awaiting_confirmation',review_token:'10000000-0000-4000-8000-000000000098',preview:{
      product:'SYNTH-150 · Синтетическое печенье 150 г',from:'AKT · Актобе',to:'AST · Астана',quantity:2,uom:'box',document_date:'2099-01-01',
      lines:[{balance_id:'a',batch:'SYNTH-FIRST',expiry:'2099-01-01',quantity:6,uom:'piece'},{balance_id:'b',batch:'SYNTH-SECOND',expiry:'2099-02-01',quantity:18,uom:'piece'}],
     }};
+   result.kind=order?'customer_order_fulfillment':'inventory_transfer';
+   if(order&&!completed)result.preview={order_number:'SYNTH-ORDER-77',customer:'Синтетический покупатель',warehouse:'AKT · Актобе',planned_date:'2099-01-01',document_date:'2099-01-01',
+    items:[{id:'item-a',product:'Синтетическое печенье',quantity:2,uom:'box'}],lines:[
+     {id:'r-a',product:'Синтетическое печенье',batch:'SYNTH-FIRST',expiry:'2099-02-01',quantity:6,uom:'piece',sale_quantity:0.5,sale_uom:'box'},
+     {id:'r-b',product:'Синтетическое печенье',batch:'SYNTH-SECOND',expiry:'2099-03-01',quantity:18,uom:'piece',sale_quantity:1.5,sale_uom:'box'}]};
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
   });
-  await page.goto(url);await page.getByRole('heading',{name:'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
+  await page.goto(url+(order?'?order':''));await page.getByRole('heading',{name:order?'Подготовка отгрузки заказа':'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
   await page.getByRole('button',{name:'Проверить параметры и партии'}).click();
   if(width===1440)await page.getByRole('button',{name:'Повторить подготовку с прежним ID'}).click();
-  const confirm=page.getByRole('button',{name:'Подтвердить и выполнить перемещение'});await confirm.waitFor();
+  const confirm=page.getByRole('button',{name:order?'Подтвердить и отгрузить заказ полностью':'Подтвердить и выполнить перемещение'});await confirm.waitFor();
+  if(order)assert.match(await page.locator('body').innerText(),/Физический остаток уменьшится[\s\S]*Оплата не создаётся/);
   assert.equal(await confirm.isDisabled(),true);assert.match(await page.locator('body').innerText(),/6 шт\.[\s\S]*18 шт\./);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-  if(process.argv[3]){await mkdir(resolve(process.argv[3]),{recursive:true});await page.screenshot({path:resolve(process.argv[3],`assistant-operation-${width}.png`),fullPage:true});}
+  if(process.argv[3]){await mkdir(resolve(process.argv[3]),{recursive:true});await page.screenshot({path:resolve(process.argv[3],`assistant-${order?'order':'operation'}-${width}.png`),fullPage:true});}
   await page.getByRole('checkbox').check();await confirm.click();await page.getByRole('alert').waitFor();
   assert.match(await page.getByRole('alert').innerText(),/Ответ не получен/);assert.equal(calls.filter(c=>c.action==='confirm').length,1);
   await page.reload();await page.getByRole('button',{name:'Проверить параметры и партии'}).click();
   assert.equal(calls.filter(c=>c.action==='prepare').length,width===1440?2:1); // reload must not create another request
   await page.getByRole('button',{name:'Проверить состояние',exact:true}).click();
-  await page.getByRole('link',{name:'Открыть складской документ'}).waitFor();
+  const resultLink=page.getByRole('link',{name:order?'Открыть заказ':'Открыть складской документ'});await resultLink.waitFor();
+  assert.equal(await resultLink.getAttribute('href'),`${order?'/sales':'/inventory/movements'}/10000000-0000-4000-8000-000000000099`);
   assert.equal(calls.filter(c=>c.action==='confirm').length,1);assert.equal(new Set(calls.map(c=>c.id)).size,1);
-  assert.deepEqual(errors,[]);await page.close();console.log(`PASS assistant ${width}px: explicit review, confirmation, lost response, reload, same request`);
+  await page.getByRole('button',{name:'Начать новый просмотр'}).click();completed=false;rejectConfirmation=true;
+  await page.getByRole('button',{name:'Проверить параметры и партии'}).click();await confirm.waitFor();
+  await page.getByRole('checkbox').check();await confirm.click();
+  await page.getByRole('alert').waitFor();assert.match(await page.getByRole('alert').innerText(),/Заказ или права изменились/);
+  assert.equal(await confirm.count(),0);assert.equal(await resultLink.count(),0);
+  assert.equal(calls.filter(c=>c.action==='confirm').length,2); // refused: no implicit repeat or success
+  assert.deepEqual(errors,[]);await page.close();console.log(`PASS assistant ${order?'order':'transfer'} ${width}px: explicit review, confirmation, lost response, reload, same request`);
  }
 }finally{await browser?.close();if(server)await new Promise(done=>server.close(done));await rm(output,{recursive:true,force:true});}
