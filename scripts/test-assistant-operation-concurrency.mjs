@@ -38,31 +38,31 @@ console.log('PASS assistant: 12 concurrent retries => one document; two employee
 
 // Reuse the existing order fixture, with a separate synthetic namespace from the standard fulfillment race.
 const orderFixture=readFileSync(fileURLToPath(new URL('../supabase/tests/fixtures/order_fulfillment.sql',import.meta.url)),'utf8')
- .replaceAll('\r\n','\n').replace(/ef([0-9a-f]{6}-)/g,'ed$1').replaceAll('fulfillment_context','assistant_order_context')
+ .replaceAll('\r\n','\n').replace(/ef([0-9a-f]{6})-0000-/g,'ed$1-8a21-').replaceAll('fulfillment_context','assistant_order_context')
  .replaceAll('SYNTH-FF','SYNTH-AOFF').replaceAll('fulfillment@example.invalid','assistant-fulfillment@example.invalid');
 run(orderFixture);
-const orderUser='ed000000-0000-4000-8000-000000000001';
+const orderUser='ed000000-8a21-4000-8000-000000000001';
 const orderPrepare=(key,which)=>{
  const out=run(actor(orderUser)+`select public.prepare_assistant_operation('${key}','customer_order_fulfillment',jsonb_build_object('sale_id',id)) from tests.assistant_order_context where k='${which}';select public.review_assistant_operation('${key}');`);
  return JSON.parse(out.split('\n').find(x=>x.includes('review_token')));
 };
-const key='ed000000-0000-4000-8000-000000000061',orderReview=orderPrepare(key,'sale');
+const key='ed000000-8a21-4000-8000-000000000061',orderReview=orderPrepare(key,'sale');
 const orderResults=await Promise.all(Array.from({length:8},()=>parallel(actor(orderUser)+`select public.confirm_assistant_operation('${key}','${orderReview.review_token}');`)));
 if(orderResults.some(r=>!r.ok))throw Error('Order replay failed: '+JSON.stringify(orderResults));
-const distinctA='ed000000-0000-4000-8000-000000000062',distinctB='ed000000-0000-4000-8000-000000000063';
+const distinctA='ed000000-8a21-4000-8000-000000000062',distinctB='ed000000-8a21-4000-8000-000000000063';
 const da=orderPrepare(distinctA,'other'),db=orderPrepare(distinctB,'other');
 const distinctRace=await Promise.all([[distinctA,da],[distinctB,db]].map(([k,r])=>parallel(actor(orderUser)+`select public.confirm_assistant_operation('${k}','${r.review_token}');`)));
 if(distinctRace.filter(r=>r.ok).length!==1||!distinctRace.some(r=>r.output.includes('ASSISTANT_OPERATION_ORDER_STATE')))throw Error('Two proposals for one order: '+JSON.stringify(distinctRace));
 run(`do $$begin
  assert (select count(*)=2 and sum(quantity)=150 from public.inventory_movements where sale_id=(select id from tests.assistant_order_context where k='sale'));
  assert (select count(*)=1 and sum(quantity)=50 from public.inventory_movements where sale_id=(select id from tests.assistant_order_context where k='other'));
- assert (select sum(quantity_on_hand)=100 and sum(quantity_reserved)=0 from public.inventory_balances where warehouse_id='ed200000-0000-4000-8000-000000000001');
+ assert (select sum(quantity_on_hand)=100 and sum(quantity_reserved)=0 from public.inventory_balances where warehouse_id='ed200000-8a21-4000-8000-000000000001');
  assert (select count(*)=2 from private.assistant_operations where id in ('${key}','${distinctA}','${distinctB}') and result_sale_id is not null);
 end$$;`);
 console.log('PASS assistant order: 8 concurrent retries => one fulfillment; two proposals => one winner; exact movements/reserves');
 
-run(actor(orderUser)+`insert into tests.assistant_order_context values('waiting',public.create_customer_order('ed100000-0000-4000-8000-000000000002',null,'ed200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic waiting order'));
- insert into tests.assistant_order_context select 'waiting-item',public.add_customer_order_item(id,'ed300000-0000-4000-8000-000000000001',10,'piece',null,60) from tests.assistant_order_context where k='waiting';
+run(actor(orderUser)+`insert into tests.assistant_order_context values('waiting',public.create_customer_order('ed100000-8a21-4000-8000-000000000002',null,'ed200000-8a21-4000-8000-000000000001','2099-01-20',null,'Synthetic waiting order'));
+ insert into tests.assistant_order_context select 'waiting-item',public.add_customer_order_item(id,'ed300000-8a21-4000-8000-000000000001',10,'piece',null,60) from tests.assistant_order_context where k='waiting';
  select public.reserve_customer_order_item_fefo(id) from tests.assistant_order_context where k='waiting-item';
  select public.confirm_customer_order(id) from tests.assistant_order_context where k='waiting';`);
 // A real second PostgreSQL session holds a lock. Wait until the confirmation is actually blocked,
@@ -92,13 +92,13 @@ async function whileWaiting(key,heldSql,expected){
   await closed;if(confirmation)await confirmation;
  }
 }
-await whileWaiting('ed000000-0000-4000-8000-000000000064',`update public.inventory_batches set status='blocked' where id='ed400000-0000-4000-8000-000000000002'`,'ASSISTANT_OPERATION_ORDER_BLOCKED');
-run(`update public.inventory_batches set status='available' where id='ed400000-0000-4000-8000-000000000002';`);
-await whileWaiting('ed000000-0000-4000-8000-000000000065',`select 1 from public.sales where id=(select id from tests.assistant_order_context where k='waiting') for update;
+await whileWaiting('ed000000-8a21-4000-8000-000000000064',`update public.inventory_batches set status='blocked' where id='ed400000-8a21-4000-8000-000000000002'`,'ASSISTANT_OPERATION_ORDER_BLOCKED');
+run(`update public.inventory_batches set status='available' where id='ed400000-8a21-4000-8000-000000000002';`);
+await whileWaiting('ed000000-8a21-4000-8000-000000000065',`select 1 from public.sales where id=(select id from tests.assistant_order_context where k='waiting') for update;
  insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select '${orderUser}',id,'deny','Synthetic concurrent denial','${orderUser}' from public.permissions where code='sales.manage'`,'ASSISTANT_OPERATION_DENIED');
 run(`do $$begin
  assert (select status='confirmed' and shipped_at is null from public.sales where id=(select id from tests.assistant_order_context where k='waiting'));
  assert not exists(select 1 from public.inventory_movements where sale_id=(select id from tests.assistant_order_context where k='waiting'));
- assert (select sum(quantity_on_hand)=100 and sum(quantity_reserved)=10 from public.inventory_balances where warehouse_id='ed200000-0000-4000-8000-000000000001');
+ assert (select sum(quantity_on_hand)=100 and sum(quantity_reserved)=10 from public.inventory_balances where warehouse_id='ed200000-8a21-4000-8000-000000000001');
 end$$;`);
 console.log('PASS assistant order: batch block and personal deny committed during actual lock wait => refusal, no issue');
