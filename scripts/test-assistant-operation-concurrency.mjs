@@ -114,7 +114,7 @@ const preparing=await Promise.all(Array.from({length:8},()=>parallel(actor(draft
 if(preparing.some(r=>!r.ok))throw Error('Draft concurrent preparation: '+JSON.stringify(preparing));
 const draftReview=draftPrepare(draftKey);
 // Reapplying only the new migration preserves an awaiting review and its token.
-run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230400_assistant_reservation_review.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230500_assistant_order_confirmation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
 if(draftPrepare(draftKey).review_token!==draftReview.review_token)throw Error('Migration lost review receipt');
 const drafts=await Promise.all(Array.from({length:12},()=>parallel(actor(draftUser)+`select public.confirm_assistant_operation('${draftKey}','${draftReview.review_token}');`)));
 if(drafts.some(r=>!r.ok))throw Error('Concurrent draft retry: '+JSON.stringify(drafts));
@@ -146,7 +146,7 @@ const reservePrepare=(key,which='sale')=>{
  return JSON.parse(output.split('\n').find(x=>x.includes('review_token')));
 };
 const reserveReview=reservePrepare(reserveKey);
-run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230400_assistant_reservation_review.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230500_assistant_order_confirmation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
 const reserved=await Promise.all(Array.from({length:12},()=>parallel(actor(reserveUser)+`select public.confirm_assistant_operation('${reserveKey}','${reserveReview.review_token}');`)));
 if(reserved.some(r=>!r.ok))throw Error('Reservation replay: '+JSON.stringify(reserved));
 run(`do $$begin
@@ -178,3 +178,64 @@ run(`do $$begin
  assert not exists(select 1 from public.inventory_movements where sale_id in (select id from tests.assistant_reserve_context));
 end$$;`);
 console.log('PASS assistant reserve: 12 retries, last-stock race, batch block and personal deny during real lock wait; no movements');
+
+// Confirmation: same existing reservation fixture, isolated namespace and normal letter workflow.
+run(readFileSync(fileURLToPath(new URL('../supabase/tests/fixtures/assistant_reservation.sql',import.meta.url)),'utf8')
+ .replaceAll('\r\n','\n').replaceAll('eb','ec').replaceAll('reserve@example.invalid','confirmation@example.invalid').replaceAll('SYNTH-AR','SYNTH-AC').replaceAll('assistant_reserve_context','assistant_confirmation_context'));
+const confirmUser='ec000000-8a23-4000-8000-000000000001',confirmKey='ec000000-8a23-4000-8000-000000000081';
+run(actor(confirmUser)+`select public.reserve_customer_order_item_fefo(id) from public.sale_items where sale_id=(select id from tests.assistant_confirmation_context where k='sale') order by id;
+ insert into tests.assistant_confirmation_context select 'letter',public.create_sale_guarantee_letter(id,'Synthetic confirmation') from tests.assistant_confirmation_context where k='sale';
+ select public.change_sale_guarantee_status(id,'approved') from tests.assistant_confirmation_context where k='letter';`);
+const confirmPrepare=(key,which='sale')=>{
+ const output=run(actor(confirmUser)+`select public.prepare_assistant_operation('${key}','customer_order_confirm',jsonb_build_object('sale_id',id)) from tests.assistant_confirmation_context where k='${which}';select public.review_assistant_operation('${key}');`);
+ return JSON.parse(output.split('\n').find(x=>x.includes('review_token')));
+};
+const confirmReview=confirmPrepare(confirmKey);
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230500_assistant_order_confirmation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+if(confirmPrepare(confirmKey).review_token!==confirmReview.review_token)throw Error('Confirmation token changed after migration replay');
+const confirmed=await Promise.all(Array.from({length:12},()=>parallel(actor(confirmUser)+`select public.confirm_assistant_operation('${confirmKey}','${confirmReview.review_token}');`)));
+if(confirmed.some(r=>!r.ok))throw Error('Confirmation replay: '+JSON.stringify(confirmed));
+run(`do $$begin
+ assert (select status='confirmed' and confirmed_by='${confirmUser}' and shipped_at is null from public.sales where id=(select id from tests.assistant_confirmation_context where k='sale'));
+ assert (select sum(quantity_on_hand)=300 and sum(quantity_reserved)=200 from public.inventory_balances where warehouse_id='ec200000-8a23-4000-8000-000000000001');
+ assert not exists(select 1 from public.inventory_movements where sale_id=(select id from tests.assistant_confirmation_context where k='sale'));
+end$$;`);
+run(actor(confirmUser)+`insert into tests.assistant_confirmation_context values('waiting',public.create_customer_order('ec100000-8a23-4000-8000-000000000002',null,'ec200000-8a23-4000-8000-000000000001','2099-01-20',null,null));
+ select public.add_customer_order_item(id,'ec300000-8a23-4000-8000-000000000001',10,'piece',null,60) from tests.assistant_confirmation_context where k='waiting';
+ select public.reserve_customer_order_item_fefo(id) from public.sale_items where sale_id=(select id from tests.assistant_confirmation_context where k='waiting');
+ do $$declare letter uuid;begin
+  if exists(select 1 from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id
+   where i.sale_id=(select id from tests.assistant_confirmation_context where k='waiting') and r.status='active' and r.remaining_shelf_life_pct<i.required_shelf_life_pct) then
+   letter:=public.create_sale_guarantee_letter((select id from tests.assistant_confirmation_context where k='waiting'),'Synthetic remaining FEFO pieces');
+   perform public.change_sale_guarantee_status(letter,'approved');
+  end if;
+ end $$;`);
+const cfBlocked='ec000000-8a23-4000-8000-000000000082';
+await whileWaiting(cfBlocked,`update public.inventory_batches set status='blocked' where id='ec400000-8a23-4000-8000-000000000002'`,
+ 'ASSISTANT_OPERATION_CONFIRM_BLOCKED',()=>confirmPrepare(cfBlocked,'waiting'),confirmUser);
+run(`update public.inventory_batches set status='available' where id='ec400000-8a23-4000-8000-000000000002';`);
+const cfDenied='ec000000-8a23-4000-8000-000000000083';
+await whileWaiting(cfDenied,`select 1 from public.sales where id=(select id from tests.assistant_confirmation_context where k='waiting') for update;
+ insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select '${confirmUser}',id,'deny','Synthetic confirm denial','${confirmUser}' from public.permissions where code='sales.manage'`,
+ 'ASSISTANT_OPERATION_DENIED',()=>confirmPrepare(cfDenied,'waiting'),confirmUser);
+run(`delete from public.user_permission_overrides where user_id='${confirmUser}';`);
+const cfCancel='ec000000-8a23-4000-8000-000000000084';
+await whileWaiting(cfCancel,`${actor(confirmUser)} select public.cancel_customer_order(id,'Synthetic cancel during confirmation') from tests.assistant_confirmation_context where k='waiting'`,
+ 'ASSISTANT_OPERATION_CONFIRM_STATE',()=>confirmPrepare(cfCancel,'waiting'),confirmUser);
+run(`do $$begin
+ assert (select status='cancelled' from public.sales where id=(select id from tests.assistant_confirmation_context where k='waiting'));
+ assert (select sum(quantity_on_hand)=300 and sum(quantity_reserved)=200 from public.inventory_balances where warehouse_id='ec200000-8a23-4000-8000-000000000001');
+ assert not exists(select 1 from public.inventory_movements where sale_id in(select id from tests.assistant_confirmation_context));
+end$$;`);
+run(actor(confirmUser)+`select public.return_customer_order_to_preparation(id,'Synthetic re-confirmation') from tests.assistant_confirmation_context where k='sale';
+ insert into tests.assistant_confirmation_context select 'new-letter',public.create_sale_guarantee_letter(id,'Synthetic reapproval') from tests.assistant_confirmation_context where k='sale';
+ select public.change_sale_guarantee_status(id,'approved') from tests.assistant_confirmation_context where k='new-letter';`);
+const cfLetter='ec000000-8a23-4000-8000-000000000085';
+await whileWaiting(cfLetter,`update public.guarantee_letters set status='cancelled' where id=(select id from tests.assistant_confirmation_context where k='new-letter')`,
+ 'ASSISTANT_OPERATION_CONFIRM_BLOCKED',()=>confirmPrepare(cfLetter),confirmUser);
+run(`update public.guarantee_letters set status='approved' where id=(select id from tests.assistant_confirmation_context where k='new-letter');`);
+const cfTabs=['ec000000-8a23-4000-8000-000000000086','ec000000-8a23-4000-8000-000000000087'];
+const cfTabPreviews=cfTabs.map(key=>confirmPrepare(key));
+const cfTabResults=await Promise.all(cfTabs.map((key,i)=>parallel(actor(confirmUser)+`select public.confirm_assistant_operation('${key}','${cfTabPreviews[i].review_token}');`)));
+if(cfTabResults.filter(r=>r.ok).length!==1||!cfTabResults.some(r=>r.output.includes('ASSISTANT_OPERATION_CONFIRM_STATE')))throw Error('Two confirmation tabs: '+JSON.stringify(cfTabResults));
+console.log('PASS assistant confirmation: 12 retries, two tabs, migration replay; batch block, letter revoke, personal deny and cancellation during actual lock wait, no issue');

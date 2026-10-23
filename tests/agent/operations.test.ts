@@ -15,7 +15,7 @@ test("commands use explicit quantities, identities and units", () => {
 test("model cannot select SQL, RPC, Google writes or confirmation", () => {
  for (const kind of ["confirm", "execute_sql", "rpc", "drive.upload", "sheets.update", "fulfill_customer_order"])
   assert.equal(parseOperationIntent({ ...command, kind }), null);
- assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve"]);
+ assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm"]);
  assert.equal(parseOperationIntent({ ...command, confirmed: true }), null);
  assert.equal(parseOperationIntent({ ...command, params: { ...command.params, rpc: "delete" } }), null);
 });
@@ -64,7 +64,7 @@ test("errors never forward database details or secrets", () => {
  assert.doesNotMatch(operationError({ message: "SQL password=secret" }), /SQL|password|secret/);
 });
 test("model proposal alone never executes; Telegram and disabled mode discard it", async () => {
- for (const proposal of [command, draft, { kind: "customer_order_reserve", params: { sale_id: command.params.product_id } }]) for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
+ for (const proposal of [command, draft, { kind: "customer_order_confirm", params: { sale_id: command.params.product_id } }, { kind: "customer_order_reserve", params: { sale_id: command.params.product_id } }]) for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
   const ledger = new FakeLedger();
   const outcome = await runAgent("Подготовь перемещение двух коробов", {
    channel, operationsEnabled, userId: USER_ID, ledger, data: fakeData(), permissions: permissionsOf(ALL_PERMISSIONS), limits: TEST_LIMITS, pricing: TEST_PRICING,
@@ -74,4 +74,11 @@ test("model proposal alone never executes; Telegram and disabled mode discard it
   assert.equal(Boolean(outcome.answer.operationIntent), channel === "web" && operationsEnabled);
   assert.deepEqual(ledger.finished[0].tools, []);
  }
+});
+test("order confirmation is a proposal without credit / letter overrides or fulfillment", () => {
+ const intent = { kind: "customer_order_confirm", params: { sale_id: command.params.product_id } };
+ assert.deepEqual(parseOperationIntent(intent), intent);
+ for (const patch of [{ ignore: true }, { credit_override: true }, { approve_letter: true }, { ship: true }, { quantity: "2" }, { sale_id: "заказ" }])
+  assert.equal(parseOperationIntent({ ...intent, params: { ...intent.params, ...patch } }), null);
+ assert.doesNotMatch(operationError({ message: "ASSISTANT_OPERATION_CONFIRM_REFUSED" }), /SELECT|\d{5}/);
 });

@@ -2,7 +2,7 @@
 import { validateParams } from "./schema.ts";
 import type { ParamSchema } from "./types.ts";
 
-export const OPERATION_KINDS = ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve"] as const;
+export const OPERATION_KINDS = ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm"] as const;
 export type OperationKind = typeof OPERATION_KINDS[number];
 export type OperationIntent = { kind: OperationKind; params: Record<string, string | number | null | Record<string, string | number>[]> };
 const transfer: Record<string, ParamSchema> = {
@@ -43,7 +43,7 @@ export function parseOperationIntent(input: unknown): OperationIntent | null {
     }
     return { kind: "customer_order_create", params: { ...parsedHeader.value, contract_id: contract_id as string | null, items: lines } };
   }
-  if (value.kind === "customer_order_fulfillment" || value.kind === "customer_order_reserve") {
+  if (value.kind === "customer_order_fulfillment" || value.kind === "customer_order_reserve" || value.kind === "customer_order_confirm") {
     const parsed = validateParams({ sale_id: { type: "uuid", description: "Подтверждённый заказ из текущего поиска" } }, value.params);
     return parsed.ok ? { kind: value.kind, params: parsed.value } : null;
   }
@@ -65,7 +65,7 @@ const transferSchema = {
 };
 export const OPERATION_INTENT_SCHEMA = { anyOf: [transferSchema, {
   type: "object", additionalProperties: false, required: ["kind", "params"], properties: {
-    kind: { type: "string", enum: ["customer_order_fulfillment", "customer_order_reserve"] },
+    kind: { type: "string", enum: ["customer_order_fulfillment", "customer_order_reserve", "customer_order_confirm"] },
     params: { type: "object", additionalProperties: false, required: ["sale_id"], properties: { sale_id: { type: "string" } } },
   },
 }, {
@@ -82,6 +82,9 @@ export const OPERATION_INTENT_SCHEMA = { anyOf: [transferSchema, {
 }, { type: "null" }] };
 
 export const OPERATION_ERRORS: Record<string, string> = {
+  ASSISTANT_OPERATION_CONFIRM_STATE: "Подтвердить можно полностью зарезервированный заказ. Проверьте его текущее состояние.",
+  ASSISTANT_OPERATION_CONFIRM_BLOCKED: "Подтверждение недоступно: проверьте полноту резервов, пригодность партий и действующие гарантийные письма в карточке заказа.",
+  ASSISTANT_OPERATION_CONFIRM_REFUSED: "Штатная проверка отклонила подтверждение заказа. Проверьте условия и финансовое согласование в карточке заказа с уполномоченным сотрудником. Отгрузка не выполнялась.",
   ASSISTANT_OPERATION_RESERVE_STATE: "Нужен черновик без действующих резервов. Существующие резервы изменяйте через штатный просмотр заказа.",
   ASSISTANT_OPERATION_RESERVE_SIZE: "В заказе нет позиций или набор слишком большой для полного просмотра. Откройте карточку заказа.",
   ASSISTANT_OPERATION_RESERVE_BLOCKED: "Подбор не выполнен: проверьте свободный остаток, упаковку, состояние партий и письма в заказе. Никакие резервы не созданы.",
