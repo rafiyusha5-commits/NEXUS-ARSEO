@@ -6,7 +6,8 @@ import type { OperationIntent } from "@/lib/agent/operations";
 type Review = { id: string; kind?: OperationIntent["kind"]; status: "awaiting_confirmation" | "completed"; review_token?: string; result_id?: string; expires_at?: string;
  preview?: { product?: string; from?: string; to?: string; quantity?: number; uom?: string; document_date: string;
   order_number?: string; customer?: string; warehouse?: string; planned_date?: string;
-  items?: { id: string; product: string; quantity: number; uom: string }[];
+  contract?: string | null; contract_currency?: string | null; contract_valid_from?: string | null; contract_valid_to?: string | null; currency?: string; total?: string;
+  items?: { id: string; product: string; quantity: number | string; uom: string; unit_price?: string; line_amount?: string; required_shelf_life_pct?: number | null }[];
   lines: { balance_id?: string; id?: string; product?: string; batch: string; expiry: string | null; quantity: number; uom: string; sale_quantity?: number; sale_uom?: string }[] } };
 const units: Record<string, string> = { piece: "шт.", box: "кор.", layer: "слой", pallet: "пал.", truck: "фура" };
 
@@ -20,6 +21,7 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
  const inFlight = useRef(false);
  const preparedIntent = useRef<string | null>(null);
  const isOrder = (review?.kind ?? intent?.kind) === "customer_order_fulfillment";
+ const isDraft = (review?.kind ?? intent?.kind) === "customer_order_create";
  async function act(action: "prepare" | "review" | "confirm") {
   if (inFlight.current) return;
   if (action === "prepare" && !intent) return;
@@ -48,28 +50,32 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
   } finally { inFlight.current = false; setBusy(false); }
  }
  return <section className="panel admin-section" aria-busy={busy} aria-label="Проверка предложенной операции">
-  <p className="eyebrow">Действие только после вашего подтверждения</p><h3>{isOrder ? "Подготовка отгрузки заказа" : "Подготовка перемещения"}</h3>
+  <p className="eyebrow">Действие только после вашего подтверждения</p><h3>{isDraft ? "Подготовка нового заказа" : isOrder ? "Подготовка отгрузки заказа" : "Подготовка перемещения"}</h3>
   <p className="form-help">Предложение ассистента ещё не является документом. Просмотр не меняет остатки. Google Drive и Sheets — только чтение.</p>
-  {intent && !review && !unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>Проверить параметры и партии</button>}
+  {intent && !review && !unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>{isDraft ? "Проверить параметры заказа" : "Проверить параметры и партии"}</button>}
   {intent && unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>Повторить подготовку с прежним ID</button>}
   <button type="button" disabled={busy} onClick={() => void act("review")}>Проверить состояние</button>
   {error && <p role="alert" className="login-error admin-message">{error}</p>}
-  {review?.status === "completed" && review.result_id && /^[0-9a-f-]{36}$/i.test(review.result_id) && <p className="login-success">{isOrder ? "Заказ отгружен." : "Перемещение выполнено."} <Link href={isOrder ? `/sales/${review.result_id}` : `/inventory/movements/${review.result_id}`}>{isOrder ? "Открыть заказ" : "Открыть складской документ"}</Link></p>}
+  {review?.status === "completed" && review.result_id && /^[0-9a-f-]{36}$/i.test(review.result_id) && <p className="login-success">{isDraft ? "Черновик заказа создан. Резерв и отгрузка не выполнялись." : isOrder ? "Заказ отгружен." : "Перемещение выполнено."} <Link href={isOrder || isDraft ? `/sales/${review.result_id}` : `/inventory/movements/${review.result_id}`}>{isOrder || isDraft ? "Открыть заказ" : "Открыть складской документ"}</Link></p>}
   {review?.status === "awaiting_confirmation" && review.preview && <>
-   {isOrder ? <>
-    <h4>Заказ {review.preview.order_number}</h4>
+   {isOrder || isDraft ? <>
+    <h4>{isDraft ? "Новый заказ · черновик" : `Заказ ${review.preview.order_number}`}</h4>
     <dl className="assistant-values"><div><dt>Покупатель</dt><dd>{review.preview.customer}</dd></div><div><dt>Склад отгрузки</dt><dd>{review.preview.warehouse}</dd></div>
      <div><dt>Плановая дата</dt><dd>{review.preview.planned_date}</dd></div><div><dt>Дата операции</dt><dd>{review.preview.document_date}</dd></div></dl>
-    <h4>Весь подтверждённый заказ</h4><ul>{review.preview.items?.map(item => <li key={item.id}>{item.product} — {item.quantity} {units[item.uom] ?? item.uom}</li>)}</ul>
+    {isDraft && <><dl className="assistant-values"><div><dt>Договор</dt><dd>{review.preview.contract ?? "Без договора — проверьте выбор"}</dd></div><div><dt>Валюта заказа</dt><dd>{review.preview.currency}</dd></div></dl>
+     {review.preview.contract && <p className="form-help">Договор: с {review.preview.contract_valid_from ?? "дата не задана"} по {review.preview.contract_valid_to ?? "дата не задана"}; валюта договора: {review.preview.contract_currency ?? "не задана"}. Проверьте соответствие выбранным условиям.</p>}</>}
+    <h4>{isDraft ? "Предлагаемые позиции и цены" : "Весь подтверждённый заказ"}</h4><ul>{review.preview.items?.map(item => <li key={item.id}>{item.product} — {item.quantity} {units[item.uom] ?? item.uom}
+     {isDraft && <><br />Цена за {units[item.uom] ?? item.uom}: {item.unit_price} {review.preview?.currency}; сумма строки: {item.line_amount} {review.preview?.currency}.<br />ОСГ покупателя: {item.required_shelf_life_pct == null ? "не задано" : `${item.required_shelf_life_pct}%`}</>}</li>)}</ul>
+    {isDraft && <p><strong>Итого: {review.preview.total} {review.preview.currency}</strong><br /><span className="form-help">Итог округлён до 2 знаков, как в существующем расчёте заказа Nexus. Дополнительный налог или скидка автоматически не добавляются.</span></p>}
    </> : <><h4>{review.preview.product}</h4>
    <dl className="assistant-values"><div><dt>Откуда</dt><dd>{review.preview.from}</dd></div><div><dt>Куда</dt><dd>{review.preview.to}</dd></div>
     <div><dt>По команде</dt><dd>{review.preview.quantity} {units[review.preview.uom ?? ""] ?? review.preview.uom}</dd></div><div><dt>Дата документа</dt><dd>{review.preview.document_date}</dd></div></dl></>}
-   <p>{isOrder ? "Будут списаны зарезервированные партии:" : "Будут списаны со склада отправления и зачислены на склад назначения:"}</p>
+   {!isDraft && <><p>{isOrder ? "Будут списаны зарезервированные партии:" : "Будут списаны со склада отправления и зачислены на склад назначения:"}</p>
    <ul>{review.preview.lines.map(line => <li key={line.id ?? line.balance_id}>{line.product ? `${line.product} · ` : ""}{line.batch} — {line.quantity} {units[line.uom] ?? line.uom}; годен до {line.expiry ?? "не указано"}
-    {isOrder && line.sale_uom && <> (в заказе: {line.sale_quantity} {units[line.sale_uom] ?? line.sale_uom})</>}</li>)}</ul>
-   <p className="form-help">{isOrder ? "Физический остаток уменьшится, резерв будет погашен, заказ станет отгруженным и будет учтён в дебиторской задолженности по существующим правилам. Оплата не создаётся. Частичная отгрузка здесь недоступна." : "Общий остаток компании не меняется."} Если данные изменились после просмотра, выполнение будет отклонено.</p>
-   <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> {isOrder ? "Проверил заказ, покупателя, склад, партии и все количества; подтверждаю полную отгрузку" : "Проверил товар, склады, партии и количество"}</label>
-   <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>{isOrder ? "Подтвердить и отгрузить заказ полностью" : "Подтвердить и выполнить перемещение"}</button></div>
+    {isOrder && line.sale_uom && <> (в заказе: {line.sale_quantity} {units[line.sale_uom] ?? line.sale_uom})</>}</li>)}</ul></>}
+   <p className="form-help">{isDraft ? "Будет создан только черновик с позициями. Наличие товара не гарантируется: резервирование, подтверждение заказа и отгрузка выполняются отдельно. Остатки, платежи и задолженность не меняются." : isOrder ? "Физический остаток уменьшится, резерв будет погашен, заказ станет отгруженным и будет учтён в дебиторской задолженности по существующим правилам. Оплата не создаётся. Частичная отгрузка здесь недоступна." : "Общий остаток компании не меняется."} Если данные изменились после просмотра, выполнение будет отклонено.</p>
+   <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> {isDraft ? "Проверил покупателя, договор, склад, дату, валюту, все количества и цены" : isOrder ? "Проверил заказ, покупателя, склад, партии и все количества; подтверждаю полную отгрузку" : "Проверил товар, склады, партии и количество"}</label>
+   <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>{isDraft ? "Подтвердить и создать черновик заказа" : isOrder ? "Подтвердить и отгрузить заказ полностью" : "Подтвердить и выполнить перемещение"}</button></div>
   </>}
   {!busy && !unknown && <button type="button" onClick={() => { requestId.current = null; preparedIntent.current = null; setReview(null); setChecked(false); setError(null); sessionStorage.removeItem("nexus-assistant-operation-id"); }}>Начать новый просмотр</button>}
  </section>;

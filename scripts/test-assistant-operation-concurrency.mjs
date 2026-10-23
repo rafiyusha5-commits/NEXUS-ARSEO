@@ -67,8 +67,8 @@ run(actor(orderUser)+`insert into tests.assistant_order_context values('waiting'
  select public.confirm_customer_order(id) from tests.assistant_order_context where k='waiting';`);
 // A real second PostgreSQL session holds a lock. Wait until the confirmation is actually blocked,
 // then commit the changed authority/source; do not rely on a scheduling guess or mocked race.
-async function whileWaiting(key,heldSql,expected){
- const preview=orderPrepare(key,'waiting');
+async function whileWaiting(key,heldSql,expected,preparePreview=()=>orderPrepare(key,'waiting'),who=orderUser){
+ const preview=preparePreview();
  const holder=spawn(psql,[...args,'-tA'],{windowsHide:true});let stdout='',stderr='';
  const closed=new Promise(resolve=>holder.on('close',code=>resolve(code)));
  holder.stdout.on('data',d=>stdout+=d);holder.stderr.on('data',d=>stderr+=d);
@@ -77,7 +77,7 @@ async function whileWaiting(key,heldSql,expected){
  try{
   for(let i=0;i<100&&!stdout.includes('SYNTH_LOCK_HELD');i++)await new Promise(r=>setTimeout(r,25));
   if(!stdout.includes('SYNTH_LOCK_HELD'))throw Error('Holder did not acquire lock: '+stderr);
-  confirmation=parallel(actor(orderUser)+`select public.confirm_assistant_operation('${key}','${preview.review_token}');`);
+  confirmation=parallel(actor(who)+`select public.confirm_assistant_operation('${key}','${preview.review_token}');`);
   let waiting=false;
   for(let i=0;i<100&&!waiting;i++){
    waiting=run(`select exists(select 1 from pg_stat_activity where pid<>pg_backend_pid() and wait_event_type='Lock' and query like '%${key}%');`)==='t';
@@ -102,3 +102,39 @@ run(`do $$begin
  assert (select sum(quantity_on_hand)=100 and sum(quantity_reserved)=10 from public.inventory_balances where warehouse_id='ed200000-8a21-4000-8000-000000000001');
 end$$;`);
 console.log('PASS assistant order: batch block and personal deny committed during actual lock wait => refusal, no issue');
+
+// Draft creation uses the same receipt and existing sales RPCs; no stock business rules here.
+run(readFileSync(fileURLToPath(new URL('../supabase/tests/fixtures/assistant_order_creation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+const draftUser='ad000000-8a22-4000-8000-000000000001',draftKey='ad000000-8a22-4000-8000-000000000061';
+const draftPrepare=key=>{
+ const out=run(actor(draftUser)+`select public.prepare_assistant_operation('${key}','customer_order_create',payload) from tests.assistant_draft_context;select public.review_assistant_operation('${key}');`);
+ return JSON.parse(out.split('\n').find(x=>x.includes('review_token')));
+};
+const preparing=await Promise.all(Array.from({length:8},()=>parallel(actor(draftUser)+`select public.prepare_assistant_operation('${draftKey}','customer_order_create',payload) from tests.assistant_draft_context;`)));
+if(preparing.some(r=>!r.ok))throw Error('Draft concurrent preparation: '+JSON.stringify(preparing));
+const draftReview=draftPrepare(draftKey);
+// Reapplying only the new migration preserves an awaiting review and its token.
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230300_assistant_order_creation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+if(draftPrepare(draftKey).review_token!==draftReview.review_token)throw Error('Migration lost review receipt');
+const drafts=await Promise.all(Array.from({length:12},()=>parallel(actor(draftUser)+`select public.confirm_assistant_operation('${draftKey}','${draftReview.review_token}');`)));
+if(drafts.some(r=>!r.ok))throw Error('Concurrent draft retry: '+JSON.stringify(drafts));
+const draftIds=new Set(drafts.map(r=>JSON.parse(r.output.split('\n').find(x=>x.includes('result_id'))).result_id));
+if(draftIds.size!==1)throw Error('Duplicate draft orders');
+run(`do $$begin
+ assert (select count(*)=1 and bool_and(status='draft') from public.sales where customer_id='ad000000-8a22-4000-8000-000000000011');
+ assert (select count(*)=2 from public.sale_items where sale_id='${[...draftIds][0]}');
+ assert not exists(select 1 from public.inventory_movements where sale_id='${[...draftIds][0]}');
+ assert not exists(select 1 from private.customer_ledger('ad000000-8a22-4000-8000-000000000011'));
+end$$;`);
+const staleDraft='ad000000-8a22-4000-8000-000000000062';
+await whileWaiting(staleDraft,`update public.counterparties set min_remaining_shelf_life_pct=80 where id='ad000000-8a22-4000-8000-000000000011'`,
+ 'ASSISTANT_OPERATION_STALE',()=>draftPrepare(staleDraft),draftUser);
+const deniedDraft='ad000000-8a22-4000-8000-000000000063';
+await whileWaiting(deniedDraft,`select 1 from public.products where id='ad000000-8a22-4000-8000-000000000021' for update;
+ insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select '${draftUser}',id,'deny','Synthetic concurrent draft denial','${draftUser}' from public.permissions where code='sales.manage'`,
+ 'ASSISTANT_OPERATION_DENIED',()=>draftPrepare(deniedDraft),draftUser);
+run(`do $$begin
+ assert (select count(*)=1 from public.sales where customer_id='ad000000-8a22-4000-8000-000000000011');
+ assert not exists(select 1 from private.assistant_operations where id in ('${staleDraft}','${deniedDraft}') and result_sale_id is not null);
+end$$;`);
+console.log('PASS assistant draft: 8 concurrent prepares, 12 confirmations => one draft; migration replay preserves token; actual lock-wait source/deny races refuse');

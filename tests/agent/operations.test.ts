@@ -15,7 +15,7 @@ test("commands use explicit quantities, identities and units", () => {
 test("model cannot select SQL, RPC, Google writes or confirmation", () => {
  for (const kind of ["confirm", "execute_sql", "rpc", "drive.upload", "sheets.update", "fulfill_customer_order"])
   assert.equal(parseOperationIntent({ ...command, kind }), null);
- assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment"]);
+ assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create"]);
  assert.equal(parseOperationIntent({ ...command, confirmed: true }), null);
  assert.equal(parseOperationIntent({ ...command, params: { ...command.params, rpc: "delete" } }), null);
 });
@@ -26,6 +26,28 @@ test("order shipment is a closed proposal, not a price/quantity/reserve edit", (
  for (const params of [{ sale_id: "заказ 12" }, {}, { ...order.params, quantity: "1" }, { ...order.params, confirmed: true }, { ...order.params, price: 100 }])
   assert.equal(parseOperationIntent({ ...order, params }), null);
 });
+
+const draft = { kind: "customer_order_create", params: {
+ customer_id: command.params.product_id, warehouse_id: command.params.from_warehouse_id, currency_id: command.params.to_warehouse_id,
+ contract_id: null, planned_shipment_date: "2099-01-20", items: [{ product_id: command.params.product_id, quantity: "2", uom: "box", unit_price: "100.1250" }],
+} };
+test("draft requires explicit currency, date, contract decision and exact prices", () => {
+ assert.deepEqual(parseOperationIntent(draft), draft);
+ for (const patch of [{ currency_id: null }, { contract_id: undefined }, { planned_shipment_date: "2099-02-30" }, { warehouse_id: "Астана" }, { confirm: true }])
+  assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, ...patch } }), null);
+ const noContract: Record<string, unknown> = { ...draft.params }; delete noContract.contract_id;
+ assert.equal(parseOperationIntent({ ...draft, params: noContract }), null);
+ for (const unit_price of [null, undefined, "", "-1", "1e3", "0.00001", 15, "10000000000"])
+  assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, items: [{ ...draft.params.items[0], unit_price }] } }), null);
+ assert.ok(parseOperationIntent({ ...draft, params: { ...draft.params, items: [{ ...draft.params.items[0], unit_price: "0" }] } })); // explicit zero is not missing
+});
+test("draft lines cannot be silently aggregated or smuggle a reserve/action", () => {
+ for (const items of [[], Array(26).fill(draft.params.items[0]), [...draft.params.items, ...draft.params.items], [{ ...draft.params.items[0], reserve: true }]])
+  assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, items } }), null);
+ assert.ok(parseOperationIntent({ ...draft, params: { ...draft.params, items: [...draft.params.items, { ...draft.params.items[0], uom: "piece" }] } }));
+ assert.ok(JSON.stringify({ action: "prepare", id: command.params.product_id, intent: { ...draft, params: { ...draft.params,
+  items: Array.from({ length: 25 }, (_, i) => ({ ...draft.params.items[0], product_id: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`, quantity: "999999999.999", unit_price: "9999999999.9999" })) } } }).length < 8192);
+});
 test("ambiguous identities and unknown units fail closed", () => {
  for (const patch of [{ product_id: "Merba" }, { uom: "kg" }, { to_warehouse_id: command.params.from_warehouse_id }])
   assert.equal(parseOperationIntent({ ...command, params: { ...command.params, ...patch } }), null);
@@ -35,11 +57,11 @@ test("errors never forward database details or secrets", () => {
  assert.doesNotMatch(operationError({ message: "SQL password=secret" }), /SQL|password|secret/);
 });
 test("model proposal alone never executes; Telegram and disabled mode discard it", async () => {
- for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
+ for (const proposal of [command, draft]) for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
   const ledger = new FakeLedger();
   const outcome = await runAgent("Подготовь перемещение двух коробов", {
    channel, operationsEnabled, userId: USER_ID, ledger, data: fakeData(), permissions: permissionsOf(ALL_PERMISSIONS), limits: TEST_LIMITS, pricing: TEST_PRICING,
-   provider: new ScriptedProvider([{ content: JSON.stringify({ facts: [], commentary: [], limitations: [], operation: command }), toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 } }]),
+   provider: new ScriptedProvider([{ content: JSON.stringify({ facts: [], commentary: [], limitations: [], operation: proposal }), toolCalls: [], usage: { inputTokens: 10, outputTokens: 10 } }]),
   });
   assert.ok(outcome.ok);
   assert.equal(Boolean(outcome.answer.operationIntent), channel === "web" && operationsEnabled);
