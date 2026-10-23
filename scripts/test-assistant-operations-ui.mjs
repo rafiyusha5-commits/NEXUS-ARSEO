@@ -26,8 +26,8 @@ try{
  });
  await new Promise(done=>server.listen(0,'127.0.0.1',done));const url=`http://127.0.0.1:${server.address().port}`;
  browser=await chromium.launch({headless:true});
- for(const kind of ['transfer','order','draft'])for(const width of [1440,390]){
-  const order=kind==='order',draft=kind==='draft',prepareLabel=draft?'Проверить параметры заказа':'Проверить параметры и партии';
+ for(const kind of ['transfer','order','draft','reserve','reserve-clean'])for(const width of [1440,390]){
+  const reserve=kind.startsWith('reserve'),low=kind==='reserve',order=kind==='order',draft=kind==='draft',prepareLabel=draft?'Проверить параметры заказа':'Проверить параметры и партии';
   const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],calls=[];let completed=false,rejectConfirmation=false,failPreparation=width===1440;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
@@ -42,20 +42,22 @@ try{
      product:'SYNTH-150 · Синтетическое печенье 150 г',from:'AKT · Актобе',to:'AST · Астана',quantity:2,uom:'box',document_date:'2099-01-01',
      lines:[{balance_id:'a',batch:'SYNTH-FIRST',expiry:'2099-01-01',quantity:6,uom:'piece'},{balance_id:'b',batch:'SYNTH-SECOND',expiry:'2099-02-01',quantity:18,uom:'piece'}],
     }};
-   result.kind=draft?'customer_order_create':order?'customer_order_fulfillment':'inventory_transfer';
+   result.kind=reserve?'customer_order_reserve':draft?'customer_order_create':order?'customer_order_fulfillment':'inventory_transfer';
    if(draft&&!completed)result.preview={customer:'Синтетический покупатель',warehouse:'AKT · Актобе',contract:null,currency:'KZT',planned_date:'2099-01-20',document_date:'2099-01-01',total:'201.25',lines:[],items:[
     {id:'a',product:'Синтетическое печенье',quantity:'2',uom:'box',unit_price:'100.1250',line_amount:'200.2500',required_shelf_life_pct:70},
     {id:'b',product:'Синтетический сок',quantity:'3',uom:'piece',unit_price:'0.3333',line_amount:'0.9999',required_shelf_life_pct:null}]};
-   if(order&&!completed)result.preview={order_number:'SYNTH-ORDER-77',customer:'Синтетический покупатель',warehouse:'AKT · Актобе',planned_date:'2099-01-01',document_date:'2099-01-01',
+   if((order||reserve)&&!completed)result.preview={order_number:'SYNTH-ORDER-77',customer:'Синтетический покупатель',warehouse:'AKT · Актобе',planned_date:'2099-01-01',document_date:'2099-01-01',
     items:[{id:'item-a',product:'Синтетическое печенье',quantity:2,uom:'box'}],lines:[
      {id:'r-a',product:'Синтетическое печенье',batch:'SYNTH-FIRST',expiry:'2099-02-01',quantity:6,uom:'piece',sale_quantity:0.5,sale_uom:'box'},
      {id:'r-b',product:'Синтетическое печенье',batch:'SYNTH-SECOND',expiry:'2099-03-01',quantity:18,uom:'piece',sale_quantity:1.5,sale_uom:'box'}]};
+   if(reserve&&!completed){result.preview.low_shelf_life=low;for(const line of result.preview.lines){line.remaining_shelf_life_pct=low?25:80;line.required_shelf_life_pct=60;}}
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
   });
-  await page.goto(url+`?${kind}`);await page.getByRole('heading',{name:draft?'Подготовка нового заказа':order?'Подготовка отгрузки заказа':'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
+  await page.goto(url+`?${kind}`);await page.getByRole('heading',{name:reserve?'Подготовка резервирования':draft?'Подготовка нового заказа':order?'Подготовка отгрузки заказа':'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
   await page.getByRole('button',{name:prepareLabel}).click();
   if(width===1440)await page.getByRole('button',{name:'Повторить подготовку с прежним ID'}).click();
-  const confirm=page.getByRole('button',{name:draft?'Подтвердить и создать черновик заказа':order?'Подтвердить и отгрузить заказ полностью':'Подтвердить и выполнить перемещение'});await confirm.waitFor();
+  const confirm=page.getByRole('button',{name:reserve?(low?'Продолжить резервирование с предупреждением':'Подтвердить резервирование'):draft?'Подтвердить и создать черновик заказа':order?'Подтвердить и отгрузить заказ полностью':'Подтвердить и выполнить перемещение'});await confirm.waitFor();
+  if(reserve){assert.equal(await page.getByRole('note').count(),low?1:0);assert.match(await page.locator('body').innerText(),/Физический остаток, цены, платежи и долг не меняются/);}
   if(order)assert.match(await page.locator('body').innerText(),/Физический остаток уменьшится[\s\S]*Оплата не создаётся/);
   assert.equal(await confirm.isDisabled(),true);
   if(draft){assert.match(await page.locator('body').innerText(),/100.1250 KZT[\s\S]*0.3333 KZT[\s\S]*не задано[\s\S]*201.25 KZT/);assert.match(await page.locator('body').innerText(),/Остатки, платежи и задолженность не меняются/);}
@@ -67,8 +69,8 @@ try{
   await page.reload();await page.getByRole('button',{name:prepareLabel}).click();
   assert.equal(calls.filter(c=>c.action==='prepare').length,width===1440?2:1); // reload must not create another request
   await page.getByRole('button',{name:'Проверить состояние',exact:true}).click();
-  const resultLink=page.getByRole('link',{name:order||draft?'Открыть заказ':'Открыть складской документ'});await resultLink.waitFor();
-  assert.equal(await resultLink.getAttribute('href'),`${order||draft?'/sales':'/inventory/movements'}/10000000-0000-4000-8000-000000000099`);
+  const resultLink=page.getByRole('link',{name:order||draft||reserve?'Открыть заказ':'Открыть складской документ'});await resultLink.waitFor();
+  assert.equal(await resultLink.getAttribute('href'),`${order||draft||reserve?'/sales':'/inventory/movements'}/10000000-0000-4000-8000-000000000099`);
   if(draft)assert.match(await page.locator('body').innerText(),/Черновик заказа создан. Резерв и отгрузка не выполнялись/);
   assert.equal(calls.filter(c=>c.action==='confirm').length,1);assert.equal(new Set(calls.map(c=>c.id)).size,1);
   await page.getByRole('button',{name:'Начать новый просмотр'}).click();completed=false;rejectConfirmation=true;

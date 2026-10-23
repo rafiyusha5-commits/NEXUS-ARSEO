@@ -15,7 +15,7 @@ test("commands use explicit quantities, identities and units", () => {
 test("model cannot select SQL, RPC, Google writes or confirmation", () => {
  for (const kind of ["confirm", "execute_sql", "rpc", "drive.upload", "sheets.update", "fulfill_customer_order"])
   assert.equal(parseOperationIntent({ ...command, kind }), null);
- assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create"]);
+ assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve"]);
  assert.equal(parseOperationIntent({ ...command, confirmed: true }), null);
  assert.equal(parseOperationIntent({ ...command, params: { ...command.params, rpc: "delete" } }), null);
 });
@@ -25,6 +25,13 @@ test("order shipment is a closed proposal, not a price/quantity/reserve edit", (
  assert.deepEqual(parseOperationIntent(order), order);
  for (const params of [{ sale_id: "заказ 12" }, {}, { ...order.params, quantity: "1" }, { ...order.params, confirmed: true }, { ...order.params, price: 100 }])
   assert.equal(parseOperationIntent({ ...order, params }), null);
+});
+
+test("reservation proposal cannot waive a hard blocker or approve a letter", () => {
+ const reserve = { kind: "customer_order_reserve", params: { sale_id: command.params.product_id } };
+ assert.deepEqual(parseOperationIntent(reserve), reserve);
+ for (const extra of [{ ignore: true }, { approve_letter: true }, { confirmed: true }, { quantity: "2" }, { low_shelf_life: false }])
+  assert.equal(parseOperationIntent({ ...reserve, params: { ...reserve.params, ...extra } }), null);
 });
 
 const draft = { kind: "customer_order_create", params: {
@@ -57,7 +64,7 @@ test("errors never forward database details or secrets", () => {
  assert.doesNotMatch(operationError({ message: "SQL password=secret" }), /SQL|password|secret/);
 });
 test("model proposal alone never executes; Telegram and disabled mode discard it", async () => {
- for (const proposal of [command, draft]) for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
+ for (const proposal of [command, draft, { kind: "customer_order_reserve", params: { sale_id: command.params.product_id } }]) for (const [channel, operationsEnabled] of [["web", true], ["web", false], ["telegram", true]] as const) {
   const ledger = new FakeLedger();
   const outcome = await runAgent("Подготовь перемещение двух коробов", {
    channel, operationsEnabled, userId: USER_ID, ledger, data: fakeData(), permissions: permissionsOf(ALL_PERMISSIONS), limits: TEST_LIMITS, pricing: TEST_PRICING,

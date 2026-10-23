@@ -114,7 +114,7 @@ const preparing=await Promise.all(Array.from({length:8},()=>parallel(actor(draft
 if(preparing.some(r=>!r.ok))throw Error('Draft concurrent preparation: '+JSON.stringify(preparing));
 const draftReview=draftPrepare(draftKey);
 // Reapplying only the new migration preserves an awaiting review and its token.
-run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230300_assistant_order_creation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230400_assistant_reservation_review.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
 if(draftPrepare(draftKey).review_token!==draftReview.review_token)throw Error('Migration lost review receipt');
 const drafts=await Promise.all(Array.from({length:12},()=>parallel(actor(draftUser)+`select public.confirm_assistant_operation('${draftKey}','${draftReview.review_token}');`)));
 if(drafts.some(r=>!r.ok))throw Error('Concurrent draft retry: '+JSON.stringify(drafts));
@@ -138,3 +138,43 @@ run(`do $$begin
  assert not exists(select 1 from private.assistant_operations where id in ('${staleDraft}','${deniedDraft}') and result_sale_id is not null);
 end$$;`);
 console.log('PASS assistant draft: 8 concurrent prepares, 12 confirmations => one draft; migration replay preserves token; actual lock-wait source/deny races refuse');
+
+run(readFileSync(fileURLToPath(new URL('../supabase/tests/fixtures/assistant_reservation.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+const reserveUser='eb000000-8a23-4000-8000-000000000001',reserveKey='eb000000-8a23-4000-8000-000000000061';
+const reservePrepare=(key,which='sale')=>{
+ const output=run(actor(reserveUser)+`select public.prepare_assistant_operation('${key}','customer_order_reserve',jsonb_build_object('sale_id',id)) from tests.assistant_reserve_context where k='${which}';select public.review_assistant_operation('${key}');`);
+ return JSON.parse(output.split('\n').find(x=>x.includes('review_token')));
+};
+const reserveReview=reservePrepare(reserveKey);
+run(readFileSync(fileURLToPath(new URL('../supabase/migrations/202610230400_assistant_reservation_review.sql',import.meta.url)),'utf8').replaceAll('\r\n','\n'));
+const reserved=await Promise.all(Array.from({length:12},()=>parallel(actor(reserveUser)+`select public.confirm_assistant_operation('${reserveKey}','${reserveReview.review_token}');`)));
+if(reserved.some(r=>!r.ok))throw Error('Reservation replay: '+JSON.stringify(reserved));
+run(`do $$begin
+ assert (select sum(quantity_on_hand)=300 and sum(quantity_reserved)=200 from public.inventory_balances where warehouse_id='eb200000-8a23-4000-8000-000000000001');
+ assert (select count(*)=${reserveReview.preview.lines.length} from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id where i.sale_id=(select id from tests.assistant_reserve_context where k='sale') and r.status='active');
+end$$;`);
+for(const which of ['a','b','waiting','overlap'])run(actor(reserveUser)+`insert into tests.assistant_reserve_context values('${which}',public.create_customer_order('eb100000-8a23-4000-8000-000000000002',null,'eb200000-8a23-4000-8000-000000000001','2099-01-20',null,null));
+select public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',100,'piece',null,60) from tests.assistant_reserve_context where k='${which}';`);
+const reserveA='eb000000-8a23-4000-8000-000000000062',reserveB='eb000000-8a23-4000-8000-000000000063';
+const aPreview=reservePrepare(reserveA,'a'),bPreview=reservePrepare(reserveB,'b');
+const reserveRace=await Promise.all([[reserveA,aPreview],[reserveB,bPreview]].map(([key,r])=>parallel(actor(reserveUser)+`select public.confirm_assistant_operation('${key}','${r.review_token}');`)));
+if(reserveRace.filter(r=>r.ok).length!==1||!reserveRace.some(r=>/ASSISTANT_OPERATION_(RESERVE_BLOCKED|STALE)/.test(r.output)))throw Error('Last reservation stock: '+JSON.stringify(reserveRace));
+run(actor(reserveUser)+`select public.cancel_customer_order(id,'Synthetic race cleanup') from tests.assistant_reserve_context where k in ('sale','a','b');`);
+const overlapKeys=['eb000000-8a23-4000-8000-000000000066','eb000000-8a23-4000-8000-000000000067'];
+const overlapPreviews=overlapKeys.map(key=>reservePrepare(key,'overlap'));
+const overlap=await Promise.all(overlapKeys.map((key,i)=>parallel(actor(reserveUser)+`select public.confirm_assistant_operation('${key}','${overlapPreviews[i].review_token}');`)));
+if(overlap.filter(r=>r.ok).length!==1||!overlap.some(r=>r.output.includes('ASSISTANT_OPERATION_RESERVE_STATE')))throw Error('Two tabs/order: '+JSON.stringify(overlap));
+run(actor(reserveUser)+`select public.cancel_customer_order(id,'Synthetic overlap cleanup') from tests.assistant_reserve_context where k='overlap';`);
+const waitingReserve='eb000000-8a23-4000-8000-000000000064';
+await whileWaiting(waitingReserve,`update public.inventory_batches set status='blocked' where id='eb400000-8a23-4000-8000-000000000001'`,
+ 'ASSISTANT_OPERATION_STALE',()=>reservePrepare(waitingReserve,'waiting'),reserveUser);
+run(`update public.inventory_batches set status='available' where id='eb400000-8a23-4000-8000-000000000001';`);
+const deniedReserve='eb000000-8a23-4000-8000-000000000065';
+await whileWaiting(deniedReserve,`select 1 from public.sales where id=(select id from tests.assistant_reserve_context where k='waiting') for update;
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select '${reserveUser}',id,'deny','Synthetic reserve denial','${reserveUser}' from public.permissions where code='sales.reserve'`,
+ 'ASSISTANT_OPERATION_DENIED',()=>reservePrepare(deniedReserve,'waiting'),reserveUser);
+run(`do $$begin
+ assert (select sum(quantity_on_hand)=300 and sum(quantity_reserved)=0 from public.inventory_balances where warehouse_id='eb200000-8a23-4000-8000-000000000001');
+ assert not exists(select 1 from public.inventory_movements where sale_id in (select id from tests.assistant_reserve_context));
+end$$;`);
+console.log('PASS assistant reserve: 12 retries, last-stock race, batch block and personal deny during real lock wait; no movements');
