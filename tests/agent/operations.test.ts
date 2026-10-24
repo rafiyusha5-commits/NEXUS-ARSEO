@@ -15,7 +15,7 @@ test("commands use explicit quantities, identities and units", () => {
 test("model cannot select SQL, RPC, Google writes or confirmation", () => {
  for (const kind of ["confirm", "execute_sql", "rpc", "drive.upload", "sheets.update", "fulfill_customer_order"])
   assert.equal(parseOperationIntent({ ...command, kind }), null);
- assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm"]);
+ assert.deepEqual(OPERATION_KINDS, ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm", "shipment_transport_receive", "customer_return_create", "customer_return_decide", "customer_return_cancel", "expense_create", "expense_confirm", "expense_allocate", "shipment_cost_calculate", "shipment_cost_approve", "expense_cancel", "expense_reverse", "expense_mark_paid"]);
  assert.equal(parseOperationIntent({ ...command, confirmed: true }), null);
  assert.equal(parseOperationIntent({ ...command, params: { ...command.params, rpc: "delete" } }), null);
 });

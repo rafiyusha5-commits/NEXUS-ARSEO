@@ -210,6 +210,18 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610230300_assistant_order_creation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610230400_assistant_reservation_review.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610230500_assistant_order_confirmation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240100_assistant_receiving.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240200_assistant_returns.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240300_assistant_return_decisions.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240400_assistant_return_cancellation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240500_assistant_expenses.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240600_assistant_expense_confirmation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240700_assistant_expense_allocation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240800_assistant_cost_calculation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610240900_assistant_cost_approval.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610241000_assistant_expense_cancellation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610241100_assistant_expense_reversal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610241200_assistant_expense_payment.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -320,3 +332,15 @@ node "$ROOT/scripts/test-assistant-operation-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-receivables-import-concurrency.mjs" "${PSQL[@]}"
 
 node "$ROOT/scripts/test-shipment-drive-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-receiving-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-returns-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-decisions-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-cancellation-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-expenses-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-expense-confirmation-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-allocation-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-cost-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-cost-approval-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-expense-cancellation-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-expense-reversal-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-expense-payment-concurrency.mjs" "${PSQL[@]}"

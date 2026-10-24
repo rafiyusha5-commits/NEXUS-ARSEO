@@ -60,6 +60,9 @@ export type ShipmentRow = Record<string, unknown>;
  * the columns the tools need; tools project the result through their allow-lists again.
  */
 export interface AgentDataSource {
+  getReturnOptions?(saleId: string, signal: AbortSignal): Promise<ShipmentRow[]>;
+  getReturnCancellations?(saleId: string, signal: AbortSignal): Promise<ShipmentRow[]>;
+  getReturnDecisions?(saleId: string, signal: AbortSignal): Promise<ShipmentRow[]>;
   findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean; requiredPermissions?: string[] }>;
   downloadDriveFile?(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }>;
   getDriveDocument?(id:string,signal:AbortSignal):Promise<{file:import("../google/drive-readonly.ts").DriveFile;text:string|null;truncated:boolean}|null>;

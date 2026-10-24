@@ -98,12 +98,13 @@ describe("assistant run: token limits count unknown usage at its bound", () => {
 
   it("counts an unknown input at its estimate against the total input limit", async () => {
     // The expanded tool schemas are part of each request estimate; keep enough room for one call.
-    const limits = { ...TEST_LIMITS, maxInputTokensTotal: 20_000 };
+    const limits = { ...TEST_LIMITS, maxInputTokensTotal: 28_000 };
     const inputUnknown = new ScriptedProvider(["c1", "c2", "c3", "c4"].map((id) => call(id, { inputTokens: 0, outputTokens: 50 }, { input: true, output: false })));
     const d = deps(inputUnknown, { limits });
     const outcome = await runAgent("Справка по документам", d);
     assert.ok(!outcome.ok && outcome.code === "AGENT_TOKEN_LIMIT");
     assert.ok(inputUnknown.requests.length < 4, `stopped by the input limit after ${inputUnknown.requests.length} calls`);
+    assert.ok(inputUnknown.requests.length > 0, "the test must allow an initial request before charging its unknown usage");
     assert.deepEqual([d.ledger.finished[0].inputTokens, d.ledger.finished[0].outputTokens], [0, 50 * inputUnknown.requests.length]);
     assert.ok(d.ledger.finished[0].actualUsdMicros <= reserveCostMicros(limits, TEST_PRICING));
 

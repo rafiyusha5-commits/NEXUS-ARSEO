@@ -62,7 +62,7 @@ select 'authenticated', unnest(array[
   'public.update_shipment_item', 'public.apply_shipment_document_quantities', 'public.shipment_quantity_provenance',
   'public.decide_sticker_template_version', 'public.record_sticker_application', 'public.submit_sticker_template_version', 'public.update_marking_code_order',
   'public.add_exchange_rate', 'public.create_expense', 'public.confirm_expense', 'public.allocate_expense', 'public.mark_expense_paid', 'public.calculate_shipment_cost', 'public.approve_shipment_cost',
-  'public.customer_return_options', 'public.create_customer_return', 'public.decide_customer_return_item', 'public.cancel_customer_return',
+  'public.customer_return_options', 'public.assistant_customer_return_options', 'public.assistant_return_decision_options', 'public.assistant_return_cancellation_options', 'public.create_customer_return', 'public.decide_customer_return_item', 'public.cancel_customer_return',
   'public.configure_integration', 'public.resolve_synchronization_error',
   'public.create_forecast', 'public.create_forecast_version', 'public.upsert_forecast_line', 'public.remove_forecast_line',
   'public.submit_forecast', 'public.review_forecast', 'public.approve_forecast', 'public.archive_forecast',

@@ -2,9 +2,23 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import type { OperationIntent } from "@/lib/agent/operations";
+import { ReceivingPreview, type ReceivingData } from "./receiving-preview";
+import { ReturnPreview, type ReturnData } from "./return-preview";
+import { ReturnDecisionPreview, type ReturnDecisionData } from "./return-decision-preview";
 
-type Review = { id: string; kind?: OperationIntent["kind"]; status: "awaiting_confirmation" | "completed"; review_token?: string; result_id?: string; expires_at?: string;
- preview?: { product?: string; from?: string; to?: string; quantity?: number; uom?: string; document_date: string;
+import { ReturnCancellationPreview, type ReturnCancellationData } from "./return-cancellation-preview";
+
+import {CostApprovalPreview,type CostApprovalData} from "./cost-approval-preview";
+import { CostCalculationPreview, type CostData } from "./cost-calculation-preview";
+import { ExpenseAllocationPreview, type ExpenseAllocationData } from "./expense-allocation-preview";
+import { ExpensePaymentPreview, type ExpensePaymentData } from "./expense-payment-preview";
+import { ExpenseReversalPreview, type ExpenseReversalData } from "./expense-reversal-preview";
+import { ExpenseCancellationPreview, type ExpenseCancellationData } from "./expense-cancellation-preview";
+import { ExpenseConfirmationPreview, type ExpenseConfirmationData } from "./expense-confirmation-preview";
+import { ExpensePreview, type ExpenseData } from "./expense-preview";
+
+type Review = { id: string; kind?: OperationIntent["kind"]; status: "awaiting_confirmation" | "completed"; review_token?: string; result_id?: string; shipment_id?: string; expires_at?: string;
+ preview?: Partial<Omit<ReceivingData, "lines">> & { product?: string; from?: string; to?: string; quantity?: number; uom?: string; document_date: string;
   low_shelf_life?: boolean; order_number?: string; customer?: string; warehouse?: string; planned_date?: string;
   contract?: string | null; contract_currency?: string | null; contract_valid_from?: string | null; contract_valid_to?: string | null; currency?: string; total?: string;
   items?: { id: string; product: string; quantity: number | string; uom: string; unit_price?: string; line_amount?: string; required_shelf_life_pct?: number | null }[];
@@ -24,6 +38,18 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
  const isConfirm = (review?.kind ?? intent?.kind) === "customer_order_confirm";
  const isReserve = (review?.kind ?? intent?.kind) === "customer_order_reserve";
  const isDraft = (review?.kind ?? intent?.kind) === "customer_order_create";
+ const isReceiving = (review?.kind ?? intent?.kind) === "shipment_transport_receive";
+ const isReturn = (review?.kind ?? intent?.kind) === "customer_return_create";
+ const isCostApproval = (review?.kind ?? intent?.kind) === "shipment_cost_approve";
+ const isCost = (review?.kind ?? intent?.kind) === "shipment_cost_calculate";
+ const isAllocation = (review?.kind ?? intent?.kind) === "expense_allocate";
+ const isExpensePayment = (review?.kind ?? intent?.kind) === "expense_mark_paid";
+ const isExpenseReverse = (review?.kind ?? intent?.kind) === "expense_reverse";
+ const isExpenseCancel = (review?.kind ?? intent?.kind) === "expense_cancel";
+ const isExpenseConfirm = (review?.kind ?? intent?.kind) === "expense_confirm";
+ const isExpense = (review?.kind ?? intent?.kind) === "expense_create";
+ const isCancel = (review?.kind ?? intent?.kind) === "customer_return_cancel";
+ const isDecision = (review?.kind ?? intent?.kind) === "customer_return_decide";
  async function act(action: "prepare" | "review" | "confirm") {
   if (inFlight.current) return;
   if (action === "prepare" && !intent) return;
@@ -52,14 +78,75 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
   } finally { inFlight.current = false; setBusy(false); }
  }
  return <section className="panel admin-section" aria-busy={busy} aria-label="Проверка предложенной операции">
-  <p className="eyebrow">Действие только после вашего подтверждения</p><h3>{isConfirm ? "Подготовка подтверждения заказа" : isReserve ? "Подготовка резервирования" : isDraft ? "Подготовка нового заказа" : isOrder ? "Подготовка отгрузки заказа" : "Подготовка перемещения"}</h3>
+  <p className="eyebrow">Действие только после вашего подтверждения</p><h3>{isExpensePayment ? "Фиксация оплаты расхода" : isExpenseReverse ? "Проверка сторнирования расхода" : isExpenseCancel ? "Проверка отмены расхода" : isCostApproval ? "Проверка утверждения себестоимости" : isCost ? "Проверка расчёта себестоимости" : isAllocation ? "Проверка распределения расхода" : isExpenseConfirm ? "Бухгалтерское подтверждение расхода" : isExpense ? "Проверка нового расхода" : isCancel ? "Проверка отмены возврата" : isDecision ? "Решение по карантину возврата" : isReturn ? "Проверка возврата от покупателя" : isReceiving ? "Проверка фактической приёмки" : isConfirm ? "Подготовка подтверждения заказа" : isReserve ? "Подготовка резервирования" : isDraft ? "Подготовка нового заказа" : isOrder ? "Подготовка отгрузки заказа" : "Подготовка перемещения"}</h3>
   <p className="form-help">Предложение ассистента ещё не является документом. Просмотр не меняет остатки. Google Drive и Sheets — только чтение.</p>
-  {intent && !review && !unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>{isDraft ? "Проверить параметры заказа" : "Проверить параметры и партии"}</button>}
+  {intent && !review && !unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>{isExpensePayment ? "Предпросмотр фиксации оплаты" : isExpenseReverse ? "Предпросмотр сторнирования расхода" : isExpenseCancel ? "Предпросмотр отмены расхода" : isCostApproval ? "Предпросмотр утверждения" : isCost ? "Предпросмотр себестоимости" : isAllocation ? "Рассчитать предпросмотр распределения" : isExpenseConfirm ? "Проверить расход перед подтверждением" : isExpense ? "Проверить параметры расхода" : isDraft ? "Проверить параметры заказа" : "Проверить параметры и партии"}</button>}
   {intent && unknown && <button type="button" disabled={busy} onClick={() => void act("prepare")}>Повторить подготовку с прежним ID</button>}
   <button type="button" disabled={busy} onClick={() => void act("review")}>Проверить состояние</button>
   {error && <p role="alert" className="login-error admin-message">{error}</p>}
-  {review?.status === "completed" && review.result_id && /^[0-9a-f-]{36}$/i.test(review.result_id) && <p className="login-success">{isConfirm ? "Заказ подтверждён. Резервы сохранены, отгрузка не выполнялась." : isReserve ? "Товар зарезервирован. Заказ не подтверждён и не отгружен." : isDraft ? "Черновик заказа создан. Резерв и отгрузка не выполнялись." : isOrder ? "Заказ отгружен." : "Перемещение выполнено."} <Link href={isOrder || isDraft || isReserve || isConfirm ? `/sales/${review.result_id}` : `/inventory/movements/${review.result_id}`}>{isOrder || isDraft || isReserve || isConfirm ? "Открыть заказ" : "Открыть складской документ"}</Link></p>}
+  {isReceiving && review?.status === "completed" && <p className="login-success">Приёмка выполнена. Годный товар зачислен на склад, повреждения записаны отдельно. {review.shipment_id && /^[0-9a-f-]{36}$/i.test(review.shipment_id) && <Link href={`/shipments/${review.shipment_id}`}>Открыть поставку</Link>}</p>}
+  {isReturn && review?.status === "completed" && <p className="login-success">Возврат оформлен в карантин. Свободный остаток не увеличен, выплата денег не создана. <Link href="/sales/returns">Открыть возвраты</Link></p>}
+  {isDecision && review?.status === "completed" && <p className="login-success">Решение по позиции возврата выполнено. Повторное нажатие не выполняет его заново. <Link href="/sales/returns">Открыть возвраты</Link></p>}
+  {isCancel && review?.status === "completed" && <p className="login-success">Возврат отменён, история сохранена. Складской остаток и платежи не изменены. <Link href="/sales/returns">Открыть возвраты</Link></p>}
+  {isExpense && review?.status === "completed" && <p className="login-success">Расход создан как черновик. Не подтверждён бухгалтерией, не распределён и не оплачен. <Link href="/finance">Открыть расходы</Link></p>}
+  {isExpenseConfirm && review?.status === "completed" && <p className="login-success">Бухгалтерское подтверждение выполнено. Оплата, распределение и пересчёт не запускались. <Link href="/finance">Открыть расходы</Link></p>}
+  {isAllocation && review?.status === "completed" && <p className="login-success">Распределение выполнено. Оплата и расчёт себестоимости не запускались. <Link href="/finance">Открыть расходы</Link></p>}
+  {isCost && review?.status === "completed" && <p className="login-success">Черновик расчёта создан. Утверждение, оплата и изменение стоимости партий не выполнялись. <Link href="/finance">Открыть себестоимость</Link></p>}
+  {isCostApproval && review?.status === "completed" && <p className="login-success">Версия утверждена, стоимость указанных партий обновлена. Оплата и складские движения не выполнялись. <Link href="/finance">Открыть себестоимость</Link></p>}
+  {isExpenseCancel && review?.status === "completed" && <p className="login-success">Расход отменён, причина и история сохранены. Возврат денег и пересчёт не выполнялись. <Link href="/finance">Открыть расходы</Link></p>}
+  {isExpenseReverse && review?.status === "completed" && <p className="login-success">Расход сторнирован. Сведения об оплате и история сохранены. Возврат денег не выполнялся. <Link href="/finance">Открыть расходы</Link></p>}
+  {isExpensePayment && review?.status === "completed" && <p className="login-success">Полная оплата отмечена в учёте. Денежный перевод не выполнялся; банковское зачисление не проверялось. <Link href="/finance">Открыть расходы</Link></p>}
+  {!isExpensePayment && !isExpenseReverse && !isExpenseCancel && !isCostApproval && !isCost && !isAllocation && !isExpenseConfirm && !isExpense && !isCancel && !isDecision && !isReturn && !isReceiving && review?.status === "completed" && review.result_id && /^[0-9a-f-]{36}$/i.test(review.result_id) && <p className="login-success">{isConfirm ? "Заказ подтверждён. Резервы сохранены, отгрузка не выполнялась." : isReserve ? "Товар зарезервирован. Заказ не подтверждён и не отгружен." : isDraft ? "Черновик заказа создан. Резерв и отгрузка не выполнялись." : isOrder ? "Заказ отгружен." : "Перемещение выполнено."} <Link href={isOrder || isDraft || isReserve || isConfirm ? `/sales/${review.result_id}` : `/inventory/movements/${review.result_id}`}>{isOrder || isDraft || isReserve || isConfirm ? "Открыть заказ" : "Открыть складской документ"}</Link></p>}
   {review?.status === "awaiting_confirmation" && review.preview && <>
+   {isExpensePayment ? <>
+    <ExpensePaymentPreview preview={review.preview as unknown as ExpensePaymentData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Сверил документы: расход полностью оплачен; подтверждаю только запись в учёте без перевода денег</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Зафиксировать оплату без перевода денег</button></div>
+   </> : isExpenseReverse ? <>
+    <ExpenseReversalPreview preview={review.preview as unknown as ExpenseReversalData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил оплату, причину и последствия; подтверждаю сторнирование без возврата денег</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Сторнировать расход без возврата денег</button></div>
+   </> : isExpenseCancel ? <>
+    <ExpenseCancellationPreview preview={review.preview as unknown as ExpenseCancellationData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил расход, причину и последствия; подтверждаю отмену без возврата денег</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Отменить расход без возврата денег</button></div>
+   </> : isCostApproval ? <>
+    <CostApprovalPreview preview={review.preview as unknown as CostApprovalData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event=>setChecked(event.target.checked)} /> Проверил версию, суммы, замену прежней версии и стоимость всех партий; подтверждаю утверждение без оплаты</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy||!checked} onClick={()=>void act("confirm")}>Утвердить себестоимость без оплаты</button></div>
+   </> : isCost ? <>
+    <CostCalculationPreview preview={review.preview as unknown as CostData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event=>setChecked(event.target.checked)} /> Проверил количества, курсы и суммы; подтверждаю создание черновика без утверждения</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy||!checked} onClick={()=>void act("confirm")}>Создать расчёт без утверждения</button></div>
+   </> : isAllocation ? <>
+    <ExpenseAllocationPreview preview={review.preview as unknown as ExpenseAllocationData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил способ, курс, строки и замену прежнего распределения; подтверждаю без оплаты</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить распределение без оплаты</button></div>
+   </> : isExpenseConfirm ? <>
+    <ExpenseConfirmationPreview preview={review.preview as unknown as ExpenseConfirmationData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил расход и последствия; подтверждаю его бухгалтерский статус без оплаты</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить расход без оплаты</button></div>
+   </> : isExpense ? <>
+    <ExpensePreview preview={review.preview as unknown as ExpenseData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил сумму, валюту, дату, план/факт, получателя, документ и возможные совпадения; подтверждаю новый черновик</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить и создать черновик расхода</button></div>
+   </> : isCancel ? <>
+    <ReturnCancellationPreview preview={review.preview as unknown as ReturnCancellationData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил весь возврат, причину и последствия для задолженности; подтверждаю отмену</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить отмену возврата</button></div>
+   </> : isDecision ? <>
+    <ReturnDecisionPreview preview={review.preview as unknown as ReturnDecisionData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил всю позицию, решение, зону и последствия; подтверждаю выполнение</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить решение по возврату</button></div>
+   </> : isReturn ? <>
+    <ReturnPreview preview={review.preview as unknown as ReturnData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил заказ, партии, количества и причины; подтверждаю карантин и уменьшение долга</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить и оформить возврат</button></div>
+   </> : isReceiving ? <>
+    <ReceivingPreview preview={review.preview as unknown as ReceivingData} />
+    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> Проверил автомобиль, все фактические количества, партии, сроки, зону и причины расхождений</label>
+    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>Подтвердить и принять товар</button></div>
+   </> : <>
    {isOrder || isDraft || isReserve || isConfirm ? <>
     <h4>{isDraft ? "Новый заказ · черновик" : `Заказ ${review.preview.order_number}`}</h4>
     <dl className="assistant-values"><div><dt>Покупатель</dt><dd>{review.preview.customer}</dd></div><div><dt>Склад отгрузки</dt><dd>{review.preview.warehouse}</dd></div>
@@ -79,6 +166,7 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
    <p className="form-help">{isConfirm ? "Заказ станет подтверждённым. Физический остаток, резервы и платежи не меняются. Отгрузка — отдельное действие. При выполнении также проверяются действующие финансовые ограничения; их обход здесь невозможен." : isReserve ? "Создаётся резерв всего заказа по существующему FEFO. Физический остаток, цены, платежи и долг не меняются. Подтверждение заказа — отдельное действие." : isDraft ? "Будет создан только черновик с позициями. Наличие товара не гарантируется: резервирование, подтверждение заказа и отгрузка выполняются отдельно. Остатки, платежи и задолженность не меняются." : isOrder ? "Физический остаток уменьшится, резерв будет погашен, заказ станет отгруженным и будет учтён в дебиторской задолженности по существующим правилам. Оплата не создаётся. Частичная отгрузка здесь недоступна." : "Общий остаток компании не меняется."} Если данные изменились после просмотра, выполнение будет отклонено.</p>
    <label><input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} /> {isConfirm ? "Проверил заказ, покупателя, партии и количества; подтверждаю заказ без отгрузки" : isReserve ? "Проверил партии, количество и ОСГ; понимаю, что резерв не означает разрешение на отгрузку" : isDraft ? "Проверил покупателя, договор, склад, дату, валюту, все количества и цены" : isOrder ? "Проверил заказ, покупателя, склад, партии и все количества; подтверждаю полную отгрузку" : "Проверил товар, склады, партии и количество"}</label>
    <div className="panel-footer-actions"><button className="primary" type="button" disabled={busy || !checked} onClick={() => void act("confirm")}>{isConfirm ? "Подтвердить заказ без отгрузки" : isReserve ? review.preview.low_shelf_life ? "Продолжить резервирование с предупреждением" : "Подтвердить резервирование" : isDraft ? "Подтвердить и создать черновик заказа" : isOrder ? "Подтвердить и отгрузить заказ полностью" : "Подтвердить и выполнить перемещение"}</button></div>
+   </>}
   </>}
   {!busy && !unknown && <button type="button" onClick={() => { requestId.current = null; preparedIntent.current = null; setReview(null); setChecked(false); setError(null); sessionStorage.removeItem("nexus-assistant-operation-id"); }}>Начать новый просмотр</button>}
  </section>;

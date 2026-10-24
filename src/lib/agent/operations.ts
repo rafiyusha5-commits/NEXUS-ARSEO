@@ -1,10 +1,23 @@
 // Closed command vocabulary. The model proposes data, never an RPC, URL or SQL.
 import { validateParams } from "./schema.ts";
 import type { ParamSchema } from "./types.ts";
+import { parseExpensePayment, expensePaymentSchema } from "./expense-payment.ts";
+import { parseExpenseReversal, expenseReversalSchema } from "./expense-reversal.ts";
+import { parseExpenseCancellation, expenseCancellationSchema } from "./expense-cancellation.ts";
+import { parseReceiving, receivingSchema } from "./receiving.ts";
+import { parseReturn, returnSchema } from "./returns.ts";
+import { parseReturnDecision, returnDecisionSchema } from "./return-decisions.ts";
 
-export const OPERATION_KINDS = ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm"] as const;
+import { parseReturnCancellation, returnCancellationSchema } from "./return-cancellation.ts";
+
+import {parseCostApproval,costApprovalSchema} from "./cost-approval.ts";
+import { parseCost, costSchema } from "./cost-calculation.ts";
+import { parseAllocation, allocationSchema } from "./expense-allocation.ts";
+import { parseExpense, expenseSchema } from "./expenses.ts";
+
+export const OPERATION_KINDS = ["inventory_transfer", "customer_order_fulfillment", "customer_order_create", "customer_order_reserve", "customer_order_confirm", "shipment_transport_receive", "customer_return_create", "customer_return_decide", "customer_return_cancel", "expense_create", "expense_confirm", "expense_allocate", "shipment_cost_calculate", "shipment_cost_approve", "expense_cancel", "expense_reverse", "expense_mark_paid"] as const;
 export type OperationKind = typeof OPERATION_KINDS[number];
-export type OperationIntent = { kind: OperationKind; params: Record<string, string | number | null | Record<string, string | number>[]> };
+export type OperationIntent = { kind: OperationKind; params: Record<string, string | number | null | Record<string, string | number | null>[]> };
 const transfer: Record<string, ParamSchema> = {
   product_id: { type: "uuid", description: "Точный товар из справочника" },
   from_warehouse_id: { type: "uuid", description: "Склад отправления" },
@@ -26,6 +39,41 @@ export function parseOperationIntent(input: unknown): OperationIntent | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const value = input as Record<string, unknown>;
   if (Object.keys(value).length !== 2) return null;
+  if(value.kind==="expense_mark_paid"){const p=parseExpensePayment(value.params);return p?{kind:value.kind,params:p}:null;}
+  if(value.kind==="expense_reverse"){const p=parseExpenseReversal(value.params);return p?{kind:value.kind,params:p}:null;}
+  if(value.kind==="expense_cancel"){const p=parseExpenseCancellation(value.params);return p?{kind:value.kind,params:p}:null;}
+  if(value.kind==="shipment_cost_approve"){const p=parseCostApproval(value.params);return p?{kind:value.kind,params:p}:null;}
+  if (value.kind === "shipment_cost_calculate") {
+    const p=parseCost(value.params);return p?{kind:value.kind,params:p}:null;
+  }
+  if (value.kind === "expense_allocate") {
+    const p = parseAllocation(value.params);
+    return p ? {kind:value.kind,params:p} : null;
+  }
+  if (value.kind === "expense_confirm") {
+    const p = validateParams({ expense_id: { type: "uuid", description: "Выбранный черновик расхода" } }, value.params);
+    return p.ok ? { kind: value.kind, params: p.value } : null;
+  }
+  if (value.kind === "expense_create") {
+    const params = parseExpense(value.params);
+    return params ? { kind: value.kind, params } : null;
+  }
+  if (value.kind === "customer_return_cancel") {
+    const params = parseReturnCancellation(value.params);
+    return params ? { kind: value.kind, params } : null;
+  }
+  if (value.kind === "customer_return_decide") {
+    const params = parseReturnDecision(value.params);
+    return params ? { kind: value.kind, params } : null;
+  }
+  if (value.kind === "customer_return_create") {
+    const params = parseReturn(value.params);
+    return params ? { kind: value.kind, params } : null;
+  }
+  if (value.kind === "shipment_transport_receive") {
+    const params = parseReceiving(value.params);
+    return params ? { kind: value.kind, params } : null;
+  }
   if (value.kind === "customer_order_create") {
     if (!value.params || typeof value.params !== "object" || Array.isArray(value.params)) return null;
     const params = value.params as Record<string, unknown>;
@@ -63,7 +111,7 @@ const transferSchema = {
     } },
   },
 };
-export const OPERATION_INTENT_SCHEMA = { anyOf: [transferSchema, {
+export const OPERATION_INTENT_SCHEMA = { anyOf: [expensePaymentSchema, expenseReversalSchema, expenseCancellationSchema, costApprovalSchema, costSchema, allocationSchema, { type: "object", additionalProperties: false, required: ["kind", "params"], properties: { kind: { type: "string", enum: ["expense_confirm"] }, params: { type: "object", additionalProperties: false, required: ["expense_id"], properties: { expense_id: { type: "string", description: "UUID выбранного черновика расхода из поиска" } } } } }, expenseSchema, returnCancellationSchema, returnDecisionSchema, returnSchema, receivingSchema, transferSchema, {
   type: "object", additionalProperties: false, required: ["kind", "params"], properties: {
     kind: { type: "string", enum: ["customer_order_fulfillment", "customer_order_reserve", "customer_order_confirm"] },
     params: { type: "object", additionalProperties: false, required: ["sale_id"], properties: { sale_id: { type: "string" } } },
@@ -82,6 +130,51 @@ export const OPERATION_INTENT_SCHEMA = { anyOf: [transferSchema, {
 }, { type: "null" }] };
 
 export const OPERATION_ERRORS: Record<string, string> = {
+  ASSISTANT_EXPENSE_PAYMENT_INVALID: "Выберите один точный расход. Сумму, дату платежа и банковский перевод эта операция не принимает.",
+  ASSISTANT_EXPENSE_PAYMENT_STATE: "Нужен фактический распределённый расход без прежней отметки оплаты. План, черновик и уже оплаченный расход не подходят.",
+  ASSISTANT_EXPENSE_PAYMENT_STALE: "Расход или распределение изменились. Подготовьте новый просмотр фиксации оплаты.",
+  ASSISTANT_EXPENSE_PAYMENT_REFUSED: "Фиксация оплаты не сохранена: штатная проверка или сверка результата отклонила действие.",
+  ASSISTANT_EXPENSE_REVERSE_INVALID: "Выберите оплаченный расход и укажите причину сторнирования от 1 до 500 символов.",
+  ASSISTANT_EXPENSE_REVERSE_STATE: "Для сторнирования нужен оплаченный расход с сохранёнными сведениями об оплате. Неоплаченный расход отменяется отдельно.",
+  ASSISTANT_EXPENSE_REVERSE_STALE: "Расход, оплата или распределение изменились. Подготовьте новый просмотр сторнирования.",
+  ASSISTANT_EXPENSE_REVERSE_REFUSED: "Сторнирование не сохранено: штатная проверка или сверка результата отклонила действие.",
+  ASSISTANT_EXPENSE_CANCEL_INVALID: "Выберите расход и укажите причину отмены от 1 до 500 символов.",
+  ASSISTANT_EXPENSE_CANCEL_STATE: "Отменить можно только неоплаченный расход: черновик, подтверждённый или распределённый. Оплаченный требует отдельного сторнирования.",
+  ASSISTANT_EXPENSE_CANCEL_STALE: "Расход или его контекст изменился. Подготовьте новый просмотр отмены.",
+  ASSISTANT_EXPENSE_CANCEL_REFUSED: "Отмена не сохранена: штатная проверка или сверка результата отклонила действие.",
+  ASSISTANT_COST_APPROVAL_INVALID: "Выберите конкретную сохранённую версию расчёта.",
+  ASSISTANT_COST_APPROVAL_STATE: "Нужна действующая черновая версия. Уже утверждённую или заменённую версию нельзя утвердить повторно.",
+  ASSISTANT_COST_APPROVAL_STALE: "Исходные данные расчёта изменились. Сначала создайте новую версию себестоимости.",
+  ASSISTANT_COST_APPROVAL_PRELIMINARY: "Расчёт предварительный: подтвердите ДТ и создайте новую версию перед утверждением.",
+  ASSISTANT_COST_APPROVAL_LIMIT: "Нужен полный просмотр: от 1 до 200 строк и не более 200 затрагиваемых партий.",
+  ASSISTANT_COST_APPROVAL_REFUSED: "Утверждение не сохранено. Результат отличается от предпросмотра; проверьте состояние.",
+  ASSISTANT_COST_INVALID: "Выберите поставку и валюту расчёта. Суммы рассчитывает сервер.",
+  ASSISTANT_COST_STATE: "Поставка или валюта недоступна для расчёта.",
+  ASSISTANT_COST_LIMIT: "Предпросмотр доступен для поставок от 1 до 200 позиций, без сокращения списка.",
+  ASSISTANT_COST_REFUSED: "Расчёт не сохранён: исходные данные или результат изменились. Подготовьте новый просмотр.",
+  ASSISTANT_ALLOCATION_INVALID: "Выберите расход, способ и валюту распределения. Суммы по товарам рассчитываются сервером.",
+  ASSISTANT_ALLOCATION_STATE: "Нужен действующий фактический расход поставки: подтверждённый, распределённый или оплаченный.",
+  ASSISTANT_ALLOCATION_RATE: "Нет подходящего курса на дату расхода. Распределение не выполнено.",
+  ASSISTANT_ALLOCATION_BASIS: "Проверьте количество, цену, вес или объём товаров. Поддерживается от 1 до 200 позиций; отрицательный остаток округления не допускается.",
+  ASSISTANT_ALLOCATION_REFUSED: "Штатное распределение отклонено или не совпало с предпросмотром. Изменения не сохранены.",
+  ASSISTANT_EXPENSE_CONFIRM_INVALID: "Выберите один точный черновик расхода. Сумму и реквизиты в этой операции менять нельзя.",
+  ASSISTANT_EXPENSE_CONFIRM_STATE: "Расход уже не черновик или его источники недоступны. Начните новый просмотр.",
+  ASSISTANT_EXPENSE_CONFIRM_REFUSED: "Штатная операция отклонила бухгалтерское подтверждение. Изменения не сохранены.",
+  ASSISTANT_EXPENSE_INVALID: "Уточните поставку, вид, точную сумму, валюту, дату и план/факт; получателя, документ и примечание укажите явно.",
+  ASSISTANT_EXPENSE_STATE: "Поставка, валюта, получатель или документ недоступны. Проверьте данные и начните новый просмотр.",
+  ASSISTANT_EXPENSE_REFUSED: "Штатная операция отклонила создание расхода. Изменения не сохранены.",
+  ASSISTANT_CANCEL_INVALID: "Укажите точный возврат и причину отмены до 500 символов.",
+  ASSISTANT_CANCEL_STATE: "Отмена недоступна: возврат уже отменён, есть решение по позиции или слишком много позиций для просмотра.",
+  ASSISTANT_CANCEL_REFUSED: "Штатная операция отклонила отмену. Изменения не сохранены.",
+  ASSISTANT_DECISION_INVALID: "Уточните позицию возврата, решение, зону и причину. Количество и партию менять нельзя.",
+  ASSISTANT_DECISION_STATE: "Решение недоступно: возврат отменён, позиция уже обработана или выбранная зона недоступна.",
+  ASSISTANT_DECISION_REFUSED: "Штатная операция отклонила решение по возврату. Частичных изменений не сохранено.",
+  ASSISTANT_RETURN_INVALID: "Уточните отгруженный заказ, партии, количества и причины. Возврат не оформлен.",
+  ASSISTANT_RETURN_STATE: "Возврат недоступен: нужен отгруженный заказ и количество не больше оставшегося к возврату по партии.",
+  ASSISTANT_RETURN_REFUSED: "Штатная операция отклонила возврат. Частичных записей не сохранено. Проверьте заказ в разделе продаж.",
+  ASSISTANT_RECEIVING_INVALID: "Уточните все позиции автомобиля, фактически годное и повреждённое количество, партии, сроки и причины расхождений. Приёмка не выполнена.",
+  ASSISTANT_RECEIVING_STATE: "Приёмка недоступна: нужен прибывший, ещё не принятый автомобиль доступной поставки.",
+  ASSISTANT_RECEIVING_REFUSED: "Штатная приёмка отклонила операцию. Проверьте данные в карточке поставки. Частичных записей не сохранено.",
   ASSISTANT_OPERATION_CONFIRM_STATE: "Подтвердить можно полностью зарезервированный заказ. Проверьте его текущее состояние.",
   ASSISTANT_OPERATION_CONFIRM_BLOCKED: "Подтверждение недоступно: проверьте полноту резервов, пригодность партий и действующие гарантийные письма в карточке заказа.",
   ASSISTANT_OPERATION_CONFIRM_REFUSED: "Штатная проверка отклонила подтверждение заказа. Проверьте условия и финансовое согласование в карточке заказа с уполномоченным сотрудником. Отгрузка не выполнялась.",
@@ -101,5 +194,11 @@ export const OPERATION_ERRORS: Record<string, string> = {
 };
 export function operationError(error: unknown): string {
   const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";
+  if (message.startsWith("Нет курса ")) return "Не хватает курса на дату расчёта или подтверждённой ДТ. Добавьте курс штатным способом и повторите просмотр.";
+  if (message === "Подтвердите и распределите фактические расходы поставки или отмените ошибочные") return message;
+  if (message === "Все расходы должны быть распределены в валюте расчёта") return message;
+  if (message === "У позиции поставки не заполнена закупочная цена или валюта") return message;
+  if (message.startsWith("Часть расходов распределена на позиции без прихода")) return "Есть расходы на позиции с нулевым приходом. Сначала проверьте и повторите их распределение.";
+  if (message.startsWith("Для позиции указаны таможенные декларации с разными датами")) return "Неоднозначная дата ДТ. Уточните привязки документов перед расчётом.";
   return OPERATION_ERRORS[message] ?? "Не удалось выполнить действие. Обновите состояние операции; не создавайте повторный запрос, пока не проверен результат.";
 }
