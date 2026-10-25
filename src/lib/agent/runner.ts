@@ -1,13 +1,15 @@
 // Channel-neutral assistant run. The web route (and later Telegram) only supplies dependencies:
 // the user's session data source, a fresh permission check, the ledger and the model provider.
 import { actualCostMicros, reserveCostMicros, type AgentLimits } from "./config.ts";
-import { ANSWER_JSON_SCHEMA, parseAnswer, verifyAnswer, type CallRecord } from "./facts.ts";
+import { parseAnswer, verifyAnswer, type CallRecord } from "./facts.ts";
 import { maskOutgoing, prepareQuestion } from "./masking.ts";
-import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
+import { userMessage } from "./prompt.ts";
 import { parseArguments, toJsonSchema, validateParams } from "./schema.ts";
 import { AGENT_TOOLS, TOOL_BY_NAME, localDate } from "./tools.ts";
 import { conversationMemory, referencesFromCalls, visibleReferences } from "./conversation.ts";
 import { channelAllowsTool } from "./channels.ts";
+import { requestContext } from "./request-context.ts";
+import { SearchInputError } from "./search-input.ts";
 import {
   ProviderError, type AgentAnswer, type AgentDataSource, type AgentLedger, type AgentModelProvider, type AgentTool,
   type ModelMessage, type Reservation, type ToolResult, type TraceEntry, type UsageMissing,
@@ -51,7 +53,7 @@ export const ERROR_TEXT: Record<string, string> = {
   AGENT_MONTHLY_BUDGET: "Месячный бюджет ассистента исчерпан или не настроен. Обратитесь к администратору.",
   AGENT_RUN_BUDGET_EXCEEDED: "Бюджет ассистента не настроен администратором.",
   AGENT_LEDGER_ERROR: "Не удалось зарезервировать запрос. Повторите попытку.",
-  AGENT_TOKEN_LIMIT: "Вопрос требует слишком большого объёма данных. Уточните его.",
+  AGENT_TOKEN_LIMIT: "Ассистент исчерпал внутренний лимит обработки до подготовки ответа. Операция этим запросом не выполнена. Вопрос не засчитан. Если это повторяется, сообщите администратору.",
   AGENT_STEP_LIMIT: "Ассистент не успел подготовить ответ за допустимое число шагов. Уточните вопрос.",
   AGENT_TIMEOUT: "Ассистент не ответил вовремя. Вопрос не засчитан, повторите попытку.",
   AGENT_PROVIDER_ERROR: "Сервис модели недоступен. Вопрос не засчитан, повторите позже.",
@@ -227,10 +229,11 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       return { name: tool.name, description: tool.description, parameters: toJsonSchema(params) };
     });
 
+    const context = requestContext(question.text, Boolean(deps.operationsEnabled && deps.channel === "web"));
     const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
     let previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
     const messages: ModelMessage[] = [
-      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.\nКанал: ${deps.channel}. Подготовка операций ${deps.operationsEnabled && deps.channel === "web" ? "включена" : "выключена: operation всегда null"}.` },
+      { role: "system", content: `${context.prompt}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.\nКанал: ${deps.channel}. Подготовка операций ${deps.operationsEnabled && deps.channel === "web" ? "включена" : "выключена: operation всегда null"}.` },
       { role: "user", content: userMessage(question.text) },
     ];
 
@@ -242,7 +245,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       const memoryMessage: ModelMessage[] = previous.length ? [{ role: "user", content:
         `Ранее обсуждавшиеся объекты (только ссылки, не факты). Прочитай данные заново инструментами; не делай выводов о содержимом по ссылке:\n${JSON.stringify(previous.map(({ section, id }) => ({ section, id })))}` }] : [];
       const outgoing = [messages[0], ...memoryMessage, ...messages.slice(1)];
-      const estimate = estimateTokens(outgoing, { tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA });
+      const estimate = estimateTokens(outgoing, { tools: toolSpecs, answerSchema: context.answerSchema });
       if (bounded.inputTokens + estimate > deps.limits.maxInputTokensTotal) return fail("AGENT_TOKEN_LIMIT");
       const maxOutput = Math.min(deps.limits.maxOutputTokensPerCall, deps.limits.maxOutputTokensTotal - bounded.outputTokens);
       if (maxOutput < 300) return fail("AGENT_TOKEN_LIMIT");
@@ -260,7 +263,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
       deadline.throwIfAborted();
       try {
         response = await deps.provider.complete({
-          messages: outgoing, tools: toolSpecs, answerSchema: ANSWER_JSON_SCHEMA, maxOutputTokens: maxOutput,
+          messages: outgoing, tools: toolSpecs, answerSchema: context.answerSchema, maxOutputTokens: maxOutput,
           signal: AbortSignal.any([deadline, AbortSignal.timeout(deps.limits.providerTimeoutMs)]),
         });
       } catch (error) {
@@ -331,8 +334,8 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
             reply(toolContent(call.id, tool, bounded));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: bounded.rows.length, truncated: bounded.truncated, ms: now() - toolStarted });
           } catch (error) {
-            const code = error instanceof Error && error.message === "TOOL_TIMEOUT" ? "TOOL_TIMEOUT" : error instanceof Error && error.message === "PERMISSION_DENIED" ? "PERMISSION_DENIED" : "TOOL_ERROR";
-            reply(JSON.stringify({ call: call.id, error: code, message: "Данные получить не удалось." }));
+            const code = error instanceof SearchInputError ? "INVALID_PARAMS" : error instanceof Error && error.message === "TOOL_TIMEOUT" ? "TOOL_TIMEOUT" : error instanceof Error && error.message === "PERMISSION_DENIED" ? "PERMISSION_DENIED" : "TOOL_ERROR";
+            reply(JSON.stringify({ call: call.id, error: code, message: error instanceof SearchInputError ? error.message : "Данные получить не удалось." }));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: 0, truncated: false, ms: now() - toolStarted, error: code });
           }
         }

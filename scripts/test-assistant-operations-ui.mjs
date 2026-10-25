@@ -77,9 +77,11 @@ try{
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
   });
   await page.goto(url+`?${kind}`);await page.getByRole('heading',{name:expensePayment?"Фиксация оплаты расхода":expenseReverse?"Проверка сторнирования расхода":expenseCancel?"Проверка отмены расхода":approveCost?"Проверка утверждения себестоимости":cost?"Проверка расчёта себестоимости":allocation?"Проверка распределения расхода":expenseConfirm?'Бухгалтерское подтверждение расхода':expense?'Проверка нового расхода':cancellation?'Проверка отмены возврата':decision?'Решение по карантину возврата':returns?'Проверка возврата от покупателя':receiving?'Проверка фактической приёмки':confirmation?'Подготовка подтверждения заказа':reserve?'Подготовка резервирования':draft?'Подготовка нового заказа':order?'Подготовка отгрузки заказа':'Подготовка перемещения'}).waitFor();assert.equal(calls.length,0);
+  assert.equal(await page.getByRole('status').innerText(),'Предложение подготовлено. Нужна проверка параметров.');
   await page.getByRole('button',{name:prepareLabel}).click();
   if(width===1440)await page.getByRole('button',{name:'Повторить подготовку с прежним ID'}).click();
   const confirm=page.getByRole('button',{name:expensePayment?"Зафиксировать оплату без перевода денег":expenseReverse?"Сторнировать расход без возврата денег":expenseCancel?"Отменить расход без возврата денег":approveCost?"Утвердить себестоимость без оплаты":cost?"Создать расчёт без утверждения":allocation?"Подтвердить распределение без оплаты":expenseConfirm?'Подтвердить расход без оплаты':expense?'Подтвердить и создать черновик расхода':cancellation?'Подтвердить отмену возврата':decision?'Подтвердить решение по возврату':returns?'Подтвердить и оформить возврат':receiving?'Подтвердить и принять товар':confirmation?'Подтвердить заказ без отгрузки':reserve?(low?'Продолжить резервирование с предупреждением':'Подтвердить резервирование'):draft?'Подтвердить и создать черновик заказа':order?'Подтвердить и отгрузить заказ полностью':'Подтвердить и выполнить перемещение'});await confirm.waitFor();
+  assert.equal(await page.getByRole('status').innerText(),'Предпросмотр готов. Ожидается ваше подтверждение.');
   if(reserve){assert.equal(await page.getByRole('note').count(),low?1:0);assert.match(await page.locator('body').innerText(),/Физический остаток, цены, платежи и долг не меняются/);}
   if(confirmation)assert.match(await page.locator('body').innerText(),/Резервы|резервы и платежи не меняются/);
   if(order)assert.match(await page.locator('body').innerText(),/Физический остаток уменьшится[\s\S]*Оплата не создаётся/);
@@ -102,11 +104,13 @@ try{
   if(process.argv[3]){await mkdir(resolve(process.argv[3]),{recursive:true});await page.screenshot({path:resolve(process.argv[3],`assistant-${kind}-${width}.png`),fullPage:true});}
   await page.getByRole('checkbox').check();await confirm.click();await page.getByRole('alert').waitFor();
   assert.match(await page.getByRole('alert').innerText(),/Ответ не получен/);assert.equal(calls.filter(c=>c.action==='confirm').length,1);
+  assert.equal(await page.getByRole('status').innerText(),'Результат неизвестен — сначала проверьте состояние.');
   await page.reload();await page.getByRole('button',{name:prepareLabel}).click();
   assert.equal(calls.filter(c=>c.action==='prepare').length,width===1440?2:1); // reload must not create another request
   await page.getByRole('button',{name:'Проверить состояние',exact:true}).click();
   const resultLink=page.getByRole('link',{name:approveCost||cost?'Открыть себестоимость':expensePayment||expenseReverse||expenseCancel||allocation||expense||expenseConfirm?'Открыть расходы':returns||decision||cancellation?'Открыть возвраты':receiving?'Открыть поставку':order||draft||reserve||confirmation?'Открыть заказ':'Открыть складской документ'});await resultLink.waitFor();
   assert.equal(await resultLink.getAttribute('href'),approveCost||cost||expensePayment||expenseReverse||expenseCancel||allocation||expense||expenseConfirm?'/finance':returns||decision||cancellation?'/sales/returns':`${receiving?'/shipments':order||draft||reserve||confirmation?'/sales':'/inventory/movements'}/10000000-0000-4000-8000-000000000099`);
+  assert.equal(await page.getByRole('status').innerText(),'Операция выполнена.');
   if(draft)assert.match(await page.locator('body').innerText(),/Черновик заказа создан. Резерв и отгрузка не выполнялись/);
   assert.equal(calls.filter(c=>c.action==='confirm').length,1);assert.equal(new Set(calls.map(c=>c.id)).size,1);
   await page.getByRole('button',{name:'Начать новый просмотр'}).click();completed=false;rejectConfirmation=true;
