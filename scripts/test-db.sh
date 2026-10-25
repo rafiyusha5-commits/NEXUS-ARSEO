@@ -223,6 +223,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610241100_assistant_expense_reversal.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610241200_assistant_expense_payment.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610250100_assistant_confirmation_deadline.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202610250200_assistant_document_access.sql" >/dev/null
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -345,3 +346,4 @@ node "$ROOT/scripts/test-assistant-cost-approval-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-assistant-expense-cancellation-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-assistant-expense-reversal-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-assistant-expense-payment-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-assistant-document-access-concurrency.mjs" "${PSQL[@]}"
