@@ -26,7 +26,8 @@ begin
  if not found then raise exception 'ASSISTANT_ALLOCATION_STATE';end if;
  if (e.expense_type='goods_cost' and not private.has_permission('prices.purchase.view'))
  or (e.shipment_id is not null and not private.has_permission('shipments.view'))
- or (e.document_id is not null and not private.has_permission('documents.view'))
+ or (e.document_id is not null and (not private.has_permission('documents.view')
+  or not private.can_view_generated_document(e.document_id)))
  then raise exception 'ASSISTANT_OPERATION_DENIED' using errcode='42501';end if;
  if (e.payee_counterparty_id is not null and not private.can_access_counterparty_record('view',e.payee_counterparty_id))
  or (e.attributed_customer_id is not null and not private.can_access_counterparty_record('view',e.attributed_customer_id))

@@ -20,7 +20,8 @@ language plpgsql security definer set search_path='' as $$begin
   private.has_permission('agent.use') and private.has_permission('shipments.view')
   and (private.has_permission('finance.manage') or private.has_permission('finance.draft')))
   or (p->>'expense_type'='goods_cost' and not private.has_permission('prices.purchase.view'))
-  or (p->>'document_id' is not null and not private.has_permission('documents.view'))
+  or (p->>'document_id' is not null and (not private.has_permission('documents.view')
+   or not private.can_view_generated_document((p->>'document_id')::uuid)))
   then raise exception 'ASSISTANT_OPERATION_DENIED' using errcode='42501';end if;
  if p->>'payee_counterparty_id' is not null and not private.can_access_counterparty_record('view',(p->>'payee_counterparty_id')::uuid)
  then raise exception 'ASSISTANT_OPERATION_DENIED' using errcode='42501';end if;
