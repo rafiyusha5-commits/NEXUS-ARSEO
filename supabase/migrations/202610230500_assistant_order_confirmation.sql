@@ -204,6 +204,8 @@ begin
  if v<>r.preview then raise exception 'ASSISTANT_OPERATION_STALE';end if;
  -- The existing RPC refreshes OSG, requires exact letters and invokes the receivables guard.
  -- A finance refusal must never expose debt amounts / SQL via the assistant.
+ -- Recheck the deadline after all input locks and preview validation.
+ if r.expires_at<clock_timestamp() then raise exception 'ASSISTANT_OPERATION_EXPIRED';end if;
  begin perform public.confirm_customer_order(sale);
  exception when others then raise exception 'ASSISTANT_OPERATION_CONFIRM_REFUSED';end;
  update private.assistant_operations set confirmed_at=clock_timestamp(),result_sale_id=sale where id=r.id;

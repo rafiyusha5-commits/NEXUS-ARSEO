@@ -67,8 +67,9 @@ run(actor(orderUser)+`insert into tests.assistant_order_context values('waiting'
  select public.confirm_customer_order(id) from tests.assistant_order_context where k='waiting';`);
 // A real second PostgreSQL session holds a lock. Wait until the confirmation is actually blocked,
 // then commit the changed authority/source; do not rely on a scheduling guess or mocked race.
-async function whileWaiting(key,heldSql,expected,preparePreview=()=>orderPrepare(key,'waiting'),who=orderUser){
+async function whileWaiting(key,heldSql,expected,preparePreview=()=>orderPrepare(key,'waiting'),who=orderUser,expire=false){
  const preview=preparePreview();
+ if(expire)run(`update private.assistant_operations set expires_at=clock_timestamp()+interval '5 seconds' where id='${key}';`);
  const holder=spawn(psql,[...args,'-tA'],{windowsHide:true});let stdout='',stderr='';
  const closed=new Promise(resolve=>holder.on('close',code=>resolve(code)));
  holder.stdout.on('data',d=>stdout+=d);holder.stderr.on('data',d=>stderr+=d);
@@ -84,6 +85,14 @@ async function whileWaiting(key,heldSql,expected,preparePreview=()=>orderPrepare
    if(!waiting)await new Promise(r=>setTimeout(r,25));
   }
   if(!waiting)throw Error('Confirmation never waited for the lock');
+  if(expire){
+   let expired=false;
+   for(let i=0;i<300&&!expired;i++){
+    expired=run(`select clock_timestamp()>expires_at from private.assistant_operations where id='${key}';`)==='t';
+    if(!expired)await new Promise(r=>setTimeout(r,25));
+   }
+   if(!expired)throw Error('Synthetic confirmation deadline did not elapse');
+  }
   holder.stdin.end('commit;\n');if(await closed!==0)throw Error(stderr);
   const result=await confirmation;
   if(result.ok||!result.output.includes(expected))throw Error('Expected refusal after lock wait: '+JSON.stringify(result));
@@ -92,6 +101,28 @@ async function whileWaiting(key,heldSql,expected,preparePreview=()=>orderPrepare
   await closed;if(confirmation)await confirmation;
  }
 }
+// Compare all affected business rows, not just the exception or receipt.
+const businessSnapshot=()=>run(`select jsonb_build_object(
+ 'sales',(select jsonb_agg(to_jsonb(t) order by id) from public.sales t),
+ 'items',(select jsonb_agg(to_jsonb(t) order by id) from public.sale_items t),
+ 'balances',(select jsonb_agg(to_jsonb(t) order by id) from public.inventory_balances t),
+ 'reservations',(select jsonb_agg(to_jsonb(t) order by id) from public.inventory_reservations t),
+ 'movements',(select jsonb_agg(to_jsonb(t) order by id) from public.inventory_movements t),
+ 'documents',(select jsonb_agg(to_jsonb(t) order by id) from public.inventory_operation_documents t)
+ );`);
+async function expiryRace(key,heldSql,preparePreview,who){
+ const before=businessSnapshot();
+ await whileWaiting(key,heldSql,'ASSISTANT_OPERATION_EXPIRED',preparePreview,who,true);
+ if(businessSnapshot()!==before)throw Error('Expired confirmation changed business rows');
+ if(run(`select confirmed_at is null and result_id is null and result_sale_id is null from private.assistant_operations where id='${key}';`)!=='t')throw Error('Expired confirmation recorded success');
+ console.log('PASS assistant deadline after actual lock wait: '+key);
+}
+const transferExpiry='af000000-0000-4000-8000-000000000090';
+await expiryRace(transferExpiry,`select 1 from public.inventory_balances order by id for update`,
+ ()=>prepare(transferExpiry,user,{...payload,from_warehouse_id:payload.to_warehouse_id,to_warehouse_id:payload.from_warehouse_id,quantity:'1'}),user);
+const orderExpiry='ed000000-8a21-4000-8000-000000000090';
+await expiryRace(orderExpiry,`select 1 from public.sales where id=(select id from tests.assistant_order_context where k='waiting') for update`,
+ ()=>orderPrepare(orderExpiry,'waiting'),orderUser);
 await whileWaiting('ed000000-8a21-4000-8000-000000000064',`update public.inventory_batches set status='blocked' where id='ed400000-8a21-4000-8000-000000000002'`,'ASSISTANT_OPERATION_ORDER_BLOCKED');
 run(`update public.inventory_batches set status='available' where id='ed400000-8a21-4000-8000-000000000002';`);
 await whileWaiting('ed000000-8a21-4000-8000-000000000065',`select 1 from public.sales where id=(select id from tests.assistant_order_context where k='waiting') for update;
@@ -127,6 +158,8 @@ run(`do $$begin
  assert not exists(select 1 from private.customer_ledger('ad000000-8a22-4000-8000-000000000011'));
 end$$;`);
 const staleDraft='ad000000-8a22-4000-8000-000000000062';
+const draftExpiry='ad000000-8a22-4000-8000-000000000090';
+await expiryRace(draftExpiry,"select 1 from public.products where id='ad000000-8a22-4000-8000-000000000021' for update",()=>draftPrepare(draftExpiry),draftUser);
 await whileWaiting(staleDraft,`update public.counterparties set min_remaining_shelf_life_pct=80 where id='ad000000-8a22-4000-8000-000000000011'`,
  'ASSISTANT_OPERATION_STALE',()=>draftPrepare(staleDraft),draftUser);
 const deniedDraft='ad000000-8a22-4000-8000-000000000063';
@@ -166,6 +199,9 @@ const overlap=await Promise.all(overlapKeys.map((key,i)=>parallel(actor(reserveU
 if(overlap.filter(r=>r.ok).length!==1||!overlap.some(r=>r.output.includes('ASSISTANT_OPERATION_RESERVE_STATE')))throw Error('Two tabs/order: '+JSON.stringify(overlap));
 run(actor(reserveUser)+`select public.cancel_customer_order(id,'Synthetic overlap cleanup') from tests.assistant_reserve_context where k='overlap';`);
 const waitingReserve='eb000000-8a23-4000-8000-000000000064';
+const reserveExpiry='eb000000-8a23-4000-8000-000000000090';
+await expiryRace(reserveExpiry,`select 1 from public.sales where id=(select id from tests.assistant_reserve_context where k='waiting') for update`,
+ ()=>reservePrepare(reserveExpiry,'waiting'),reserveUser);
 await whileWaiting(waitingReserve,`update public.inventory_batches set status='blocked' where id='eb400000-8a23-4000-8000-000000000001'`,
  'ASSISTANT_OPERATION_STALE',()=>reservePrepare(waitingReserve,'waiting'),reserveUser);
 run(`update public.inventory_batches set status='available' where id='eb400000-8a23-4000-8000-000000000001';`);
@@ -211,6 +247,9 @@ run(actor(confirmUser)+`insert into tests.assistant_confirmation_context values(
   end if;
  end $$;`);
 const cfBlocked='ec000000-8a23-4000-8000-000000000082';
+const confirmExpiry='ec000000-8a23-4000-8000-000000000090';
+await expiryRace(confirmExpiry,`select 1 from public.sales where id=(select id from tests.assistant_confirmation_context where k='waiting') for update`,
+ ()=>confirmPrepare(confirmExpiry,'waiting'),confirmUser);
 await whileWaiting(cfBlocked,`update public.inventory_batches set status='blocked' where id='ec400000-8a23-4000-8000-000000000002'`,
  'ASSISTANT_OPERATION_CONFIRM_BLOCKED',()=>confirmPrepare(cfBlocked,'waiting'),confirmUser);
 run(`update public.inventory_batches set status='available' where id='ec400000-8a23-4000-8000-000000000002';`);

@@ -200,6 +200,8 @@ begin
  perform private.require_assistant_reserve_access();
  v:=private.assistant_reserve_preview(r.payload);
  if v<>r.preview then raise exception 'ASSISTANT_OPERATION_STALE';end if;
+ -- Recheck the deadline after all input locks and preview validation.
+ if r.expires_at<clock_timestamp() then raise exception 'ASSISTANT_OPERATION_EXPIRED';end if;
  for line in select id from public.sale_items where sale_id=sale order by id loop
   perform public.reserve_customer_order_item_fefo(line.id);
  end loop;

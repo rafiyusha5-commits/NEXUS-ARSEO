@@ -129,6 +129,8 @@ begin
  v:=private.assistant_order_preview(r.payload);
  if v<>r.preview then raise exception 'ASSISTANT_OPERATION_STALE';end if;
  -- No new issue/reserve/accounting algorithm. Same RPC as the shipment tab.
+ -- Recheck the deadline after all input locks and preview validation.
+ if r.expires_at<clock_timestamp() then raise exception 'ASSISTANT_OPERATION_EXPIRED';end if;
  perform public.fulfill_customer_order(sale);
  update private.assistant_operations set confirmed_at=clock_timestamp(),result_sale_id=sale where id=r.id;
  return jsonb_build_object('id',r.id,'kind',r.kind,'status','completed','result_id',sale);

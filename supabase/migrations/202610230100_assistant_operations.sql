@@ -126,6 +126,8 @@ begin
  perform private.require_assistant_operation_access();
  current_preview:=private.assistant_transfer_preview(row.payload);
  if current_preview<>row.preview then raise exception 'ASSISTANT_OPERATION_STALE';end if;
+ -- Recheck the deadline after all input locks and preview validation.
+ if row.expires_at<clock_timestamp() then raise exception 'ASSISTANT_OPERATION_EXPIRED';end if;
  doc:=public.create_inventory_operation_document('transfer',private.business_today(),src,dst,'Ассистент: подтверждено сотрудником',null,null);
  for line in select value from jsonb_array_elements(current_preview->'lines') loop
   perform public.add_inventory_operation_line(doc,(line->>'balance_id')::uuid,null,(line->>'quantity')::numeric,null,null);

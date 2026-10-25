@@ -153,6 +153,8 @@ begin
  perform private.require_assistant_draft_access();
  v:=private.assistant_draft_preview(r.payload);
  if v<>r.preview then raise exception 'ASSISTANT_OPERATION_STALE';end if;
+ -- Recheck the deadline after all input locks and preview validation.
+ if r.expires_at<clock_timestamp() then raise exception 'ASSISTANT_OPERATION_EXPIRED';end if;
  sale:=public.create_customer_order((r.payload->>'customer_id')::uuid,(r.payload->>'contract_id')::uuid,
   (r.payload->>'warehouse_id')::uuid,(r.payload->>'planned_shipment_date')::date,(r.payload->>'currency_id')::uuid,null);
  for item in select value from jsonb_array_elements(r.payload->'items') loop
