@@ -151,6 +151,8 @@ const SHIPMENT_CARD_FIELDS: ToolField[] = [
   { key: "confirmed_quantity", label: "Подтверждено", kind: "number" },
   { key: "shipped_quantity", label: "Отгружено", kind: "number" },
   { key: "received_quantity", label: "Принято", kind: "number" },
+  { key: "item_id", label: "ID позиции", kind: "id" },
+  { key: "transport_id", label: "ID автомобиля", kind: "id" },
 ];
 
 const getShipment: AgentTool = {
@@ -195,6 +197,8 @@ const getShipment: AgentTool = {
       confirmed_quantity: num(item.confirmed_quantity),
       shipped_quantity: num(item.shipped_quantity),
       received_quantity: num(item.received_quantity),
+      item_id: str(item.id),
+      transport_id: str(item.shipment_transport_id),
     }, entity));
     const itemsTruncated = items.rows.length > MAX_TOOL_ROWS || (items.total !== null && items.total > itemRows.length);
     const notes = ["Закупочные цены и суммы в ответ ассистента не передаются."];
@@ -587,7 +591,83 @@ const getHelp: AgentTool = {
   },
 };
 
+const RETURN_FIELDS: ToolField[] = [
+ { key: "sale_item_id", label: "ID позиции заказа", kind: "id" },
+ { key: "batch_id", label: "ID партии", kind: "id" },
+ { key: "product_name", label: "Товар", kind: "text" },
+ { key: "batch_number", label: "Партия", kind: "text" },
+ { key: "uom", label: "Единица заказа", kind: "text" },
+ { key: "shipped", label: "Отгружено", kind: "number" },
+ { key: "returned", label: "Ранее возвращено", kind: "number" },
+ { key: "available", label: "Можно вернуть", kind: "number" },
+];
+const getReturnOptions: AgentTool = {
+ name: "get_return_options", description: "Отгруженные партии конкретного заказа и остаток количества для возврата. Не оформляет возврат.",
+ permissions: ["sales.view", "sales.returns", "customers.view", "products.view", "inventory.view", "warehouses.view"],
+ params: { sale_id: { type: "uuid", description: "Точный ID заказа из поиска sales" } },
+ fields: RETURN_FIELDS, maxRows: MAX_TOOL_ROWS, timeoutMs: DEFAULT_TIMEOUT_MS,
+ async run(ctx, params) {
+  if (!ctx.data.getReturnOptions) throw new Error("DATA_ERROR");
+  const rows = await ctx.data.getReturnOptions(String(params.sale_id), ctx.signal);
+  return result(rows.slice(0, MAX_TOOL_ROWS).map(row => project("Партия для возврата", RETURN_FIELDS, {
+   sale_item_id: UUID.test(String(row.sale_item_id)) ? str(row.sale_item_id) : null,
+   batch_id: UUID.test(String(row.batch_id)) ? str(row.batch_id) : null,
+   product_name: maskDataText(str(row.product_name), 160), batch_number: maskDataText(str(row.batch_number), 80),
+   uom: str(row.uom), shipped: num(row.shipped), returned: num(row.returned), available: num(row.available),
+  }, { type: "system", id: String(params.sale_id), section: "sales" })), rows.length > MAX_TOOL_ROWS, rows.length, ["Количество — в единице заказа. Фактическое количество и причину возврата должен указать сотрудник."]);
+ },
+};
+const DECISION_FIELDS: ToolField[] = [
+ { key: "item_id", label: "ID позиции возврата", kind: "id" },
+ { key: "return_number", label: "Номер возврата", kind: "text" },
+ { key: "product_name", label: "Товар", kind: "text" },
+ { key: "batch_number", label: "Партия", kind: "text" },
+ { key: "quantity", label: "Всё количество позиции", kind: "number" },
+ { key: "uom", label: "Единица", kind: "text" },
+ { key: "batch_status", label: "Статус партии", kind: "status" },
+ { key: "expiry_date", label: "Годен до", kind: "date" },
+ { key: "warehouse_id", label: "ID склада возврата", kind: "id" },
+];
+const getReturnDecisions: AgentTool = {
+ name: "get_return_decisions", description: "Позиции возвратов выбранного заказа в карантине, ещё без решения. Только чтение, до 20 позиций.",
+ permissions: ["sales.view", "customers.view", "inventory.view", "products.view", "warehouses.view"],
+ params: { sale_id: { type: "uuid", description: "Точный заказ из поиска sales" } },
+ fields: DECISION_FIELDS, maxRows: MAX_TOOL_ROWS, timeoutMs: DEFAULT_TIMEOUT_MS,
+ async run(ctx, params) {
+  if (!ctx.data.getReturnDecisions) throw new Error("DATA_ERROR");
+  const rows = await ctx.data.getReturnDecisions(String(params.sale_id), ctx.signal);
+  return result(rows.slice(0, MAX_TOOL_ROWS).map(row => project("Позиция возврата без решения", DECISION_FIELDS, {
+   item_id: UUID.test(String(row.item_id)) ? str(row.item_id) : null,
+   warehouse_id: UUID.test(String(row.warehouse_id)) ? str(row.warehouse_id) : null,
+   return_number: maskDataText(str(row.return_number), 80), product_name: maskDataText(str(row.product_name), 160),
+   batch_number: maskDataText(str(row.batch_number), 80), quantity: num(row.quantity), uom: str(row.uom),
+   batch_status: str(row.batch_status), expiry_date: str(row.expiry_date),
+  }, { type: "system", id: String(params.sale_id), section: "sales" })), rows.length > MAX_TOOL_ROWS, rows.length,
+  ["Решение выбирает сотрудник. Оно применяется ко всей позиции. Блокировки и сроки партии не снимаются."]);
+ },
+};
+const CANCELLATION_FIELDS: ToolField[] = [
+ { key: "return_id", label: "ID возврата", kind: "id" },
+ { key: "return_number", label: "Номер возврата", kind: "text" },
+ { key: "line_count", label: "Позиций", kind: "number" },
+];
+const getReturnCancellations: AgentTool = {
+ name: "get_return_cancellations", description: "Возвраты выбранного заказа без решений по позициям, доступные для предпросмотра отмены. Только чтение.",
+ permissions: ["sales.view", "sales.returns", "customers.view", "inventory.view", "products.view", "warehouses.view"],
+ params: { sale_id: { type: "uuid", description: "Точный заказ из поиска sales" } },
+ fields: CANCELLATION_FIELDS, maxRows: MAX_TOOL_ROWS, timeoutMs: DEFAULT_TIMEOUT_MS,
+ async run(ctx, params) {
+  if (!ctx.data.getReturnCancellations) throw new Error("DATA_ERROR");
+  const rows = await ctx.data.getReturnCancellations(String(params.sale_id), ctx.signal);
+  return result(rows.slice(0, MAX_TOOL_ROWS).map(row => project("Возврат для отмены", CANCELLATION_FIELDS, {
+   return_id: UUID.test(String(row.return_id)) ? str(row.return_id) : null,
+   return_number: maskDataText(str(row.return_number), 80), line_count: num(row.line_count),
+  }, { type: "system", id: String(params.sale_id), section: "sales" })), rows.length > MAX_TOOL_ROWS, rows.length,
+  ["Отмена только по явной просьбе сотрудника с причиной, после отдельного предпросмотра и подтверждения."]);
+ },
+};
 export const AGENT_TOOLS: readonly AgentTool[] = [
+  getReturnOptions, getReturnDecisions, getReturnCancellations,
   findShipments, getShipment, getShipmentVehicles, getShipmentDocuments, getDocumentExtraction,
   listDelayedShipments, findProducts, getStockStatus, getMyTasks, getHelp, ...SYSTEM_TOOLS, ...DRIVE_TOOLS,
 ];

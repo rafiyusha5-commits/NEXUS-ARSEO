@@ -46,12 +46,31 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
     return rows.map(row=>({...row,currency_code:codes.get(row.currency_id??row.cost_currency_id)??null}));
   }
   return {
+    async getReturnCancellations(saleId, signal) {
+      const { data } = ensure(await supabase.rpc("assistant_return_cancellation_options", { p_sale_id: saleId }).abortSignal(signal));
+      return data as ShipmentRow[];
+    },
+    async getReturnDecisions(saleId, signal) {
+      const { data } = ensure(await supabase.rpc("assistant_return_decision_options", { p_sale_id: saleId }).abortSignal(signal));
+      return data as ShipmentRow[];
+    },
+    async getReturnOptions(saleId, signal) {
+      const { data } = ensure(await supabase.rpc("assistant_customer_return_options", { p_sale_id: saleId }).abortSignal(signal));
+      return data as ShipmentRow[];
+    },
     findDriveDocuments: archive.findDriveDocuments,
     downloadDriveFile: archive.downloadDriveFile,
     getDriveDocument: archive.getDriveDocument,
     async verifySystemAccess(records, signal) {
       const grouped=new Map<string,Set<string>>();
       for(const record of records){
+        if (record.section === "assistant_return_cancellations" || record.section === "assistant_returns" || record.section === "assistant_return_decisions") {
+          for (const saleId of record.ids) {
+            const checked = await supabase.rpc(record.section === "assistant_return_cancellations" ? "assistant_return_cancellation_options" : record.section === "assistant_returns" ? "assistant_customer_return_options" : "assistant_return_decision_options", { p_sale_id: saleId }).abortSignal(signal);
+            if (checked.error) return false;
+          }
+          continue;
+        }
         if (record.section === "drive" || record.section === "drive_text") {
           if (!await archive.verifyDriveAccess(record, signal)) return false;
           continue;
@@ -200,7 +219,7 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
 
     async getShipmentItems(id, limit, signal) {
       const { data, count } = ensure(await supabase.from("shipment_items")
-        .select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(internal_sku,name)", { count: "exact" })
+        .select("id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(internal_sku,name)", { count: "exact" })
         .eq("shipment_id", id).order("created_at").limit(limit).abortSignal(signal));
       return {
         rows: (data as ShipmentRow[]).map((row) => {

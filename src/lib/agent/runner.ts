@@ -14,6 +14,7 @@ import {
 } from "./types.ts";
 
 export type RunnerDeps = {
+  operationsEnabled?: boolean;
   channel: "web" | "telegram";
   userId: string;
   /** Optional process-local conversation, scoped again by user and channel. */
@@ -229,7 +230,7 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
     const contextKey = deps.conversationKey ? JSON.stringify([deps.userId, deps.channel, deps.conversationKey]) : null;
     let previous = contextKey ? conversationMemory.read(contextKey, now()) : [];
     const messages: ModelMessage[] = [
-      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.` },
+      { role: "system", content: `${SYSTEM_PROMPT}\nТекущая дата Nexus (Asia/Aqtobe): ${localDate(new Date(now()))}.\nКанал: ${deps.channel}. Подготовка операций ${deps.operationsEnabled && deps.channel === "web" ? "включена" : "выключена: operation всегда null"}.` },
       { role: "user", content: userMessage(question.text) },
     ];
 
@@ -323,6 +324,10 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
             }
             const bounded = { ...result, rows: result.rows.slice(0, tool.maxRows) };
             calls.set(call.id, { tool, result: bounded, access: { all: [...required,...extra,...alternatives.filter(code=>current.has(code))], any: [] }, ...(["find_drive_documents","get_drive_document"].includes(tool.name) ? { records:{section:tool.name === "get_drive_document" ? "drive_text" : "drive",ids:bounded.rows.map(row=>row.entity?.id??"").filter(Boolean),versions:Object.fromEntries(bounded.rows.filter(row=>row.entity?.id&&typeof row.values.source_modified_at === "string").map(row=>[row.entity!.id,String(row.values.source_modified_at)]))} } : {}), ...(tool.scope ? { records:{section:String(parsed.value.section),ids:bounded.rows.map(row=>String(row.values.record_id??"")).filter(Boolean)} } : {}) });
+            if (tool.name === "get_return_cancellations" || tool.name === "get_return_options" || tool.name === "get_return_decisions") {
+              const stored = calls.get(call.id)!;
+              stored.records = { section: tool.name === "get_return_cancellations" ? "assistant_return_cancellations" : tool.name === "get_return_options" ? "assistant_returns" : "assistant_return_decisions", ids: [String(parsed.value.sale_id)] };
+            }
             reply(toolContent(call.id, tool, bounded));
             trace.push({ name: tool.name, params: safeParams(parsed.value), rows: bounded.rows.length, truncated: bounded.truncated, ms: now() - toolStarted });
           } catch (error) {
@@ -346,6 +351,9 @@ export async function runAgent(rawQuestion: unknown, deps: RunnerDeps): Promise<
         return fail("AGENT_BAD_ANSWER");
       }
       const answer = verifyAnswer(raw, calls);
+      // A command is untrusted input, not a verified fact. Only the web's explicit
+      // review endpoint can prepare it; there is deliberately no execution tool.
+      if (deps.channel !== "web" || !deps.operationsEnabled) delete answer.operationIntent;
       const requirements = [...previous.map(ref => ref.access), ...[...calls.values()].flatMap(call => call.access ? [call.access] : [])];
       const finalGrants = await deps.permissions(["agent.use", ...requirements.flatMap(group => [...group.all,...group.any])]);
       if (!finalGrants.has("agent.use") || requirements.some(group => !group.all.every(code => finalGrants.has(code)) || (group.any.length && !group.any.some(code => finalGrants.has(code))))) return fail("AGENT_FORBIDDEN");
