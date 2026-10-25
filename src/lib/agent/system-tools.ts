@@ -1,5 +1,6 @@
 // Read-only archivist tools. Values are assembled from a fixed registry, not model-written text.
 import { SYSTEM_SECTIONS, SYSTEM_BY_KEY } from "./system-registry.ts";
+import { validateSearchInput } from "./search-input.ts";
 import { maskDataText, maskOutgoing, maskSensitive } from "./masking.ts";
 import type { AgentTool, ToolField, ToolRow, ShipmentRow } from "./types.ts";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -96,6 +97,7 @@ const searchSystem: AgentTool={
  fields:FIELDS,maxRows:20,timeoutMs:8000,
  async run(ctx,params){
   const section=SYSTEM_BY_KEY.get(String(params.section))!;
+  validateSearchInput(section, params);
   const {rows,total}=await ctx.data.readSystem({section:section.key,userId:ctx.userId,query:params.query as string|undefined,status:params.status as string|undefined,date:params.date as string|undefined,dateTo:params.date_to as string|undefined,parentId:params.parent_id as string|undefined,relatedBy:params.related_by as string|undefined,offset:Number(params.offset??0),limit:Number(params.limit??20)},ctx.signal);
   const shown=rows.slice(0,Number(params.limit??20)).map(row=>systemRow(section.key,row,params.fields as string|undefined));
   return {requiredPermissions:conditionalPermissions(section.key,rows),rows:shown,total,truncated:Number(params.offset??0)>0 || total===null || total>shown.length,notes:[`Источник: ${section.title}. Данные прочитаны с текущими правами сотрудника.${section.date ? ` Фильтр периода применяется к ${LABELS[section.date]??section.date}.` : ""}`]};

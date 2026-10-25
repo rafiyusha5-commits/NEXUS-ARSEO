@@ -91,12 +91,15 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false }:
           {stages.map((label, index) => <li key={`${label}-${index}`}>{label}{busy && index === stages.length - 1 ? "…" : ""}</li>)}
         </ol>
       )}
-      {error && <div className="login-error admin-message">{error}</div>}
+      {error && <div role="alert" className="login-error admin-message">{error}</div>}
       {operationsEnabled && <OperationReview intent={answer?.operationIntent} />}
 
       {answer && (
         <div className="assistant-answer">
           <p className="form-help">Вопрос: {asked.current}</p>
+          <p role="status" className="setup-notice">{answer.operationIntent
+            ? "Предложение подготовлено. Его проверка, подтверждение и результат — в блоке операции выше."
+            : "Ответ получен. Операция не подготовлена и не выполнена. Если ассистент просит уточнения, укажите недостающие данные следующим вопросом."}</p>
           <h3>Проверенные данные Nexus</h3>
           {answer.facts.length === 0 && <p className="form-help">Проверенных данных в ответе нет.</p>}
           {answer.facts.map((fact, index) => (

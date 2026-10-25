@@ -7,7 +7,7 @@ export type TraceRun = {
   request_refunded: boolean; cost_status?: string; created_at: string; finished_at: string | null; user?: { full_name: string | null } | Array<{ full_name: string | null }> | null;
 };
 
-const STATUS: Record<string, string> = { running: "Выполняется", completed: "Ответ дан", failed: "Ошибка", rejected: "Отклонён" };
+const STATUS: Record<string, string> = { running: "Выполняется", completed: "Ответ получен (не подтверждение операции)", failed: "Ошибка", rejected: "Отклонён" };
 const COST: Record<string, string> = {
   reserved: "резерв", actual: "по отчёту сервера", estimated: "оценка: списан весь резерв", reconciled: "сверено после позднего завершения",
 };
