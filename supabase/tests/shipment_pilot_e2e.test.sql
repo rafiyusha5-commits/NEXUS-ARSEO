@@ -27,7 +27,7 @@ grant all on pilot_ids,pilot_results,pilot_package to authenticated;
 insert into pilot_package values ('{"format":"nexus-reference-import","version":1,
  "counterparties":[{"row":1,"ref":"maker","legal_name":"Synthetic Pilot Factory","country":"FI","tax_id":"PILOT-FACTORY","roles":["manufacturer","supplier"]}],
  "products":[
- {"row":1,"internal_sku":"PILOT-E2E-A","name":{"ru":"Вымышленный товар Альфа"},"manufacturer":"maker","shelf_life_days":400,"packaging":[{"uom":"piece","units_per_parent":1,"gross_weight_kg":1,"net_weight_kg":0.9},{"uom":"box","units_per_parent":10},{"uom":"pallet","units_per_parent":100}]},
+ {"row":1,"internal_sku":"PILOT-E2E-A","name":{"ru":"Вымышленный товар Альфа"},"manufacturer":"maker","shelf_life_days":400,"packaging":[{"uom":"piece","units_per_parent":1,"gross_weight_kg":1,"net_weight_kg":0.9},{"uom":"box","units_per_parent":10,"gross_weight_kg":10},{"uom":"pallet","units_per_parent":20}]},
  {"row":2,"internal_sku":"PILOT-E2E-B","name":{"ru":"Вымышленный товар Бета"},"manufacturer":"maker","shelf_life_days":400,"packaging":[{"uom":"piece","units_per_parent":1,"gross_weight_kg":0.5,"net_weight_kg":0.4}]}]}');
 
 create function pg_temp.pilot_id(text) returns uuid language sql as $$select id from pilot_ids where k=$1$$;
@@ -82,6 +82,9 @@ insert into pilot_ids values ('shipment',public.create_purchase_plan_shipment(pg
 select public.create_shipment_transport(pg_temp.pilot_id('shipment'),'2099-01-01','2099-01-10',null,null,'Synthetic Driver A',null,null,'PILOT-A');
 select public.create_shipment_transport(pg_temp.pilot_id('shipment'),'2099-01-02','2099-01-10',null,null,'Synthetic Driver B',null,null,'PILOT-B');
 insert into pilot_ids select 't'||sequence_no,id from public.shipment_transports where shipment_id=pg_temp.pilot_id('shipment');
+-- Explicit test packing: 20 pieces per pallet; transport gross includes 22 kg per pallet.
+select public.update_shipment_transport(pg_temp.pilot_id('t1'),'{"purchase_pallet_tare_kg":"22"}');
+select public.update_shipment_transport(pg_temp.pilot_id('t2'),'{"purchase_pallet_tare_kg":"22"}');
 insert into pilot_ids select 'item-a',id from public.shipment_items where shipment_id=pg_temp.pilot_id('shipment') and product_id=pg_temp.pilot_id('a');
 insert into pilot_ids select 'item-b',id from public.shipment_items where shipment_id=pg_temp.pilot_id('shipment') and product_id=pg_temp.pilot_id('b');
 select public.update_shipment_item(pg_temp.pilot_id('item-a'),100,2);
@@ -122,7 +125,7 @@ select public.run_shipment_document_check(pg_temp.pilot_id('shipment'),'manual')
 insert into pilot_results select 'notification_count',to_jsonb(count(*)) from public.notifications where recipient_user_id='ee000000-0000-4000-8000-000000000001';
 select public.run_shipment_document_check(pg_temp.pilot_id('shipment'),'manual');
 do $$begin assert (select to_jsonb(count(*)) from public.notifications where recipient_user_id='ee000000-0000-4000-8000-000000000001')=(select v from pilot_results where k='notification_count'),'unchanged findings do not spam notifications';end$$;
-select public.review_shipment_source_extraction(pg_temp.pilot_id('extraction'),' {"driver_name":"Synthetic OCR Driver A","vehicle_plate":"PILOT-A","gross_weight_kg":60}',true);
+select public.review_shipment_source_extraction(pg_temp.pilot_id('extraction'),' {"driver_name":"Synthetic OCR Driver A","vehicle_plate":"PILOT-A","gross_weight_kg":126}',true);
 -- Separate shipment-wide invoice, checked through existing operations; replay replaces nothing twice.
 insert into storage.objects(bucket_id,name,owner_id,metadata) values
  ('nexus-documents','documents/ee200000-0000-4000-8000-000000000002/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-invoice.pdf','ee000000-0000-4000-8000-000000000001','{"size":64,"mimetype":"application/pdf"}');

@@ -1,9 +1,13 @@
 import Link from "next/link";
+import { PalletWeightForm } from "./pallet-weight-form";
+import type { CargoOperation } from "@/lib/shipments/pallet-weight";
 import { addShipmentTransport, changeShipmentTransportStatus, removeShipmentTransport, updateShipmentTransport } from "@/app/shipments/actions";
 import { sumShipmentLoadLines, type ShipmentLoadLine } from "@/lib/shipments/load-summary";
 import { describeTransport, duplicatePlates } from "@/lib/shipments/transport-form";
 
 export type PanelTransport = {
+  purchase_pallet_tare_kg?: number | null;
+  sale_pallet_tare_kg?: number | null;
   id: string;
   sequence_no: number;
   status: string;
@@ -45,7 +49,8 @@ function Fields({ transport }: { transport?: PanelTransport }) {
   </>;
 }
 
-export function ShipmentTransportsPanel({ shipmentId, transports, receivedIds, canEdit, canReceive, loadLines }: {
+export function ShipmentTransportsPanel({ shipmentId, transports, receivedIds, canEdit, canReceive, loadLines, operation = "purchase" }: {
+  operation?: CargoOperation;
   shipmentId: string;
   transports: PanelTransport[];
   receivedIds: string[];
@@ -80,12 +85,13 @@ export function ShipmentTransportsPanel({ shipmentId, transports, receivedIds, c
             {canEdit && !isReceived && <form action={changeShipmentTransportStatus} className="transport-status-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="transport_id" value={transport.id}/><select name="status" defaultValue={transport.status} aria-label={`Статус автомобиля №${transport.sequence_no}`}>{Object.entries(STATUS).filter(([value]) => value !== "unloaded" || transport.status === "unloaded").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="ghost compact" type="submit">Сохранить</button></form>}
           </div>
         </div>
+        <PalletWeightForm shipmentId={shipmentId} transportId={transport.id} operation={operation} purchase={transport.purchase_pallet_tare_kg??null} sale={transport.sale_pallet_tare_kg??null} boxedKg={load.boxedGrossWeightKg} pallets={load.pallets} canEdit={canEdit&&transport.status!=="cancelled"}/>
         <dl className="transport-facts">
           <div><dt>Водитель</dt><dd>{transport.driver_name || "—"}{transport.driver_phone ? `, ${transport.driver_phone}` : ""}</dd></div>
           <div><dt>Документ водителя</dt><dd>{transport.driver_document || "—"}</dd></div>
           <div><dt>Автомобиль</dt><dd>{[transport.vehicle_plate, transport.vehicle_make].filter(Boolean).join(" · ") || "—"}</dd></div>
           <div><dt>Прицеп</dt><dd>{[transport.trailer_plate, transport.trailer_make].filter(Boolean).join(" · ") || "—"}</dd></div>
-          <div><dt>Груз</dt><dd>{cargo ? `${cargo} поз. · ${number(load.pieces)} шт. · ${number(load.boxes)} кор. · ${number(load.pallets, 1)} пал. · брутто ${number(load.grossWeightKg, 1)} кг` : "Груз не закреплён"}</dd></div>
+          <div><dt>Груз</dt><dd>{cargo ? `${cargo} поз. · ${number(load.pieces)} шт. · ${number(load.boxes)} кор. · ${number(load.pallets, 1)} пал. · брутто ${number(load.grossWithPalletsKg, 1)} кг` : "Груз не закреплён"}</dd></div>
         </dl>
         {canEdit && transport.status !== "cancelled" && <details className="transport-edit">
           <summary className="ghost compact">Изменить данные</summary>

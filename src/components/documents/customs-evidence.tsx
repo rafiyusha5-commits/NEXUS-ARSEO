@@ -22,6 +22,7 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   const num = (n: number | null) => n === null ? "не прочитано" : n.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
   return <div className="setup-notice" style={{ contain: "inline-size", minWidth: 0 }}>
     <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "kind" in value && value.kind === "value_declaration" ? "Декларация таможенной стоимости (ДТС)" : "kind" in value && value.kind === "transit" ? "Транзитная декларация" : "Расчёт таможенных начислений"}</h4>
+    {"kind" in value && (value.kind === "value_declaration" || value.kind === "transit") && <p><strong>{!current ? "Версия или привязка устарела: требуется повторная сверка" : reviewed ? "Показанные реквизиты сверены с оригиналом" : "Показанные реквизиты ожидают ручной сверки"}</strong>. Это не подтверждение приёмки, оплаты или выпуска товара.</p>}
     <dl>{fields.map((field, index) => <div key={index}><dt>{field.label}</dt><dd><strong>{field.value}</strong></dd></div>)}</dl>
     {warnings.map((warning, index) => <p key={index}>{warning}</p>)}
     {"kind" in value && value.kind === "declaration" && <div className="evidence-outcomes" aria-label="Три независимых результата проверки">

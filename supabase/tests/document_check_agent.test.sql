@@ -28,7 +28,7 @@ insert into public.products(id,internal_sku,name,manufacturer_id,status) values
 -- 1 piece = 1.0 kg gross / 0.9 kg net, 10 pieces per box, 1000 pieces per pallet.
 insert into public.product_packaging(product_id,uom,units_per_parent,gross_weight_kg,net_weight_kg) values
  ('dc200000-0000-4000-8000-000000000001','piece',1,1.0,0.9),
- ('dc200000-0000-4000-8000-000000000001','box',10,null,null),
+ ('dc200000-0000-4000-8000-000000000001','box',10,10,null),
  ('dc200000-0000-4000-8000-000000000001','pallet',1000,null,null);
 
 set session_replication_role=replica;
@@ -45,6 +45,8 @@ insert into public.shipment_transports(id,shipment_id,sequence_no,status,vehicle
 insert into public.shipment_items(shipment_id,shipment_transport_id,product_id,uom,ordered_quantity) values
  ('dc300000-0000-4000-8000-000000000001','dc310000-0000-4000-8000-000000000001','dc200000-0000-4000-8000-000000000001','piece',1000),
  ('dc300000-0000-4000-8000-000000000001','dc310000-0000-4000-8000-000000000002','dc200000-0000-4000-8000-000000000001','box',200);
+
+update public.shipment_transports set purchase_pallet_tare_kg=22,sale_pallet_tare_kg=22 where shipment_id='dc300000-0000-4000-8000-000000000001';
 
 -- Documents: d1 order (vehicle 1), d2 CMR (vehicle 1), d3 invoice (whole shipment), d4 vehicle papers (not bound),
 -- d5 unread scan, d6 certificate of vehicle 2 expiring before arrival, d7 expired certificate of the shipment.

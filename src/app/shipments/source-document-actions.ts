@@ -119,7 +119,7 @@ export async function confirmShipmentCustomsAction(formData: FormData) {
   if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось сохранить сверку декларации.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", "Сверка декларации с оригиналом подтверждена. Расхождения с заказом сохранены; склад и финансы не изменены"));
+  redirect(back(shipmentId, "success", "Сверка таможенного документа с оригиналом подтверждена. Сохранён результат проверки; склад и финансы не изменены"));
 }
 
 // Binds an unconfirmed document or OCR proposal to one vehicle (or back to the whole shipment). Nothing is guessed.

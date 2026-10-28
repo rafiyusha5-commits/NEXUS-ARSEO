@@ -7,6 +7,23 @@ import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
 import { readDateChanges } from "@/lib/shipments/date-corrections";
+import { palletWeightColumn, validPalletWeight } from "@/lib/shipments/pallet-weight";
+
+export async function updateTransportPalletWeight(formData: FormData) {
+  const shipmentId = uuid(formData, "shipment_id");
+  const transportId = uuid(formData, "transport_id");
+  const operation = text(formData, "cargo_operation");
+  const weight = validPalletWeight(text(formData, "pallet_tare_kg"));
+  const back = (kind: string, message: string) => `/shipments/${shipmentId}?tab=delivery&${kind}=${encodeURIComponent(message)}#transports`;
+  if ((operation !== "purchase" && operation !== "sale") || weight === null) redirect(back("error", "Выберите операцию и вес паллеты от 20 до 25 кг"));
+  const { supabase } = await requireUser();
+  const { data: transport } = await supabase.from("shipment_transports").select("id").eq("id", transportId).eq("shipment_id", shipmentId).maybeSingle();
+  if (!transport) redirect(back("error", "Автомобиль не найден в поставке"));
+  const { error } = await supabase.rpc("update_shipment_transport", { p_transport_id: transportId, p_changes: { [palletWeightColumn(operation)]: String(weight) } });
+  if (error) redirect(back("error", ruleViolationMessage(error, "Не удалось сохранить вес паллеты")));
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back("success", "Вес паллеты сохранён для выбранной операции. Документы и приёмка не изменены"));
+}
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(formData: FormData, name: string) { const value=formData.get(name); return typeof value==="string"?value.trim():""; }
