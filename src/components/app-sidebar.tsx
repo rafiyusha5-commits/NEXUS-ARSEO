@@ -61,6 +61,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Доступ клиентов", href: "/admin/client-access", key: "client-access", managerOnly: true },
     { label: "Роли и права", href: "/admin/roles", key: "roles", managerOnly: true },
     { label: "Интеграции", href: "/integrations", key: "integrations", managerOnly: true },
+    { label: "Архив учебных проектов", href: "/admin/archive", key: "operational-archive", managerOnly: true },
     { label: "Журнал действий", href: "/audit", key: "audit", managerOnly: true },
   ] },
 ];

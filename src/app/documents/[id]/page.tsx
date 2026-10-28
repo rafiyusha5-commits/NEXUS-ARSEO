@@ -128,6 +128,7 @@ export default async function DocumentPage({
           <div className="setup-notice">
             Документ перенесён в архив {formatDateTime(doc.archived_at)}{archiver ? ` (${archiver.full_name})` : ""}. Причина: {doc.archive_reason}.
             Файлы и история версий сохранены, изменения запрещены.
+            {doc.archive_reason?.startsWith("Учебные проекты до рабочего пилота.") && <> Связи с учебными поставками сохранены в <Link href="/admin/archive">архиве проектов</Link>.</>}
           </div>
         )}
         {expiry.state === "expired" && <div className="login-error admin-message">Срок действия документа истёк {formatDate(doc.valid_until)}.</div>}
