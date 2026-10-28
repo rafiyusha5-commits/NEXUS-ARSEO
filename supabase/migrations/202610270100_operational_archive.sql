@@ -24,6 +24,7 @@ for each row execute function private.guard_operational_archive();
 create or replace function private.can_read_operational_archive()
 returns boolean language sql stable security definer set search_path='' as $$
   select private.is_employee() and private.has_permission('audit.view')
+    and private.has_permission('templates.generate_prices')
     and exists (select 1 from public.user_roles ur join public.app_roles r on r.id=ur.role_id
       where ur.user_id=auth.uid() and r.code='administrator' and r.is_enabled
       and (ur.expires_at is null or ur.expires_at>now()))
@@ -34,6 +35,23 @@ returns boolean language sql stable security definer set search_path='' as $$
         and p.code <> 'external_documents.view' and not private.has_permission(p.code));
 $$;
 revoke all on function private.can_read_operational_archive() from public,anon,authenticated,service_role;
+
+-- Moving generation metadata out of live tables must never make an archived
+-- price-bearing file look like an unrestricted employee upload. This helper is
+-- shared by document rows, versions, links and Storage download access.
+create or replace function private.can_view_generated_document(p_document_id uuid) returns boolean
+language sql security definer set search_path='' stable as $$
+ select case when exists (
+   select 1 from private.operational_archives a
+   where a.records->'documents' @> jsonb_build_array(jsonb_build_object('id',p_document_id::text))
+ ) then private.can_read_operational_archive()
+ else not exists(select 1 from public.document_generations g where g.document_id=p_document_id)
+   or exists(select 1 from public.document_generations g where g.document_id=p_document_id
+     and (not g.contains_prices or private.has_permission('templates.generate_prices')))
+ end
+$$;
+revoke all on function private.can_view_generated_document(uuid) from public,anon,service_role;
+grant execute on function private.can_view_generated_document(uuid) to authenticated;
 
 create or replace function public.list_operational_archives()
 returns table(id uuid,title text,reason text,created_at timestamptz,source_commit text,manifest jsonb)
