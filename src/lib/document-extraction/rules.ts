@@ -2,8 +2,9 @@ import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
 import { isCustomsForm, parseCustomsForm } from "./customs.ts";
 import { parseCommodityInvoice } from "./commodity-evidence.ts";
 import { parsePackingEvidence } from "./packing-evidence.ts";
+import { parseSupplierLayout } from "./supplier-layout.ts";
 
-export const EXTRACTION_VERSION = "rules-v6";
+export const EXTRACTION_VERSION = "rules-v7";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -97,7 +98,7 @@ export function detectShipmentSourceKind(rawText: string, hintedKind = "other") 
   if (hintedKind !== "other") return hintedKind;
   if (isCustomsForm(rawText)) return "other";
   if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
-  if (/despatch\s+note|dispatch\s+note/iu.test(rawText)) return "specification";
+  if (/despatch\s+note|dispatch\s+note|delivery\s+note/iu.test(rawText)) return "specification";
   if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
@@ -154,6 +155,11 @@ export type ExtractOptions = {
   hintedKind?: string;
 };
 
+export function extractionNeedsReview(data: Record<string, unknown>) {
+  if (data.customs_record) return true;
+  return [data.commodity_invoice, data.packing_evidence].some(value => value && typeof value === "object" && "warnings" in value && Array.isArray(value.warnings) && value.warnings.length > 0);
+}
+
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
 
 export function extractShipmentFields(rawText: string, options: ExtractOptions = {}): ExtractionResult {
@@ -164,6 +170,16 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   // otherwise mistake numbered box headings and exporter names for facts.
   const customs = parseCustomsForm(text);
   if (customs) return { data: { customs_record: customs }, evidence, conflicts: [] };
+  const supplier = parseSupplierLayout(text);
+  if (supplier) {
+    Object.assign(data, supplier.fields);
+    for (const [key, value] of Object.entries(supplier.fields)) {
+      evidence[key] = { label: SOURCE_FIELD_DEFINITIONS.find(field => field.key === key)?.label ?? key, value: String(value), confidence: 0.9 };
+    }
+    if (supplier.invoice) data.commodity_invoice = supplier.invoice;
+    if (supplier.packing) data.packing_evidence = supplier.packing;
+    return { data, evidence, conflicts: [] };
+  }
   for (const pattern of patterns) {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);

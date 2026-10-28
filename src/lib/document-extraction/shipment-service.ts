@@ -6,7 +6,7 @@ import { loadOcrConfig } from "@/lib/ocr/config";
 import { OcrPermissionError, permissionMessage, persistOcrOutcome, recognizeDocument, type OcrDocument, type PipelineDeps, type PreparedOcr } from "@/lib/ocr/pipeline";
 import { createOcrProvider } from "@/lib/ocr/providers";
 import { NeedsOcrError } from "@/lib/ocr/types";
-import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, EXTRACTION_VERSION } from "./rules";
+import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, extractionNeedsReview, EXTRACTION_VERSION } from "./rules";
 import { extractDocumentText } from "./text";
 
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
@@ -135,7 +135,7 @@ export async function extractShipmentSources(
   for (const item of prepared) {
     if (!item.versionId) { summary.failed++; continue; }
     const conflicts = commonConflicts.filter(conflict => conflict.documents?.includes(item.documentId));
-    const status = item.error ? "failed" : conflicts.length || item.result.data.customs_record ? "needs_review" : "extracted";
+    const status = item.error ? "failed" : conflicts.length || extractionNeedsReview(item.result.data) ? "needs_review" : "extracted";
     const { data: extractionId, error } = await supabase.rpc("upsert_shipment_source_extraction", {
       p_shipment_id: shipmentId, p_document_id: item.documentId, p_document_version_id: item.versionId,
       p_source_kind: item.sourceKind, p_status: status, p_extracted_data: item.result.data,

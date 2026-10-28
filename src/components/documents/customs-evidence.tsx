@@ -21,7 +21,7 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   const packingOutcome = comparePackingQuantities(items, packingRefs, packing);
   const num = (n: number | null) => n === null ? "не прочитано" : n.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
   return <div className="setup-notice" style={{ contain: "inline-size", minWidth: 0 }}>
-    <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "Расчёт таможенных начислений"}</h4>
+    <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "kind" in value && value.kind === "value_declaration" ? "Декларация таможенной стоимости (ДТС)" : "kind" in value && value.kind === "transit" ? "Транзитная декларация" : "Расчёт таможенных начислений"}</h4>
     <dl>{fields.map((field, index) => <div key={index}><dt>{field.label}</dt><dd><strong>{field.value}</strong></dd></div>)}</dl>
     {warnings.map((warning, index) => <p key={index}>{warning}</p>)}
     {"kind" in value && value.kind === "declaration" && <div className="evidence-outcomes" aria-label="Три независимых результата проверки">

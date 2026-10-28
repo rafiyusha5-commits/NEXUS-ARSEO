@@ -28,6 +28,7 @@ export function commodityUnit(unit: string | null | undefined) {
 }
 
 export function parseDeclarationItems(raw: string) {
+  if (!/^31 Грузовые/mu.test(raw) && /32 Товар\s*33 Код товара/u.test(raw)) return parseFragmentedDeclarationItems(raw);
   const warnings: string[] = [];
   const items: CommodityLine[] = [];
   // Only numbered box 31/32/33 bodies, never the repeated list in appendices or blank third forms.
@@ -64,6 +65,48 @@ export function parseDeclarationItems(raw: string) {
   }
   const countMatch = raw.split("\f")[0].match(/5 Всего т-ов[^\n]*\n\s*(\d+)\s*\|/u);
   const expectedCount = countMatch ? Number(countMatch[1]) : null;
+  if (expectedCount === null || items.length !== expectedCount || items.some((item, index) => item.number !== index + 1)) warnings.push("Полнота товарных строк не подтверждена графой 5.");
+  if (items.some(item => item.warnings.length)) warnings.push("Есть строки, требующие проверки по оригиналу.");
+  return { items, expectedCount, warnings };
+}
+
+// The same numbered customs boxes exported as individual glyphs, with the
+// labels wrapped vertically. Keep this layout separate from the older form.
+function parseFragmentedDeclarationItems(raw: string) {
+  const items: CommodityLine[] = [];
+  const warnings: string[] = [];
+  for (const section of raw.split(/32 Товар\s*33 Код товара/u).slice(1)) {
+    const body = section.split(/\f|^47(?:\s|$)/mu)[0];
+    const number = body.match(/С N\s*\n\s*(\d+)\s*(?:\n|$)/u);
+    const code = body.match(/^\s*(\d{10})\s*\|/mu);
+    if (!number || !code) { warnings.push("Не прочитан номер или код товарной строки."); continue; }
+    const item = blankLine(Number(number[1]));
+    item.hsCode = code[1];
+    item.description = body.match(/^1\.\s*([^\n]+)/mu)?.[1]?.trim() ?? "";
+    item.grossKg = decimal(body.match(/^a\s*\|\s*[A-Z]{2}\s*\|\s*b\s*\|\s*([\d ,]+)\|/mu)?.[1]);
+    item.netKg = decimal(body.match(/^\s*\d{4}\s*\|\s*\d{3}\s*\|\s*([\d ,]+)\|/mu)?.[1]);
+    const price = body.split("42 Цена товара")[1]?.split("45 Таможенная стоимость")[0] ?? "";
+    item.amount = decimal(price.match(/^\s*(\d[\d ]*,\d{2})\s*\|\s*\d\s*$/mu)?.[1]);
+    const value = body.split("45 Таможенная стоимость")[1]?.split("46 Статистическая стоимость")[0] ?? "";
+    item.customsValue = decimal(value.match(/^\s*(\d[\d ]*,\d{2})\s*$/mu)?.[1]);
+    items.push(item);
+  }
+  const appendix = (raw.split(/Графа[ |]+31[ |]+Описание[ |]+товара/u)[1]?.split("\f")[0] ?? "").replace(/\|/gu, " ");
+  const descriptions = [...appendix.matchAll(/^(\d+)\s+ГРУППА\s+ТОВАРОВ[^\n]*\n([\s\S]*?)(?=^\d+\s+ГРУППА\s+ТОВАРОВ|$(?![\s\S]))/gmu)];
+  for (const item of items) {
+    const matches = descriptions.filter(m => Number(m[1]) === item.number);
+    if (matches.length === 1) {
+      const text = matches[0][2].replace(/\s+/gu, " ");
+      const skus = [...text.matchAll(/АРТИКУЛ\s+([A-ZА-Я0-9][A-ZА-Я0-9._/-]*)/giu)];
+      const quantities = [...text.matchAll(/КОЛИЧЕСТВО\s+(\d[\d ]*(?:,\d{1,3})?)\s*(ШТ|КГ)\s*;/giu)];
+      if (skus.length === 1) item.sku = skus[0][1];
+      if (quantities.length === 1) { item.quantity = decimal(quantities[0][1]); item.unit = quantities[0][2]; }
+    }
+    if (matches.length !== 1 || !item.sku || item.quantity === null || !commodityUnit(item.unit)) item.warnings.push("Артикул или количество из приложения не определены однозначно.");
+    if (item.amount === null || item.netKg === null || item.grossKg === null || item.customsValue === null) item.warnings.push("Часть граф строки не прочитана; проверьте оригинал.");
+  }
+  const count = raw.split("\f")[0].match(/5 Всего т-ов[^\n]*\n\s*(\d+)\s*\|/u);
+  const expectedCount = count ? Number(count[1]) : null;
   if (expectedCount === null || items.length !== expectedCount || items.some((item, index) => item.number !== index + 1)) warnings.push("Полнота товарных строк не подтверждена графой 5.");
   if (items.some(item => item.warnings.length)) warnings.push("Есть строки, требующие проверки по оригиналу.");
   return { items, expectedCount, warnings };
