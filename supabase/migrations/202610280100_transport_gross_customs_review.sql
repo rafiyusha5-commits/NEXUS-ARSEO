@@ -4,8 +4,8 @@ alter table public.shipment_transports add column if not exists sale_pallet_tare
 do $$ begin
  if not exists(select 1 from pg_constraint where conrelid='public.shipment_transports'::regclass and conname='transport_pallet_tare_range') then
   alter table public.shipment_transports add constraint transport_pallet_tare_range check (
-   (purchase_pallet_tare_kg is null or (purchase_pallet_tare_kg between 20 and 25 and purchase_pallet_tare_kg=round(purchase_pallet_tare_kg,2))) and
-   (sale_pallet_tare_kg is null or (sale_pallet_tare_kg between 20 and 25 and sale_pallet_tare_kg=round(sale_pallet_tare_kg,2))));
+   (purchase_pallet_tare_kg is null or (purchase_pallet_tare_kg >= 20 and purchase_pallet_tare_kg <= 25 and purchase_pallet_tare_kg=round(purchase_pallet_tare_kg,2))) and
+   (sale_pallet_tare_kg is null or (sale_pallet_tare_kg >= 20 and sale_pallet_tare_kg <= 25 and sale_pallet_tare_kg=round(sale_pallet_tare_kg,2))));
  end if;
 end $$;
 comment on column public.shipment_transports.purchase_pallet_tare_kg is 'Empty pallet kg for purchase/import, per vehicle, explicit 20–25. NULL means not confirmed.';
