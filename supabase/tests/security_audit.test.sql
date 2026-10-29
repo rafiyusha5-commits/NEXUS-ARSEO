@@ -84,7 +84,7 @@ select 'authenticated', unnest(array[
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',
   'public.my_agent_usage', 'public.create_my_telegram_code', 'public.confirm_my_telegram_link', 'public.unlink_my_telegram',
   'public.sync_calculator_purchase_prices', 'public.create_shipment_item', 'public.my_product_purchase_prices',
-  'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs',
+  'public.my_shipment_item_purchase_prices', 'public.my_inventory_batch_costs', 'public.my_batch_landed_costs',
   'public.cancel_expense', 'public.reverse_expense',
   'public.shipment_document_check', 'public.run_shipment_document_check', 'public.reopen_shipment',
   'public.shelf_life_risks',
