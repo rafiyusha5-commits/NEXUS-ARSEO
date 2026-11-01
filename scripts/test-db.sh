@@ -227,6 +227,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610270100_operational_archive.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202610280100_transport_gross_customs_review.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611010100_multi_batch_receiving.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611010200_admin_historical_sales.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -243,6 +244,7 @@ node "$ROOT/scripts/test-source-integrity-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-ocr-recovery-concurrency.mjs" "${PSQL[@]}"
 
 echo "test: order fulfillment under concurrency (duplicates and cancellation)"
+node "$ROOT/scripts/test-historical-sales-concurrency.mjs" "${PSQL[@]}"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/fixtures/order_fulfillment.sql" >/dev/null
 fulfill_pids=()
 for i in $(seq 1 10); do

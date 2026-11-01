@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/access";
 import { businessToday } from "@/lib/dates/business-day";
 import { createCustomerOrder } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
+import { HistoricalSaleForm } from "@/components/sales/historical-sale-form";
 
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const row=value as Record<string,unknown>;return String(row.ru??row.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
@@ -11,6 +12,7 @@ const statusLabel:Record<string,string>={draft:"Черновик",reserved:"За
 
 export default async function SalesPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
   const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
+  const {data:canBackdate}=await supabase.rpc("can_record_historical_sale");
   // Confirmed orders of this employee that can no longer ship become notifications (idempotent).
   await supabase.rpc("refresh_my_order_notifications");
   const [{data:sales,error},{data:customers},{data:warehouses},{data:currencies},{data:contracts}]=await Promise.all([
@@ -32,6 +34,12 @@ export default async function SalesPage({searchParams}:{searchParams:Promise<{er
       <label>Контракт<select name="contract_id" defaultValue=""><option value="">Без контракта</option>{contracts?.map(c=>{const party=one(c.counterparty);return <option key={c.id} value={c.id}>{party?.short_name||party?.legal_name} · № {c.number}</option>;})}</select></label>
       <label>Комментарий<input name="notes"/></label><button className="primary" type="submit" disabled={Boolean(error)}>Создать заказ</button>
     </form></div></details>
+    {canBackdate===true&&<HistoricalSaleForm
+      customers={(customers??[]).map(c=>({id:c.id,label:c.short_name||c.legal_name}))}
+      warehouses={(warehouses??[]).map(w=>({id:w.id,label:`${w.code} · ${name(w.name)}`}))}
+      currencies={(currencies??[]).map(c=>({id:c.id,label:c.code}))}
+      contracts={(contracts??[]).map(c=>({id:c.id,label:`${one(c.counterparty)?.short_name||one(c.counterparty)?.legal_name} · № ${c.number}`}))}
+    />}
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Реестр</p><h2>Заказы покупателей</h2></div></div><div className="reference-list">
       {sales?.map(s=>{const customer=one(s.customer);const warehouse=one(s.warehouse);return <Link className="reference-row" href={`/sales/${s.id}`} key={s.id}><div><strong>{s.sale_number}</strong><small>{customer?.short_name||customer?.legal_name}</small></div><span className="status">{statusLabel[s.status]??s.status}</span><span className="reference-meta">{warehouse?.code} · {new Intl.DateTimeFormat("ru-RU").format(new Date(s.planned_shipment_date))}</span></Link>;})}
       {!sales?.length&&!error&&<p className="empty-state">Клиентских заказов пока нет.</p>}
