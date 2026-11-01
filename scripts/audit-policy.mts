@@ -16,12 +16,13 @@ export const SEVERITIES: readonly Severity[] = ["info", "low", "moderate", "high
  * same package is not covered: the justification is about how that caller uses the package.
  * Keep the reasoning in docs/security-audit.md, not only here.
  */
-export type Justification = { advisory: string; module: string; paths: readonly string[]; reason: string };
+export type Justification = { advisory: string; module: string; paths: readonly string[]; versions?: readonly string[]; reason: string };
 
 export const JUSTIFIED: readonly Justification[] = [
   {
     advisory: "GHSA-w5hq-g745-h8pq",
     module: "uuid",
+    versions: ["8.3.2"],
     paths: [".>exceljs>uuid"],
     reason:
       "Уязвим только путь v3/v5/v6 с аргументом buf. exceljs вызывает uuid лишь в " +
@@ -29,6 +30,21 @@ export const JUSTIFIED: readonly Justification[] = [
       "условного форматирования; проект использует exceljs на чтение, а книги формирует кодом на " +
       "PizZip и @xmldom/xmldom. Исправление — мажорная 11.x, а exceljs@4.4.0 объявляет ^8.3.0. " +
       "Обоснование и проверки: docs/security-audit.md, раздел «Зависимости».",
+  },
+  {
+    advisory: "GHSA-g3hv-75wg-m249",
+    module: "minimatch",
+    versions: ["3.1.5", "5.1.9"],
+    paths: [
+      ".>exceljs>archiver>archiver-utils>glob>minimatch",
+      ".>exceljs>archiver>readdir-glob>minimatch",
+      ".>exceljs>archiver>zip-stream>archiver-utils>glob>minimatch",
+      ".>exceljs>unzipper>fstream>rimraf>glob>minimatch",
+    ],
+    reason: "Первичное сообщение описывает firstPhasePreProcess/secondPhasePreProcess при optimizationLevel >= 2 в 10.2.6. " +
+      "В установленных 3.1.5 и 5.1.9 этих методов и обработки optimizationLevel нет: globParts создаётся одним map без порождения новых альтернатив. " +
+      "Проверены все четыре пути ExcelJS и ограниченный воспроизводящий пример; tests/scripts/minimatch-advisory.test.ts. " +
+      "Исключение относится только к этой находке, версиям 3.1.5/5.1.9 и точному набору путей; другая версия или путь блокируются. См. docs/security-audit.md.",
   },
 ];
 
@@ -52,6 +68,7 @@ type Advisory = {
   vulnerable: string;
   patched: string;
   version: string;
+  versions: string[];
   paths: string[];
 };
 
@@ -89,7 +106,7 @@ function readAdvisory(key: string, raw: unknown): { advisory: Advisory } | { err
   if (!isSeverity(raw.severity)) missing.push(`severity (ожидалось одно из ${SEVERITIES.join(", ")})`);
 
   const paths: string[] = [];
-  let version = "";
+  const versions: string[] = [];
   if (!Array.isArray(raw.findings) || raw.findings.length === 0) missing.push("findings (непустой массив)");
   else {
     for (const [index, finding] of raw.findings.entries()) {
@@ -98,7 +115,7 @@ function readAdvisory(key: string, raw: unknown): { advisory: Advisory } | { err
         continue;
       }
       if (!isText(finding.version)) missing.push(`findings[${index}].version`);
-      else if (!version) version = finding.version;
+      else versions.push(finding.version);
       if (!Array.isArray(finding.paths) || finding.paths.length === 0 || !finding.paths.every(isText)) {
         missing.push(`findings[${index}].paths (непустой массив строк)`);
         continue;
@@ -109,7 +126,7 @@ function readAdvisory(key: string, raw: unknown): { advisory: Advisory } | { err
 
   if (missing.length) return { error: `находка ${key}: отсутствуют или некорректны поля — ${missing.join(", ")}` };
   return {
-    advisory: { advisory, module: packageName, severity: raw.severity as Severity, title, url, vulnerable, patched, version, paths: [...new Set(paths)].sort() },
+    advisory: { advisory, module: packageName, severity: raw.severity as Severity, title, url, vulnerable, patched, version: [...new Set(versions)].sort().join(","), versions: [...new Set(versions)], paths: [...new Set(paths)].sort() },
   };
 }
 
@@ -207,6 +224,7 @@ export function evaluateAudit(run: AuditRun, justified: readonly Justification[]
     const entry = justified.find(item =>
       item.advisory === advisory.advisory &&
       item.module === advisory.module &&
+      (item.versions === undefined || advisory.versions.every(version => item.versions!.includes(version))) &&
       item.paths.length === advisory.paths.length &&
       [...item.paths].sort().every((path, index) => path === advisory.paths[index]));
     if (entry) waived.push({ advisory, entry });
