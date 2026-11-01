@@ -21,6 +21,26 @@ export async function createCustomerOrder(data:FormData){
   revalidatePath("/sales");redirect(orderUrl(id,"Заказ создан. Добавьте товары и выполните резервирование."));
 }
 
+export async function createHistoricalCustomerOrder(data: FormData) {
+  const { supabase } = await requireUser();
+  const date = text(data, "shipment_date");
+  const reference = text(data, "reference");
+  const reason = text(data, "reason");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !reference || reference.length > 200 || !reason || reason.length > 500) {
+    redirect(`/sales?error=${encodeURIComponent("Укажите дату, документ-основание и причину исторической продажи.")}`);
+  }
+  // Database checks the active administrator role and all current personal denies.
+  const { data: id, error } = await supabase.rpc("create_historical_customer_order", {
+    p_request_id: uuid(data, "request_id"), p_customer_id: uuid(data, "customer_id"),
+    p_contract_id: uuid(data, "contract_id", false), p_warehouse_id: uuid(data, "warehouse_id"),
+    p_shipment_date: date, p_currency_id: uuid(data, "currency_id"),
+    p_reference: reference, p_reason: reason, p_notes: text(data, "notes") || null,
+  });
+  if (error || !id) redirect(`/sales?error=${encodeURIComponent(ruleViolationMessage(error, "Не удалось создать историческую продажу."))}`);
+  revalidatePath("/sales");
+  redirect(orderUrl(id, "Историческая продажа создана. Добавьте товары и проверьте партии перед проведением."));
+}
+
 export async function addCustomerOrderItem(data:FormData){
   const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
   const quantity=number(data,"quantity",true);const required=number(data,"required_shelf_life_pct");const price=number(data,"unit_price");
