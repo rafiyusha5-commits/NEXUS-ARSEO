@@ -107,7 +107,7 @@ do $$declare r record; d text; old_text text; new_text text;begin
   ('private.reservation_replacement_snapshot(uuid)','greatest(s.planned_shipment_date,private.business_today())','private.sale_effective_date(s.id)'),
   ('private.reservation_replacement_plan(uuid,jsonb)','greatest(s.planned_shipment_date,private.business_today())','private.sale_effective_date(s.id)'),
   ('private.assistant_confirmation_preview(jsonb)','greatest(s.planned_shipment_date,private.business_today())','private.sale_effective_date(s.id)'),
-  ('public.fulfill_customer_order(uuid)','v_today:=private.business_today();','v_today:=private.sale_effective_date(s.id);'),
+  ('public.fulfill_customer_order(uuid)','v_today:=private.business_today();','v_today:=coalesce(s.historical_shipment_date,private.business_today());'),
   ('private.customer_order_allocation_blockers(uuid,date,boolean)','v_today:=private.business_today();','v_today:=coalesce(s.historical_shipment_date,private.business_today());')
  ) as x(fn,before_text,after_text) loop
   d:=pg_get_functiondef(r.fn::regprocedure);old_text:=r.before_text;new_text:=r.after_text;

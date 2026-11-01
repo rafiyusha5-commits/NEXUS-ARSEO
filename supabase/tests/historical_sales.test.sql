@@ -129,4 +129,22 @@ end$$;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','af010000-0000-4000-8000-000000000002',true);
 select pg_temp.historical_reject('select public.fulfill_customer_order((select id from tests.historical_context where k=''sale''))','администратор');
+reset role;
+-- Ordinary dispatch still checks expiry today, even when shipping ahead of the planned day.
+-- Its OSG calculation continues to use greatest(today, plan), as before this migration.
+select set_config('request.jwt.claim.sub','af010000-0000-4000-8000-000000000001',true);
+insert into tests.historical_context values('ordinary-day',null,private.business_today()+20);
+insert into public.counterparties(id,roles,legal_name,country,tax_id,min_remaining_shelf_life_pct) values
+ ('af110000-0000-4000-8000-000000000003',array['customer'],'Ordinary synthetic buyer','KZ','ORDINARY-BUYER',0);
+set local role authenticated;
+insert into tests.historical_context values('ordinary',public.create_customer_order('af110000-0000-4000-8000-000000000003',null,'af210000-0000-4000-8000-000000000001',(select d from tests.historical_context where k='ordinary-day'),(select id from tests.historical_context where k='currency'),null),null);
+insert into tests.historical_context select 'ordinary-item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',1,'piece',10,0),null from tests.historical_context where k='ordinary';
+select public.reserve_customer_order_item_override(id,'af510000-0000-4000-8000-000000000001','Synthetic ordinary dispatch') from tests.historical_context where k='ordinary-item';
+select public.confirm_customer_order(id) from tests.historical_context where k='ordinary';
+reset role;
+update public.inventory_batches set expiry_date=private.business_today()+10,manufacture_date=private.business_today()-390 where id='af410000-0000-4000-8000-000000000001';
+set local role authenticated;
+select public.fulfill_customer_order(id) from tests.historical_context where k='ordinary';
+reset role;
+do $$begin assert exists(select 1 from public.sales where id=(select id from tests.historical_context where k='ordinary') and status='shipped' and historical_shipment_date is null and private.business_date(shipped_at)=private.business_today());end$$;
 rollback;
