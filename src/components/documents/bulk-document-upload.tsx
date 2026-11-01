@@ -33,9 +33,11 @@ export function BulkDocumentUpload({ types, primaryLink, autoExtractShipmentId, 
 
   function addFiles(files: FileList | null) {
     if (!files) return;
+    // FileList is live. The state updater may run after the input is reset.
+    const selectedFiles = Array.from(files);
     setRows(current => {
       const known = new Set(current.map(row => row.key));
-      return [...current, ...Array.from(files).filter(file => !known.has(rowKey(file))).map(file => ({
+      return [...current, ...selectedFiles.filter(file => !known.has(rowKey(file))).map(file => ({
         key: rowKey(file), file, checked: file.size > 0 && file.size <= MAX_DOCUMENT_FILE_SIZE_BYTES,
         documentTypeId: inferDocumentTypeId(file.name, typeOptions), title: titleFromFileName(file.name),
         state: "ready" as const,
