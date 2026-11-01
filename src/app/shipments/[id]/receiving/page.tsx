@@ -1,3 +1,4 @@
+import { ReceivingItem } from "@/components/shipments/receiving-item";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -45,14 +46,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
       <input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="transport_id" value={transport.id}/>
       <div className="panel-heading"><div><p className="eyebrow">Фактические данные</p><h2>Товары и партии</h2></div><span className="page-count">одна транзакция</span></div>
       <p className="form-help">При недостаче, излишке или повреждении обязательно укажите причину. В остаток попадает только принятое количество.</p>
-      <div className="receiving-items">{items.map((item)=>{const product=one(item.product);const expected=Number(item.shipped_quantity??item.confirmed_quantity??item.ordered_quantity);return <fieldset className="receiving-item" key={item.id}><input type="hidden" name="item_id" value={item.id}/><legend><strong>{product?.internal_sku} · {name(product?.name)}</strong><small>Ожидается {expected.toLocaleString("ru-RU")} {units[item.uom]??item.uom}{product?.brand?` · ${product.brand}`:""}</small></legend><div className="receiving-item-grid">
-        <label>Принято<input name="accepted_quantity" type="number" min="0" step="0.001" defaultValue={expected} required/></label>
-        <label>Повреждено<input name="damaged_quantity" type="number" min="0" step="0.001" defaultValue="0" required/></label>
-        <label>Номер партии<input name="batch_number" placeholder="LOT-2026-001"/></label>
-        <label>Дата производства<input name="manufacture_date" type="date"/></label>
-        <label>Срок годности<input name="expiry_date" type="date"/></label>
-        <label className="receiving-reason">Причина расхождения<input name="discrepancy_reason" placeholder="Недостача, бой, излишек…"/></label>
-      </div></fieldset>;})}</div>
+      <div className="receiving-items">{items.map((item)=>{const product=one(item.product);const expected=Number(item.shipped_quantity??item.confirmed_quantity??item.ordered_quantity);return <ReceivingItem key={item.id} itemId={item.id} expected={expected} unit={units[item.uom]??item.uom} title={`${product?.internal_sku} · ${name(product?.name)}`}/>;})}</div>
       <div className="receiving-footer">
         <label>Зона склада<select name="location_id" defaultValue=""><option value="">Без зоны</option>{locations?.map((location)=><option value={location.id} key={location.id}>{location.code} · {location.zone}</option>)}</select></label>
         <label>Исполнитель<input name="performed_by_name" defaultValue={profile.full_name} required/></label>
