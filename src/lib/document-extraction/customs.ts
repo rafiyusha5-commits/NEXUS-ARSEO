@@ -1,4 +1,5 @@
 import { parseDeclarationItems, type CommodityLine } from "./commodity-evidence.ts";
+import { normalizeCustomsLabels } from "./customs-labels.ts";
 // Read-only document evidence. These fields never enter shipment confirmation or finance actions.
 export type CustomsRecord = {
   kind: "declaration" | "assessment" | "value_declaration" | "transit";
@@ -13,7 +14,7 @@ export type CustomsRecord = {
 };
 
 export function isCustomsForm(text: string) {
-  return /ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ|Assessment\s+Notice|Форма\s+ДТС-1|ТРАНЗИТНАЯ\s+ДЕКЛАРАЦИЯ/iu.test(text);
+  return /ДЕКЛАРАЦИЯ\s+НА\s+ТОВАРЫ|Assessment\s+Notice|Форма\s+ДТС-1|ТРАНЗИТНАЯ\s+ДЕКЛАРАЦИЯ/iu.test(normalizeCustomsLabels(text));
 }
 
 export type PdfTextItem = { str: string; transform: number[]; width?: number };
@@ -58,6 +59,7 @@ function date(value: string) {
 }
 
 export function parseCustomsForm(raw: string): CustomsRecord | null {
+  raw = normalizeCustomsLabels(raw);
   if (!isCustomsForm(raw)) return null;
   const first = raw.split("\f")[0];
   const lines = first.split(/\r?\n/).map(line => line.trim()).filter(Boolean);

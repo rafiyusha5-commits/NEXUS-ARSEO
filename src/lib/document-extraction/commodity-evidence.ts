@@ -1,3 +1,4 @@
+import { normalizeCustomsLabels } from "./customs-labels.ts";
 // Read-only evidence; deliberately separate from invoice_items and the confirmation RPC.
 export type CommodityLine = {
   number: number; sku: string | null; description: string; hsCode: string | null;
@@ -28,6 +29,7 @@ export function commodityUnit(unit: string | null | undefined) {
 }
 
 export function parseDeclarationItems(raw: string) {
+  raw = normalizeCustomsLabels(raw);
   if (!/^31 Грузовые/mu.test(raw) && /32 Товар\s*33 Код товара/u.test(raw)) return parseFragmentedDeclarationItems(raw);
   const warnings: string[] = [];
   const items: CommodityLine[] = [];
@@ -82,7 +84,7 @@ function parseFragmentedDeclarationItems(raw: string) {
     if (!number || !code) { warnings.push("Не прочитан номер или код товарной строки."); continue; }
     const item = blankLine(Number(number[1]));
     item.hsCode = code[1];
-    item.description = body.match(/^1\.\s*([^\n]+)/mu)?.[1]?.trim() ?? "";
+    item.description = body.match(/^1\.\s*([^\n]+)/mu)?.[1]?.replace(/\|/gu, " ").replace(/\s+/gu, " ").trim() ?? "";
     item.grossKg = decimal(body.match(/^a\s*\|\s*[A-Z]{2}\s*\|\s*b\s*\|\s*([\d ,]+)\|/mu)?.[1]);
     item.netKg = decimal(body.match(/^\s*\d{4}\s*\|\s*\d{3}\s*\|\s*([\d ,]+)\|/mu)?.[1]);
     const price = body.split("42 Цена товара")[1]?.split("45 Таможенная стоимость")[0] ?? "";
