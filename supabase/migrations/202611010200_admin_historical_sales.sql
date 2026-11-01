@@ -52,7 +52,7 @@ begin
  elsif tg_table_name='inventory_reservations' then
   select s.id,s.historical_shipment_date into sid,hd from public.sales s join public.sale_items i on i.sale_id=s.id
    where i.id=case when tg_op='DELETE' then old.sale_item_id else new.sale_item_id end;
-  if tg_op<>'DELETE' then b:=new.batch_id;end if;
+  if tg_op<>'DELETE' and new.status in ('active','fulfilled') then b:=new.batch_id;end if;
  elsif tg_table_name='inventory_movements' then
   sid:=case when tg_op='DELETE' then old.sale_id else new.sale_id end;
   select historical_shipment_date into hd from public.sales where id=sid;
@@ -133,6 +133,15 @@ do $$declare r record; d text; old_text text; new_text text;begin
  new_text:=old_text||' and (not exists(select 1 from public.sales hs where hs.id=v_item.sale_id and hs.historical_shipment_date is not null) or (private.business_date(batch.received_at)<=private.sale_effective_date(v_item.sale_id) and (batch.manufacture_date is null or batch.manufacture_date<=private.sale_effective_date(v_item.sale_id))))';
  if position(new_text in d)=0 then
   if position(old_text in d)=0 then raise exception 'Unknown FEFO historical availability definition';end if;
+  execute replace(d,old_text,new_text);
+ end if;
+ -- A subsequently corrected lot date must appear in the same blocker list used by assistant previews.
+ d:=pg_get_functiondef('private.customer_order_allocation_blockers(uuid,date,boolean)'::regprocedure);
+ old_text:='if v_line.batch_status<>''available'' then';
+ new_text:='if s.historical_shipment_date is not null and exists(select 1 from public.inventory_batches hb where hb.id=v_line.batch_id and (private.business_date(hb.received_at)>s.historical_shipment_date or hb.manufacture_date>s.historical_shipment_date)) then
+ return query select ''batch_after_historical_date''::text,format(''%s, партия %s: получена или произведена позже исторической отгрузки'',v_line.internal_sku,v_line.batch_number),v_line.sale_item_id,v_line.batch_id;continue;end if; '||old_text;
+ if position(new_text in d)=0 then
+  if position(old_text in d)=0 then raise exception 'Unknown historical blocker definition';end if;
   execute replace(d,old_text,new_text);
  end if;
  -- Assistant previews use the same date and role gate as the manual workflow.

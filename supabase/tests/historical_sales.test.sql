@@ -77,6 +77,16 @@ select pg_temp.historical_reject($q$select pg_temp.historical_create(null,'NO-ID
 rollback to invalid_date;
 
 -- Historical date is not a license to ship blocked/expired/low-OSG stock or ignore shortages.
+-- A corrected receipt date must not trap an administrator in an invalid reservation.
+savepoint corrected_receipt;
+update public.inventory_batches set received_at=clock_timestamp() where id='af410000-0000-4000-8000-000000000001';
+set local role authenticated;
+do $$begin assert exists(select 1 from public.customer_order_shipping_blockers((select id from tests.historical_context where k='sale')) where code='batch_after_historical_date');end$$;
+select pg_temp.historical_reject('select public.fulfill_customer_order((select id from tests.historical_context where k=''sale''))','позже исторической');
+select public.return_customer_order_to_preparation(id,'Исправлена дата поступления партии') from tests.historical_context where k='sale';
+select public.cancel_customer_order(id,'Отмена ошибочного исторического проекта') from tests.historical_context where k='sale';
+do $$begin assert not exists(select 1 from public.inventory_reservations where sale_item_id=(select id from tests.historical_context where k='item') and status='active');end$$;
+rollback to corrected_receipt;
 savepoint bad;
 update public.inventory_batches set status='blocked' where id='af410000-0000-4000-8000-000000000001';
 set local role authenticated;
