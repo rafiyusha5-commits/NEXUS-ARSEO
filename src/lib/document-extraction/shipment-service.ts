@@ -8,6 +8,7 @@ import { createOcrProvider } from "@/lib/ocr/providers";
 import { NeedsOcrError } from "@/lib/ocr/types";
 import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, extractionNeedsReview, EXTRACTION_VERSION } from "./rules";
 import { extractDocumentText } from "./text";
+import { comparisonTransport } from "./comparison-scope";
 
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
 
@@ -43,7 +44,7 @@ export async function extractShipmentSources(
   const linkFilter = transportIds.length
     ? `and(entity_type.eq.shipment,entity_id.eq.${shipmentId}),and(entity_type.eq.shipment_transport,entity_id.in.(${transportIds.join(",")}))`
     : `and(entity_type.eq.shipment,entity_id.eq.${shipmentId})`;
-  const { data: links, error: linkError, count: linkCount } = await supabase.from("document_links").select("document_id", { count: "exact" }).is("removed_at", null).or(linkFilter);
+  const { data: links, error: linkError, count: linkCount } = await supabase.from("document_links").select("document_id,entity_type,entity_id", { count: "exact" }).is("removed_at", null).or(linkFilter);
   if (linkError || linkCount !== links?.length) throw new Error("Не удалось прочитать полный список связей документов");
   const documentIds = [...new Set((links ?? []).map(row => row.document_id as string))].filter(id => !options.documentId || id === options.documentId);
   if (!documentIds.length) throw new Error("Сначала загрузите исходные документы поставки");
@@ -59,6 +60,13 @@ export async function extractShipmentSources(
   const generatedIds = new Set((generated ?? []).map(row => row.document_id as string));
   const sourceDocuments = (documents ?? []).filter(document => !document.archived_at && document.status !== "rejected" && !generatedIds.has(document.id));
   if (!sourceDocuments.length) throw new Error("В поставке нет исходных документов для распознавания");
+  const { data: contexts, error: contextError, count: contextCount } = await supabase.from("shipment_source_extractions")
+    .select("document_id,document_version_id,shipment_transport_id", { count: "exact" }).eq("shipment_id", shipmentId).neq("status", "superseded").in("document_id", documentIds);
+  if (contextError || contextCount !== contexts?.length) throw new Error("Не удалось прочитать полный список контекстов документов");
+  const transportFor = (documentId: string, versionId: string) => comparisonTransport(
+    contexts.find(row => row.document_id === documentId && row.document_version_id === versionId),
+    (links ?? []).filter(link => link.document_id === documentId && link.entity_type === "shipment_transport").map(link => link.entity_id as string), transportIds,
+  );
 
   // Phase 1: read every document. Text documents are recognised here; scans and photos are queued for OCR.
   const prepared: Prepared[] = [];
@@ -126,8 +134,8 @@ export async function extractShipmentSources(
 
   // Phase 3: disagreements between documents (text and OCR alike), then write everything.
   const successful = [
-    ...prepared.filter(item => !item.error).map(item => ({ documentId: item.documentId, result: item.result })),
-    ...outcomes.flatMap(({ scan, outcome }) => outcome.state === "recognized" && outcome.proposal.status !== "failed" ? [{ documentId: scan.documentId, result: outcome.proposal.result }] : []),
+    ...prepared.filter(item => !item.error).map(item => ({ documentId: item.documentId, transportId: transportFor(item.documentId, item.versionId), result: item.result })),
+    ...outcomes.flatMap(({ scan, outcome }) => outcome.state === "recognized" && outcome.proposal.status !== "failed" ? [{ documentId: scan.documentId, transportId: transportFor(scan.documentId, scan.versionId), result: outcome.proposal.result }] : []),
   ];
   const commonConflicts = conflictsAcrossDocuments(successful);
   const summary: ShipmentExtractionSummary = { ready: 0, review: 0, failed: 0, total: prepared.length + scans.length, processing: 0, deferred, reused: 0 };

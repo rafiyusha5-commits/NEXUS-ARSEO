@@ -289,26 +289,32 @@ export function comparableValue(field: string, value: string) {
   return value.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
 }
 
-export function conflictsAcrossDocuments(results: Array<{ documentId: string; result: ExtractionResult }>) {
+export function conflictsAcrossDocuments(results: Array<{ documentId: string; transportId?: string | null; result: ExtractionResult }>) {
   const values = new Map<string, Map<string, { shown: string; documents: string[] }>>();
-  for (const { documentId, result } of results) {
+  const fields = new Map<string, string>();
+  for (const { documentId, transportId, result } of results) {
     for (const [field, raw] of Object.entries(result.data)) {
       if (raw === null || typeof raw === "object") continue;
       const value = String(raw).trim();
       if (!value) continue;
       const key = comparableValue(field, value);
       if (!key) continue;
-      const byValue = values.get(field) ?? new Map<string, { shown: string; documents: string[] }>();
+      // Different trucks may have separate supplier invoices, orders and weights.
+      // Unassigned sources remain shared; never guess them onto one of several trucks.
+      const scope = vehicleScoped.has(field) || ["invoice_number", "invoice_date", "order_number", "order_date"].includes(field) ? transportId ?? "" : "";
+      const fieldKey = JSON.stringify([scope, field]);
+      fields.set(fieldKey, field);
+      const byValue = values.get(fieldKey) ?? new Map<string, { shown: string; documents: string[] }>();
       const entry = byValue.get(key) ?? { shown: value, documents: [] };
       entry.documents.push(documentId);
       byValue.set(key, entry);
-      values.set(field, byValue);
+      values.set(fieldKey, byValue);
     }
   }
   const conflicts: ExtractionConflict[] = [];
-  for (const [field, byValue] of values) {
+  for (const [fieldKey, byValue] of values) {
     if (byValue.size < 2) continue;
-    conflicts.push({ field, values: [...byValue.values()].map(entry => entry.shown), documents: [...new Set([...byValue.values()].flatMap(entry => entry.documents))] });
+    conflicts.push({ field: fields.get(fieldKey)!, values: [...byValue.values()].map(entry => entry.shown), documents: [...new Set([...byValue.values()].flatMap(entry => entry.documents))] });
   }
   return conflicts;
 }

@@ -13,6 +13,7 @@ new Function("require","module","exports",compiled)((id:string)=>{
   if(id==="@/lib/ocr/config")return {loadOcrConfig:()=>({limits:{runBudgetMs:1000}})};
   if(id==="@/lib/ocr/providers")return {createOcrProvider:()=>null};
   if(id==="./rules")return {conflictsAcrossDocuments:()=>[]};
+  if(id==="./comparison-scope")return requireNative("../../src/lib/document-extraction/comparison-scope.ts");
   if(id.startsWith("@/")||id==="./text")return {};
   return requireNative(id);
 },service,service.exports);
@@ -22,6 +23,7 @@ const valid:Record<string,Result>={
   document_links:{data:[{document_id:"d1"}],count:1,error:null},
   documents:{data:[{id:"d1",archived_at:null,status:"approved",current_version:2,versions:[{id:"v1",version_number:1,is_current:true}]}],count:1,error:null},
   document_generations:{data:[],count:0,error:null},
+  shipment_source_extractions:{data:[],count:0,error:null},
 };
 function client(replace:Record<string,Result>={}) {
   let downloaded=false, written=false;
