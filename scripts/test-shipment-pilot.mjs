@@ -12,8 +12,8 @@ const name = `nexus-pilot-${randomUUID()}`;
 const allSql = process.argv.includes('--all-sql');
 const historical = process.argv.includes('--historical');
 assert.ok(process.argv.slice(2).every(arg => ['--all-sql', '--historical'].includes(arg)), 'Only --all-sql/--historical are supported; remote database arguments are forbidden');
-function docker(args, input) {
-  const r = spawnSync('docker', args, { input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 180000 });
+function docker(args, input, timeout = 180000) {
+  const r = spawnSync('docker', args, { input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout });
   if (r.error || r.status !== 0) throw new Error(`${args.slice(0, 3).join(' ')}: ${r.error?.message ?? r.stderr}`);
   return r.stdout;
 }
@@ -42,7 +42,9 @@ try {
     docker(['exec', name, 'node', '--version']);
     // Windows checkout may use CRLF; normalize only the disposable container copy.
     docker(['exec', name, 'sed', '-i', 's/\r$//', '/pilot/scripts/test-db.sh']);
-    console.log(docker(['exec', name, 'bash', '/pilot/scripts/test-db.sh']));
+    // The whole SQL suite includes real lock waits across many concurrency scenarios.
+    // Give this one command a bounded ten minutes; keep individual Docker calls at three.
+    console.log(docker(['exec', name, 'bash', '/pilot/scripts/test-db.sh'], undefined, 600000));
     console.log(`PASS complete test:db script on PostgreSQL ${version}`);
   }
   psql("set timezone='UTC';" + readFileSync(resolve(root, 'supabase/tests/supabase_stub.sql'), 'utf8'));
