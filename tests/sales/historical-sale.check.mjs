@@ -18,7 +18,7 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context);
 } });
 globalThis.fetch = () => { throw new Error('NETWORK_FORBIDDEN'); };
-const { createHistoricalCustomerOrder } = await import('../../src/app/sales/actions.ts');
+const { createHistoricalCustomerOrder, recordHistoricalSaleReceipt } = await import('../../src/app/sales/actions.ts');
 const data = new FormData();
 for (const key of ['request_id','customer_id','warehouse_id','currency_id']) data.set(key,id);
 data.set('shipment_date','2026-10-20');data.set('reference',' INV-1 ');data.set('reason',' Историческая отгрузка ');
@@ -40,3 +40,16 @@ for(const [key,value] of [['reason',' '],['reason','x'.repeat(501)],['reference'
   data.set(key,old);
 }
 console.log('historical sale action passed');
+const receipt=new FormData();
+receipt.set('sale_id',id);receipt.set('request_id',id);receipt.set('expected_token','a'.repeat(32));
+receipt.set('reason',' Факт приёмки подтвердил владелец без письма и согласования ');receipt.set('acknowledged','on');
+await assert.rejects(recordHistoricalSaleReceipt(receipt),/REDIRECT:.*success=/);
+assert.deepEqual(state.calls,[{name:'record_historical_sale_receipt',args:{p_sale_id:id,p_request_id:id,p_expected_token:'a'.repeat(32),p_reason:'Факт приёмки подтвердил владелец без письма и согласования',p_acknowledged:true}}]);
+state.calls=[];state.paths=[];
+for(const [key,value] of [['acknowledged',''],['reason','коротко'],['reason','x'.repeat(2001)],['expected_token','bad'],['sale_id','bad'],['request_id','bad']]){
+ const old=receipt.get(key);receipt.set(key,value);await assert.rejects(recordHistoricalSaleReceipt(receipt));assert.equal(state.calls.length,0);receipt.set(key,old);
+}
+state.authDenied=true;await assert.rejects(recordHistoricalSaleReceipt(receipt),/AUTH_DENIED/);assert.equal(state.calls.length,0);
+state.authDenied=false;state.error={code:'42501',message:'SECRET_SQL'};
+await assert.rejects(recordHistoricalSaleReceipt(receipt),e=>e.message.includes('error=')&&!e.message.includes('SECRET_SQL'));assert.equal(state.paths.length,0);
+console.log('historical receipt action passed');
