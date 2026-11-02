@@ -67,6 +67,23 @@ export async function createGuaranteeLetter(data:FormData){
   if(error)redirect(orderUrl(saleId,publicErrorMessage(error,"Не удалось сформировать гарантийное письмо."),"error","documents"));revalidatePath(`/sales/${saleId}`);redirect(orderUrl(saleId,"Черновик гарантийного письма сформирован по проблемным партиям","success","documents"));
 }
 
+export async function recordHistoricalSaleReceipt(data: FormData) {
+  const { supabase } = await requireUser();
+  const saleId = uuid(data, "sale_id")!;
+  const token = text(data, "expected_token");
+  const reason = text(data, "reason");
+  if (!/^[0-9a-f]{32}$/.test(token) || reason.length < 10 || reason.length > 2000 || data.get("acknowledged") !== "on") {
+    redirect(orderUrl(saleId, "Укажите основание и подтвердите фактическую приёмку без письма и предварительного согласования.", "error", "shipping"));
+  }
+  const { error } = await supabase.rpc("record_historical_sale_receipt", {
+    p_sale_id: saleId, p_request_id: uuid(data, "request_id"), p_expected_token: token,
+    p_reason: reason, p_acknowledged: true,
+  });
+  if (error) redirect(orderUrl(saleId, ruleViolationMessage(error, "Не удалось сохранить факт приёмки."), "error", "shipping"));
+  revalidatePath(`/sales/${saleId}`);
+  redirect(orderUrl(saleId, "Факт приёмки сохранён. Требование ОСГ и отклонения остались в истории.", "success", "shipping"));
+}
+
 export async function changeGuaranteeStatus(data:FormData){
   const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
   const {error}=await supabase.rpc("change_sale_guarantee_status",{p_letter_id:uuid(data,"letter_id"),p_status:text(data,"status")});
