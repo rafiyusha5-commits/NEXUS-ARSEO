@@ -20,7 +20,8 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
       content = <form action={actions.bind} className="form-grid">
         <input type="hidden" name="shipment_id" value={shipmentId}/>
         <input type="hidden" name="operation_id" value={operationId ?? ""}/>
-        <label>Папка этой поставки в архиве 2026 года<input name="folder" type="url" defaultValue={initialFolder ?? ""} required placeholder="https://drive.google.com/drive/folders/…"/></label>
+        <p>Выберите папку отдельной поставки внутри «2026» или «Будущие заказы (ARSEO)».</p>
+        <label>Папка этой поставки в Google Drive<input name="folder" type="url" defaultValue={initialFolder ?? ""} required placeholder="https://drive.google.com/drive/folders/…"/></label>
         <DriveSubmit pending="Проверяю доступ…">Привязать папку</DriveSubmit>
       </form>;
     } else {

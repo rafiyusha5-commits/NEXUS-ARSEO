@@ -8,7 +8,8 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { isUuid } from "@/lib/documents/rules";
 import { buildDocumentStoragePath, checkDocumentFile, matchesFileSignature, normalizeFileName, DOCUMENT_BUCKET } from "@/lib/documents/files";
-import { shipmentDrive, SHIPMENT_DRIVE_ROOT } from "@/lib/google/drive-server";
+import { shipmentDrive } from "@/lib/google/drive-server";
+import { isShipmentDriveRoot } from "@/lib/google/shipment-drive";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { folderId, FOLDER_MIME, insideFolder, scanFolder } from "@/lib/google/shipment-folder";
 import { processingErrorCode, processingErrors, processingDiagnostic, type ProcessingStage } from "@/lib/documents/processing-status";
@@ -66,7 +67,7 @@ export async function bindShipmentDriveFolder(form: FormData) {
   await operation(form, "bind", async ({ id, db, drive, signal, report }) => {
     await report("reading");
     const folder = folderId(text(form, "folder"));
-    if (folder === SHIPMENT_DRIVE_ROOT) throw new Error("Выберите папку отдельной поставки");
+    if (isShipmentDriveRoot(folder)) throw new Error("Выберите папку отдельной поставки");
     const file = await drive.scopedReference(folder, signal);
     if (file.mimeType !== FOLDER_MIME) throw new Error("Выберите папку");
     await report("registering");

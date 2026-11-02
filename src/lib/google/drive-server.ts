@@ -1,6 +1,7 @@
 import "server-only";
 import { createSign } from "node:crypto";
 import { DRIVE_SCOPE, DriveReadonly, DriveReadError } from "./drive-readonly.ts";
+import { ShipmentDriveReadonly } from "./shipment-drive.ts";
 let cached: { value: string; until: number } | undefined;
 async function token(signal: AbortSignal): Promise<string> {
   if (cached && cached.until > Date.now() + 60000) return cached.value;
@@ -19,6 +20,5 @@ async function token(signal: AbortSignal): Promise<string> {
 }
 export const driveArchive = new DriveReadonly(token);
 
-// Separately approved 2026 shipments root; the assistant archive root stays unchanged.
-export const SHIPMENT_DRIVE_ROOT = "1ffI_2N0F9Gy3N8r5XgNRv-hipmCl1ele";
-export function shipmentDrive() { return new DriveReadonly(token, fetch, SHIPMENT_DRIVE_ROOT); }
+// Shipment sources are separate from the assistant's document archive.
+export function shipmentDrive() { return new ShipmentDriveReadonly(token); }
