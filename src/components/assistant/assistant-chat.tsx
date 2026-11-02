@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { preparationRequest } from "@/lib/agent/shipment-workflow";
 import { useRef, useState } from "react";
 import type { AgentAnswer } from "@/lib/agent/types";
 import { RequestProgress } from "./request-progress";
@@ -14,8 +15,9 @@ type Event =
 // Only server-built relative links to known Nexus pages are rendered.
 const SAFE_LINK = /^\/assistant\/archive\/[A-Za-z0-9_-]{10,120}$|^\/(shipments|documents|products|counterparties|warehouses|sales|templates|listing-cards)\/[0-9a-f-]{36}$|^\/(tasks|routes|suppliers|notifications|calendar|inventory|inventory\/movements|stickers|forecasts|purchase-plans|commercial-programs|finance|integrations|audit|admin\/users|admin\/roles)$|^\/products\?q=[^\s]*$/;
 
-export function AssistantChat({ initialUsed, limit, operationsEnabled = false }: { initialUsed: number; limit: number; operationsEnabled?: boolean }) {
-  const [question, setQuestion] = useState("");
+export function AssistantChat({ initialUsed, limit, operationsEnabled = false, initialQuestion = "" }: { initialUsed: number; limit: number; operationsEnabled?: boolean; initialQuestion?: string }) {
+  const [question, setQuestion] = useState(initialQuestion);
+  const [preparation, setPreparation] = useState<ReturnType<typeof preparationRequest>>(null);
   const [stages, setStages] = useState<string[]>([]);
   const [answer, setAnswer] = useState<AgentAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +34,9 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false }:
     setAnswer(null);
     setError(null);
     asked.current = question.trim();
+    const prepare = operationsEnabled ? preparationRequest(asked.current) : null;
+    setPreparation(prepare);
+    if (prepare) { setBusy(false); return; }
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
@@ -81,9 +86,10 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false }:
             placeholder="Например: какие поставки задерживаются? Какие документы есть по поставке NAR-2026-0001?" disabled={busy} />
         </label>
         <p className="form-help doc-form-full">Контекст последних вопросов сохраняется на 30 минут в этой беседе. Данные проверяются заново. Номера удостоверений, паспортные данные и ключи скрываются до отправки модели. Финансовые данные доступны только по вашим правам.</p>
-        <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button> <button type="button" disabled={busy} onClick={() => { conversation.current = null; setAnswer(null); setStages([]); setError(null); setQuestion(""); }}>Новая беседа</button></div>
+        <div className="doc-form-full"><button className="primary" type="submit" disabled={busy || !question.trim()}>{busy ? "Обрабатываю…" : "Спросить"}</button> <button type="button" disabled={busy} onClick={() => { conversation.current = null; setAnswer(null); setStages([]); setError(null); setQuestion(""); setPreparation(null); }}>Новая беседа</button></div>
       </form>
 
+      {preparation && <section className="setup-notice" role="status"><h3>Подготовка поставки из документов</h3><p>Выберите поставку, проверьте папку, загрузите выбранные файлы и сверьте результаты. Ничего ещё не создано, не загружено и не проведено.</p><Link className="primary button-link" href={preparation.href}>Открыть подготовку поставки</Link></section>}
       {busy && <RequestProgress label={stages.at(-1) ? `${stages.at(-1)}…` : "Ассистент обрабатывает вопрос…"} />}
 
       {(busy || stages.length > 0) && !answer && (

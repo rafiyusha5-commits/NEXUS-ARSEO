@@ -7,7 +7,7 @@ import { DriveSubmit } from "./shipment-drive-submit";
 export type FolderBinding = { folder_id: string; folder_name: string; checked_at: string | null };
 export type FolderFile = { file_id: string; name: string; path: string; revision: string; present: boolean; imported_document_id: string | null; imported_revision: string | null; state?: ReconciliationState; candidates?: Candidate[]; verified?: boolean; operation_id?: string };
 export type FolderActions = { bind: (form: FormData) => Promise<void>; scan: (form: FormData) => Promise<void>; upload: (form: FormData) => Promise<void>; check?: (form: FormData) => Promise<void>; link?: (form: FormData) => Promise<void> };
-export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId }: { shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string }) {
+export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId, initialFolder }: { shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string; initialFolder?: string }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
   const [folder, setFolder] = useState("");
@@ -20,7 +20,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
       content = <form action={actions.bind} className="form-grid">
         <input type="hidden" name="shipment_id" value={shipmentId}/>
         <input type="hidden" name="operation_id" value={operationId ?? ""}/>
-        <label>Папка этой поставки в архиве 2026 года<input name="folder" type="url" required placeholder="https://drive.google.com/drive/folders/…"/></label>
+        <label>Папка этой поставки в архиве 2026 года<input name="folder" type="url" defaultValue={initialFolder ?? ""} required placeholder="https://drive.google.com/drive/folders/…"/></label>
         <DriveSubmit pending="Проверяю доступ…">Привязать папку</DriveSubmit>
       </form>;
     } else {
