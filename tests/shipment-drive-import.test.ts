@@ -8,6 +8,7 @@ import * as files from "../src/lib/documents/files.ts";
 import { insideFolder } from "../src/lib/google/shipment-folder.ts";
 import { isUuid } from "../src/lib/documents/rules.ts";
 import * as processingStatus from "../src/lib/documents/processing-status.ts";
+import * as workflow from "../src/lib/agent/shipment-workflow.ts";
 
 // Execute the real action with I/O replaced; file validation and Storage path rules stay real.
 const action = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
@@ -53,6 +54,7 @@ for (const { filename, fault } of cases) {
       },
     };
     const dependencies: Record<string, unknown> = {
+      "@/lib/agent/shipment-workflow": workflow,
       "node:crypto": { createHash, randomUUID }, "next/cache": { revalidatePath() {} },
       "next/navigation": { redirect: (url: string) => { throw new Error(url); } },
       "@/lib/auth/access": { requireUser: async () => ({ supabase }) },

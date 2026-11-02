@@ -1,5 +1,6 @@
 "use server";
 
+import { documentActionReturn } from "@/lib/agent/shipment-workflow";
 import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -58,7 +59,8 @@ async function operation(form: FormData, kind: "bind" | "scan" | "import" | "che
   }
   if (ok) console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), null));
   revalidatePath(`/shipments/${id}`);
-  redirect(`/shipments/${id}?tab=documents&${ok ? "success" : "error"}=${encodeURIComponent(message)}#drive-folder`);
+  revalidatePath(`/assistant/shipments/${id}`);
+  redirect(documentActionReturn(form, id, ok ? "success" : "error", message));
 }
 export async function bindShipmentDriveFolder(form: FormData) {
   await operation(form, "bind", async ({ id, db, drive, signal, report }) => {

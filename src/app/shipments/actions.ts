@@ -1,5 +1,6 @@
 "use server";
 
+import { createReturn } from "@/lib/agent/shipment-workflow";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
@@ -45,6 +46,7 @@ export async function createShipment(formData: FormData) {
   });
   if(error||!data) redirect(`/shipments?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось создать поставку."))}`);
   revalidatePath("/shipments"); revalidatePath("/");
+  if(formData.get("assistant_workflow")==="1") redirect(createReturn(formData,String(data)));
   redirect(`/shipments/${data}?success=${encodeURIComponent("Поставка создана. Этапы RVI добавлены автоматически.")}`);
 }
 
