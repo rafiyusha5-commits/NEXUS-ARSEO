@@ -3,8 +3,9 @@ import { isCustomsForm, parseCustomsForm } from "./customs.ts";
 import { parseCommodityInvoice } from "./commodity-evidence.ts";
 import { parsePackingEvidence } from "./packing-evidence.ts";
 import { parseSupplierLayout } from "./supplier-layout.ts";
+import { isYilmazTable, parseYilmaz, parseYilmazCertificates } from "./yilmaz.ts";
 
-export const EXTRACTION_VERSION = "rules-v7";
+export const EXTRACTION_VERSION = "rules-v8";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -96,6 +97,7 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
   if (hintedKind !== "other") return hintedKind;
+  if (isYilmazTable(rawText) && /PACKING\s+LIST/iu.test(rawText)) return "specification";
   if (isCustomsForm(rawText)) return "other";
   if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
   if (/despatch\s+note|dispatch\s+note|delivery\s+note/iu.test(rawText)) return "specification";
@@ -157,7 +159,7 @@ export type ExtractOptions = {
 
 export function extractionNeedsReview(data: Record<string, unknown>) {
   if (data.customs_record) return true;
-  return [data.commodity_invoice, data.packing_evidence].some(value => value && typeof value === "object" && "warnings" in value && Array.isArray(value.warnings) && value.warnings.length > 0);
+  return [data.commodity_invoice, data.packing_evidence, data.supplier_lots].some(value => value && typeof value === "object" && "warnings" in value && Array.isArray(value.warnings) && value.warnings.length > 0);
 }
 
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
@@ -170,6 +172,16 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   // otherwise mistake numbered box headings and exporter names for facts.
   const customs = parseCustomsForm(text);
   if (customs) return { data: { customs_record: customs }, evidence, conflicts: [] };
+  const yilmaz = parseYilmaz(text);
+  if (yilmaz) {
+    Object.assign(data, yilmaz.fields);
+    for (const [key,value] of Object.entries(yilmaz.fields)) evidence[key] = { label: SOURCE_FIELD_DEFINITIONS.find(f=>f.key===key)?.label??key, value:String(value), confidence:0.9 };
+    data.supplier_lots=yilmaz.lots;
+    if(yilmaz.invoice)data.commodity_invoice=yilmaz.invoice;
+    return {data,evidence,conflicts:[]};
+  }
+  const certificates=parseYilmazCertificates(text);
+  if(certificates)return {data:{supplier_lots:certificates},evidence,conflicts:[]};
   const supplier = parseSupplierLayout(text);
   if (supplier) {
     Object.assign(data, supplier.fields);
