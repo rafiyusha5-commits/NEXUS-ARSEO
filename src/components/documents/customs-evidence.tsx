@@ -2,6 +2,7 @@ import { compareCommodities, isCommodityLine, type CommodityInvoice, type Shipme
 import { evidenceOutcome } from "@/lib/document-check/evidence-outcome";
 import { comparePackingQuantities, comparePackingItems, type PackingEvidence } from "@/lib/document-extraction/packing-evidence";
 import type { mappedEvidence } from "@/lib/document-extraction/customs-matches";
+import { mappedCustomsSummary } from "@/lib/document-extraction/customs-totals";
 import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 
 export function CustomsEvidence({ value, invoices = [], shipment = [], current = false, reviewed = false, packing = [], readiness, mapped }: { value: unknown; invoices?: CommodityInvoice[]; shipment?: ShipmentCommodity[]; current?: boolean; reviewed?: boolean; packing?: PackingEvidence[]; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null; mapped?: ReturnType<typeof mappedEvidence> }) {
@@ -15,7 +16,9 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   const comparisonItems=mapped?.items ?? items;
   const linkedInvoices = mapped ? [mapped.invoice] : refs.length === 1 ? invoices.filter(invoice => invoice.number === refs[0]) : [];
   const comparisons = current ? compareCommodities(comparisonItems, currency, linkedInvoices, shipment) : [];
-  const validationWarnings = ("validationWarnings" in value && Array.isArray(value.validationWarnings) ? value.validationWarnings.filter((w): w is string => typeof w === "string") : warnings).filter(w=>!(mapped&&mapped.items.every(i=>!i.warnings.length)&&w==="Есть строки, требующие проверки по оригиналу."));
+  const sourceValidationWarnings = "validationWarnings" in value && Array.isArray(value.validationWarnings) ? value.validationWarnings.filter((w): w is string => typeof w === "string") : warnings;
+  const mappedSummary = mapped ? mappedCustomsSummary(fields, mapped.items, "expectedCount" in value && typeof value.expectedCount === "number" ? value.expectedCount : null, sourceValidationWarnings) : null;
+  const validationWarnings = mappedSummary?.warnings ?? sourceValidationWarnings;
   const extraInvoiceItems = linkedInvoices.length !== 1 || linkedInvoices[0].items.some(line => !comparisonItems.some(item => item.sku === line.sku));
   const incomplete = !("expectedCount" in value) || value.expectedCount !== items.length || extraInvoiceItems;
   const outcome = evidenceOutcome(comparisons, current, reviewed, [...validationWarnings, ...(incomplete ? ["Неполный состав строк"] : [])]);
@@ -25,8 +28,9 @@ export function CustomsEvidence({ value, invoices = [], shipment = [], current =
   return <div className="setup-notice" style={{ contain: "inline-size", minWidth: 0 }}>
     <h4>{"kind" in value && value.kind === "declaration" ? "Реквизиты таможенной декларации" : "kind" in value && value.kind === "value_declaration" ? "Декларация таможенной стоимости (ДТС)" : "kind" in value && value.kind === "transit" ? "Транзитная декларация" : "Расчёт таможенных начислений"}</h4>
     {"kind" in value && (value.kind === "value_declaration" || value.kind === "transit") && <p><strong>{!current ? "Версия или привязка устарела: требуется повторная сверка" : reviewed ? "Показанные реквизиты сверены с оригиналом" : "Показанные реквизиты ожидают ручной сверки"}</strong>. Это не подтверждение приёмки, оплаты или выпуска товара.</p>}
-    <dl>{fields.map((field, index) => <div key={index}><dt>{field.label}</dt><dd><strong>{field.value}</strong></dd></div>)}</dl>
-    {warnings.map((warning, index) => <p key={index}>{warning}</p>)}
+    {mappedSummary && <p>Итоги строк ниже проверены после явного сопоставления. Исходное чтение документа сохранено без изменений.</p>}
+    <dl>{(mappedSummary?.fields ?? fields).map((field, index) => <div key={index}><dt>{field.label}</dt><dd><strong>{field.value}</strong></dd></div>)}</dl>
+    {warnings.map((warning, index) => <p key={index}>{mappedSummary ? "Замечание исходного чтения: " : ""}{warning}</p>)}
     {"kind" in value && value.kind === "declaration" && <div className="evidence-outcomes" aria-label="Три независимых результата проверки">
         <section><h4>1. Проверка чтения</h4><p>{outcome.reading}.</p><p>Подтверждение чтения не означает совпадение с заказом или фактическую приёмку.</p></section>
         <section><h4>2. Согласованность данных</h4><p>{outcome.comparison}.</p>

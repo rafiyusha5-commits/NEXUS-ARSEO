@@ -1,5 +1,7 @@
 import { parseDeclarationItems, type CommodityLine } from "./commodity-evidence.ts";
 import { normalizeCustomsLabels } from "./customs-labels.ts";
+import { customsAmount, customsTotals } from "./customs-totals.ts";
+export { customsAmount } from "./customs-totals.ts";
 // Read-only document evidence. These fields never enter shipment confirmation or finance actions.
 export type CustomsRecord = {
   kind: "declaration" | "assessment" | "value_declaration" | "transit";
@@ -43,12 +45,6 @@ export function customsLayout(items: PdfTextItem[]) {
     }).join("\n");
 }
 
-export function customsAmount(value: string): number | null {
-  const v = value.trim().replace(/[ \u00a0]/g, "");
-  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2,3}$/.test(v)) return null;
-  const amount = Number(v.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(amount) && amount >= 0 ? amount : null;
-}
 const money = (value: number) => new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(value);
 function date(value: string) {
   const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -113,14 +109,9 @@ export function parseCustomsForm(raw: string): CustomsRecord | null {
     record.packingNumbers = [...new Set([...raw.matchAll(/^\d+\s*\|\s*\d+\s*\|?\s*04131\s*\|?\s*([^|\n]+)\|/gmu)].map(match => match[1].trim()))];
     record.validationWarnings = [...goods.warnings];
     record.warnings.push(...goods.warnings);
-    for (const [key, label, total] of [
-      ["amount", "Сумма цен товарных строк / графа 22", invoice ? customsAmount(invoice[2]) : null],
-      ["customsValue", "Сумма таможенных стоимостей / графа 12", value],
-    ] as const) {
-      const complete = goods.items.length > 0 && goods.items.length === goods.expectedCount && !goods.warnings.length && goods.items.every(item => item[key] !== null);
-      const sum = goods.items.reduce((acc, item) => acc + (item[key] ?? 0), 0);
-      if (!complete || total === null || Math.abs(sum - total) > 0.011) record.validationWarnings.push(`${label}: итог не подтверждён`);
-      put(label, complete && total !== null ? `${money(sum)} · ${Math.abs(sum - total) <= 0.011 ? "совпадает" : "РАСХОЖДЕНИЕ"}` : "Полнота сумм не подтверждена");
+    for (const total of customsTotals(goods.items, goods.expectedCount, goods.warnings, [invoice ? customsAmount(invoice[2]) : null, value])) {
+      if (!total.matched) record.validationWarnings.push(total.warning);
+      put(total.label, total.value);
     }
     record.warnings.push("Товарные строки — результат чтения, требующий сверки. Начисления по отдельным товарам здесь не рассчитываются.");
   } else {

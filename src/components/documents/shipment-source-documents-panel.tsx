@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { localizedName } from "@/lib/documents/labels";
 import { CustomsMatchForm } from "./customs-match-form";
 import { mappedEvidence, type CustomsMatch } from "@/lib/document-extraction/customs-matches";
 import { SourceTransportContext } from "./source-transport-context";
@@ -81,7 +82,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
   const current = (row: typeof rows[number]) => completeComparison && currentCommoditySource(row, one(row.document), shipmentId, vehicles.map(vehicle => vehicle.id));
   const invoiceSources = rows.filter(row => row.source_kind === "invoice" && confirmedCommoditySource(row, current(row)));
   const packingSources = rows.filter(row => row.source_kind === "specification" && confirmedCommoditySource(row, current(row)));
-  const matchProducts=(itemRows??[]).flatMap(item=>{const product=one(item.product);return product?.internal_sku ? [{id:item.product_id,sku:product.internal_sku,name:typeof product.name==="string"?product.name:JSON.stringify(product.name),transport:item.shipment_transport_id}]:[];});
+  const matchProducts=(itemRows??[]).flatMap(item=>{const product=one(item.product);return product?.internal_sku ? [{id:item.product_id,sku:product.internal_sku,name:typeof product.name==="string"?product.name:localizedName(product.name),transport:item.shipment_transport_id}]:[];});
   const productsFor=(transport:string|null)=>[...new Map(matchProducts.filter(p=>!transport||p.transport===transport).map(p=>[p.id,p])).values()];
   const matchFor=(row:typeof rows[number])=>{
     const match=matches.find(m=>m.extraction_id===row.id);
