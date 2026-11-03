@@ -40,7 +40,7 @@ declare e public.shipment_source_extractions%rowtype; i public.shipment_source_e
  doc_items jsonb; inv_items jsonb; pack_items jsonb; result_items jsonb:='[]'; n integer; a integer; b integer;
  seen integer[]:='{}'; inv_seen integer[]:='{}'; pack_seen integer[]:='{}'; products uuid[]:='{}'; count_items integer;
 begin
- if not private.has_permission('shipments.view') or not private.has_permission('documents.view') or not private.has_permission('products.view') then
+ if not private.has_permission('source_documents.review') or not private.has_permission('shipments.view') or not private.has_permission('documents.view') or not private.has_permission('products.view') then
   raise exception 'Недостаточно прав для сопоставления' using errcode='42501'; end if;
  select * into e from public.shipment_source_extractions where id=p_extraction;
  select * into i from public.shipment_source_extractions where id=p_invoice;

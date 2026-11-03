@@ -31,6 +31,28 @@ const beforeAudit=audit();
 const review=actor+`select public.review_mapped_shipment_customs('eb603000-0000-4000-8000-000000000001','${id}',(select extracted_data->'customs_record' from public.shipment_source_extractions where id='eb603000-0000-4000-8000-000000000001'),'Синтетическое подтверждение оригинала');`;
 const reviews=await Promise.all(Array.from({length:10},()=>call(review)));
 assert.ok(reviews.every(s=>s.code===0),JSON.stringify(reviews));assert.equal(audit(),beforeAudit+1,'Repeated review duplicated history');
+// Permission can be revoked while the RPC waits: check it again after the wait,
+// including for an otherwise idempotent replay of an old confirmation.
+const deniedHolder=start();let deniedPending;
+try {
+ deniedHolder.p.stdin.write(isolate("begin;select 1 from public.documents where id='eb501000-0000-4000-8000-000000000001' for update;select 'LOCK_HELD';\n"));
+ for(let n=0;n<100&&!deniedHolder.out().includes('LOCK_HELD');n++)await new Promise(r=>setTimeout(r,25));
+ assert.ok(deniedHolder.out().includes('LOCK_HELD'));
+ deniedPending=call(review);let waiting=false;
+ for(let n=0;n<100&&!waiting;n++){
+  waiting=run("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query like '%review_mapped_shipment_customs%')")==='t';
+  if(!waiting)await new Promise(r=>setTimeout(r,25));
+ }
+ assert.ok(waiting);
+ run("insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select 'eb000000-0000-4000-8000-000000000001',id,'deny','Concurrent review denial','eb000000-0000-4000-8000-000000000001' from public.permissions where code='source_documents.review';");
+ deniedHolder.p.stdin.end('commit;\n');assert.equal((await deniedHolder.done).code,0);
+ const result=await deniedPending;assert.notEqual(result.code,0,'Review permission revoked during wait must refuse');assert.match(result.out,/Недостаточно прав/);
+ assert.equal(audit(),beforeAudit+1);
+} finally {
+ if(deniedHolder.p.exitCode===null)deniedHolder.p.stdin.end('rollback;\n');
+ await deniedHolder.done;if(deniedPending)await deniedPending;
+ run("delete from public.user_permission_overrides where user_id='eb000000-0000-4000-8000-000000000001' and permission_id=(select id from public.permissions where code='source_documents.review');");
+}
 const holder=start();let pending;
 try {
  holder.p.stdin.write(isolate("begin;select 1 from public.documents where id='eb501000-0000-4000-8000-000000000001' for update;select 'LOCK_HELD';\n"));
@@ -48,4 +70,4 @@ try {
 assert.equal(audit(),beforeAudit+1,'Stale confirmation wrote history');
 assert.equal(run('select count(*) '+matching),'1');
 assert.equal(run('select count(*)=(select movements from tests.customs_match_race_fixture) from public.inventory_movements'),'t');
-console.log('Customs: 10 saves -> one mapping; 10 reviews -> one audit entry; changed invoice during lock wait -> refused; stock unchanged');
+console.log('Customs: 10 saves -> one mapping; 10 reviews -> one audit entry; review permission revoked and invoice changed during real lock waits -> refused; stock unchanged');
