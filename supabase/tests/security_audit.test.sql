@@ -81,7 +81,7 @@ select 'authenticated', unnest(array[
   'public.set_document_external_access', 'public.configure_external_client', 'public.set_external_client_access',
   'public.create_shipment_milestone', 'public.complete_shipment_milestone', 'public.cancel_shipment_milestone', 'public.my_shipment_calendar',
   'public.register_generated_document', 'public.register_generated_document_package',
-  'public.upsert_shipment_source_extraction', 'public.confirm_shipment_source_extraction', 'public.review_shipment_source_extraction', 'public.review_shipment_customs_evidence', 'public.revise_shipment_customs_evidence',
+  'public.upsert_shipment_source_extraction', 'public.confirm_shipment_source_extraction', 'public.review_shipment_source_extraction', 'public.review_shipment_customs_evidence', 'public.save_shipment_customs_match', 'public.review_mapped_shipment_customs', 'public.revise_shipment_customs_evidence',
   'public.begin_shipment_source_ocr', 'public.finish_shipment_source_ocr_fenced',
   'public.create_inventory_operation_document', 'public.add_inventory_operation_line', 'public.remove_inventory_operation_line',
   'public.post_inventory_operation_document', 'public.cancel_inventory_operation_document',

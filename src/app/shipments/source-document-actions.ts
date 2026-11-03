@@ -113,7 +113,11 @@ export async function confirmShipmentCustomsAction(formData: FormData) {
   try { record = JSON.parse(value(formData, "expected_record")); }
   catch { redirect(back(formData, "error", "Данные страницы устарели. Обновите страницу")); }
   const { supabase } = await requireUser();
-  const { error } = await supabase.rpc("review_shipment_customs_evidence", {
+  const mappingId=value(formData,"mapping_id");
+  if(mappingId&&!UUID.test(mappingId))redirect(back(formData,"error","Некорректное сопоставление"));
+  const { error } = mappingId ? await supabase.rpc("review_mapped_shipment_customs", {
+    p_extraction_id:extractionId,p_mapping_id:mappingId,p_expected_record:record,p_review_note:note,
+  }) : await supabase.rpc("review_shipment_customs_evidence", {
     p_shipment_id: shipmentId, p_extraction_id: extractionId, p_document_version_id: versionId,
     p_expected_record: record, p_review_note: note,
   });
@@ -121,6 +125,26 @@ export async function confirmShipmentCustomsAction(formData: FormData) {
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
   redirect(back(formData, "success", "Сверка таможенного документа с оригиналом подтверждена. Сохранён результат проверки; склад и финансы не изменены"));
+}
+
+export async function saveCustomsMatchAction(formData: FormData) {
+  const shipmentId=value(formData,"shipment_id"), extraction=value(formData,"extraction_id"), invoice=value(formData,"invoice_id"), packing=value(formData,"packing_id"), expected=value(formData,"expected_id");
+  const count=Number(value(formData,"line_count")), reason=value(formData,"reason");
+  if(![shipmentId,extraction,invoice,packing].every(id=>UUID.test(id)) || expected&&!UUID.test(expected) || !Number.isInteger(count) || count<1 || count>2000)
+    redirect("/shipments?error=Некорректное сопоставление");
+  if(value(formData,"checked")!=="on" || reason.length<10 || reason.length>2000)redirect(back(formData,"error","Подтвердите сверку и укажите основание (10–2000 символов)"));
+  let snapshot:unknown;
+  try {snapshot=JSON.parse(value(formData,"snapshot"));}catch {redirect(back(formData,"error","Обновите страницу и выберите документы"));}
+  const {supabase}=await requireUser();
+  const lines=Array.from({length:count},(_,n)=>({line:n+1,invoice_line:Number(value(formData,`invoice_${n+1}`)),packing_line:Number(value(formData,`packing_${n+1}`)),product_id:value(formData,`product_${n+1}`)}));
+  if(lines.some(l=>!UUID.test(l.product_id)||![l.invoice_line,l.packing_line].every(n=>Number.isInteger(n)&&n>=1&&n<=count)))redirect(back(formData,"error","Выберите товар и обе строки для каждой позиции ДТ"));
+  const {data:products,error:productError}=await supabase.from("products").select("id,internal_sku").in("id",lines.map(l=>l.product_id));
+  if(productError||lines.some(l=>!products?.some(p=>p.id===l.product_id)))redirect(back(formData,"error","Товары недоступны. Обновите страницу"));
+  const {error}=await supabase.rpc("save_shipment_customs_match",{p_extraction_id:extraction,p_invoice_id:invoice,p_packing_id:packing,p_snapshot:snapshot,
+    p_lines:lines.map(l=>({...l,sku:products!.find(p=>p.id===l.product_id)!.internal_sku})),p_reason:reason,p_expected_id:expected||null});
+  if(error)redirect(back(formData,"error",ruleViolationMessage(error,"Не удалось сохранить сопоставление")));
+  revalidatePath(`/shipments/${shipmentId}`);revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData,"success","Сопоставление сохранено с историей. Теперь проверьте итог и отдельно подтвердите чтение ДТ"));
 }
 
 // Binds an unconfirmed document or OCR proposal to one vehicle (or back to the whole shipment). Nothing is guessed.

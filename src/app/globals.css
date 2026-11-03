@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+.customs-match { min-width: 0; }
+.customs-match fieldset { min-width: 0; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d4d4d4); border-radius: 12px; }
+.customs-match legend { max-width: 100%; overflow-wrap: anywhere; }
+.customs-match select, .customs-match textarea { max-width: 100%; min-width: 0; }
+
 .source-transport-context { min-width: 0; overflow-wrap: anywhere; }
 .source-transport-context p, .source-transport-context form, .source-transport-context details { margin-top: 12px; }
 .source-transport-context form { display: grid; gap: 12px; }
