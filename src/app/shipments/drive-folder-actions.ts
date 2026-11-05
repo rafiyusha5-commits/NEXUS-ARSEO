@@ -1,5 +1,6 @@
 "use server";
 
+import { documentActionReturn } from "@/lib/agent/shipment-workflow";
 import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -7,7 +8,8 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { isUuid } from "@/lib/documents/rules";
 import { buildDocumentStoragePath, checkDocumentFile, matchesFileSignature, normalizeFileName, DOCUMENT_BUCKET } from "@/lib/documents/files";
-import { shipmentDrive, SHIPMENT_DRIVE_ROOT } from "@/lib/google/drive-server";
+import { shipmentDrive } from "@/lib/google/drive-server";
+import { isShipmentDriveRoot } from "@/lib/google/shipment-drive";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { folderId, FOLDER_MIME, insideFolder, scanFolder } from "@/lib/google/shipment-folder";
 import { processingErrorCode, processingErrors, processingDiagnostic, type ProcessingStage } from "@/lib/documents/processing-status";
@@ -58,13 +60,14 @@ async function operation(form: FormData, kind: "bind" | "scan" | "import" | "che
   }
   if (ok) console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), null));
   revalidatePath(`/shipments/${id}`);
-  redirect(`/shipments/${id}?tab=documents&${ok ? "success" : "error"}=${encodeURIComponent(message)}#drive-folder`);
+  revalidatePath(`/assistant/shipments/${id}`);
+  redirect(documentActionReturn(form, id, ok ? "success" : "error", message));
 }
 export async function bindShipmentDriveFolder(form: FormData) {
   await operation(form, "bind", async ({ id, db, drive, signal, report }) => {
     await report("reading");
     const folder = folderId(text(form, "folder"));
-    if (folder === SHIPMENT_DRIVE_ROOT) throw new Error("Выберите папку отдельной поставки");
+    if (isShipmentDriveRoot(folder)) throw new Error("Выберите папку отдельной поставки");
     const file = await drive.scopedReference(folder, signal);
     if (file.mimeType !== FOLDER_MIME) throw new Error("Выберите папку");
     await report("registering");

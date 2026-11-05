@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { folderHint } from "@/lib/agent/shipment-workflow";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { createShipment } from "./actions";
@@ -8,7 +9,7 @@ const statusLabels:Record<string,string>={planning:"Планирование",in
 function localizedName(value:unknown){if(!value||typeof value!=="object")return "—";const name=value as Record<string,unknown>;return String(name.ru??name.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 
-export default async function ShipmentsPage({searchParams}:{searchParams:Promise<{error?:string;success?:string;status?:string}>}){
+export default async function ShipmentsPage({searchParams}:{searchParams:Promise<{error?:string;success?:string;status?:string;assistant?:string;folder?:string}>}){
   const {profile,roles,supabase}=await requireUser(); const params=await searchParams;
   let query=supabase.from("shipments").select("id,shipment_number,project_code,type,status,planned_arrival_date,created_at,supplier:counterparties!shipments_supplier_id_fkey(short_name,legal_name),route:routes(name),warehouse:warehouses(name),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").order("created_at",{ascending:false});
   if(params.status)query=query.eq("status",params.status);
@@ -27,8 +28,9 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
     <Link className="ghost button-link" href="/shipments/prepare">Подготовить историческую поставку</Link>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
     {error&&<div className="setup-notice">Примените миграцию <strong>202609270003_phase2_shipments.sql</strong> в Supabase.</div>}
-    <details className="panel admin-section create-disclosure"><summary><span><small>Новая операция</small><strong>Оформить поступление или поставку</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">
+    <details id="create-shipment" open={params.assistant==="1"} className="panel admin-section create-disclosure"><summary><span><small>Новая операция</small><strong>Оформить поступление или поставку</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body">
       <form action={createShipment} className="shipment-form">
+        {params.assistant==="1"&&<><input type="hidden" name="assistant_workflow" value="1"/><input type="hidden" name="folder" value={folderHint(params.folder)??""}/><p className="doc-form-full">Сначала проверьте список существующих поставок. Создание не загружает файлы и не проводит приёмку. После сохранения откроется подготовка документов.</p></>}
         <label>Код проекта<input name="project_code" placeholder="RVI-01"/></label>
         <label>Тип<select name="type" defaultValue="import"><option value="import">Импорт</option><option value="export">Экспорт</option><option value="domestic_transfer">Перемещение по Казахстану</option></select></label>
         <label>Поставщик<select name="supplier_id" defaultValue=""><option value="">Выберите</option>{suppliers.map((party)=><option key={party.id} value={party.id}>{party.short_name||party.legal_name}</option>)}</select></label>

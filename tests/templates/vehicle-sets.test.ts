@@ -16,12 +16,12 @@ const product = (id: string, tag: string): Row => ({ id, internal_sku: `SKU-${ta
 const packaging = (id: string): Row[] => [
   { product_id: id, uom: "piece", units_per_parent: 1, net_weight_kg: 0.2, gross_weight_kg: 0.25 },
   { product_id: id, uom: "box", units_per_parent: 10, net_weight_kg: 2, gross_weight_kg: 2.6 },
-  { product_id: id, uom: "pallet", units_per_parent: 500, net_weight_kg: 100, gross_weight_kg: 140 },
+  { product_id: id, uom: "pallet", units_per_parent: 250, net_weight_kg: 100, gross_weight_kg: 140 },
 ];
 const item = (id: string, productId: string, vehicle: string | null, quantity: number): Row => ({ id, product_id: productId, shipment_transport_id: vehicle, uom: "piece", ordered_quantity: quantity });
 
 const transport = (id: string, sequence: number, tag: string): Row => ({
-  id, sequence_no: sequence, status: "planned",
+  id, sequence_no: sequence, status: "planned", sale_pallet_tare_kg: 25,
   vehicle_plate: `PLATE-${tag}`, vehicle_make: `MAKE-${tag}`, trailer_plate: `TRL-${tag}`, trailer_make: `TRLMAKE-${tag}`,
   driver_name: `Driver ${tag}`, driver_phone: `+7-${tag}-PHONE`, driver_document: `DOC-${tag}`, carrier_name: `Carrier ${tag}`, temperature_setpoint: `TEMP-${tag}`,
 });

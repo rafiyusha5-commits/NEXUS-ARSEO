@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isUuid } from "@/lib/documents/rules";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AssistantChat } from "@/components/assistant/assistant-chat";
 import { TraceTable, type TraceRun } from "@/components/assistant/trace-table";
@@ -10,10 +11,14 @@ export const dynamic = "force-dynamic";
 
 const RUN_COLUMNS = "id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,cost_status,created_at,finished_at";
 
-export default async function AssistantPage() {
+export default async function AssistantPage({ searchParams }: { searchParams: Promise<{ shipment?: string }> }) {
   const { profile, roles, supabase, user } = await requireUser();
   const can = await loadPermissions(supabase, ["agent.use", "agent.view_traces", "documents.drive.view"] as const);
   const config = loadAgentConfig();
+  const selected = (await searchParams).shipment;
+  const selectedShipment = selected && isUuid(selected) && can["agent.use"]
+    ? await supabase.from("shipments").select("shipment_number").eq("id", selected).maybeSingle() : null;
+  const initialQuestion = selectedShipment?.data ? `Покажи автомобили, документы и оставшиеся замечания поставки ${selectedShipment.data.shipment_number}. Ничего пока не проводи.` : "";
 
   const [usageResult, runsResult] = can["agent.use"]
     ? await Promise.all([
@@ -40,8 +45,9 @@ export default async function AssistantPage() {
           <div className="setup-notice">Месячный бюджет ассистента не настроен администратором, вопросы не принимаются.</div>
         )}
 
+        {can["agent.use"] && process.env.AGENT_OPERATIONS_ENABLED === "true" && <Link className="primary button-link" href="/assistant/shipments">Подготовить поставку из папки Google Drive</Link>}
         {can["agent.use"] && !migrationMissing && config.enabled && usage?.budget_configured && (
-          <AssistantChat initialUsed={Number(usage.requests_used ?? 0)} limit={Number(usage.request_limit ?? 0)} operationsEnabled={process.env.AGENT_OPERATIONS_ENABLED === "true"} />
+          <AssistantChat initialQuestion={initialQuestion} initialUsed={Number(usage.requests_used ?? 0)} limit={Number(usage.request_limit ?? 0)} operationsEnabled={process.env.AGENT_OPERATIONS_ENABLED === "true"} />
         )}
 
         {can["agent.use"] && !migrationMissing && (

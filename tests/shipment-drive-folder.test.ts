@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { folderId, insideFolder, scanFolder, sourceState } from "../src/lib/google/shipment-folder.ts";
 import { DriveReadonly, DRIVE_ROOT } from "../src/lib/google/drive-readonly.ts";
+import { setTimeout as delay } from "node:timers/promises";
 
 const folder = "Shipment_folder_123";
 const file = { id: "Shipment_file_123", name: "invoice.pdf", path: "invoice.pdf", mimeType: "application/pdf", modifiedTime: "2026-10-19T00:00:00Z", version: "42", ancestors: [folder, DRIVE_ROOT] };
@@ -33,6 +34,56 @@ test("changed or moved files cannot be imported against old preview", () => {
   assert.throws(() => insideFolder({ ...file, ancestors: [DRIVE_ROOT] }, folder, "42"));
   assert.match(sourceState({ present: true, revision: "43", imported_revision: "42" }), /не заменён/);
   assert.match(sourceState({ present: false, revision: "42", imported_revision: "42" }), /сохранён/);
+});
+
+test("nested pages run with bounded concurrency and retain pagination and final validation", async () => {
+  let active = 0, peak = 0, rootChecks = 0;
+  const children = Array.from({ length: 7 }, (_, i) => ({ ...file, id: `Nested_folder_${i}`, mimeType: "application/vnd.google-apps.folder", ancestors: [folder, DRIVE_ROOT] }));
+  const pages: string[] = [];
+  const result = await scanFolder({
+    scopedReference: async () => { rootChecks++; return { id: folder, name: "Shipment", path: "", mimeType: "application/vnd.google-apps.folder", ancestors: [DRIVE_ROOT] }; },
+    catalogPage: async (input, signal) => {
+      active++; peak = Math.max(peak, active); pages.push(`${input.id}:${input.page}`);
+      try {
+        await delay(3, undefined, { signal });
+        if (input.id === folder) return { files: children, nextPage: "" };
+        return { files: [{ ...file, id: `${input.id}_file_${input.page || 'first'}` }], nextPage: input.page ? "" : "second" };
+      } finally { active--; }
+    },
+  }, folder, AbortSignal.timeout(5000));
+  assert.equal(peak, 3); assert.equal(active, 0); assert.equal(rootChecks, 2);
+  assert.equal(result.length, 14); assert.equal(new Set(result.map(row => row.file_id)).size, 14);
+  assert.equal(pages.length, 15);
+});
+
+test("a failed parallel page cancels siblings and never returns a partial snapshot", async () => {
+  let cancelled = 0, checks = 0;
+  const children = Array.from({ length: 3 }, (_, i) => ({ ...file, id: `Nested_folder_${i}`, mimeType: "application/vnd.google-apps.folder", ancestors: [folder, DRIVE_ROOT] }));
+  await assert.rejects(scanFolder({
+    scopedReference: async () => { checks++; return { id: folder, name: "Shipment", path: "", mimeType: "application/vnd.google-apps.folder", ancestors: [DRIVE_ROOT] }; },
+    catalogPage: async (input, signal) => {
+      if (input.id === folder) return { files: [file, ...children], nextPage: "" };
+      if (input.id === children[0].id) { await delay(5); throw Error("page unavailable"); }
+      try { await delay(5000, undefined, { signal }); }
+      catch (error) { cancelled++; throw error; }
+      return { files: [], nextPage: "" };
+    },
+  }, folder, AbortSignal.timeout(5000)), /page unavailable/);
+  await delay(0);
+  assert.equal(cancelled, 2); assert.equal(checks, 1);
+});
+
+test("the page bound and final source check still reject an otherwise readable scan", async () => {
+  let calls = 0;
+  const root = { id: folder, name: "Shipment", path: "", mimeType: "application/vnd.google-apps.folder", ancestors: [DRIVE_ROOT] };
+  await assert.rejects(scanFolder({ scopedReference: async () => root,
+    catalogPage: async () => { calls++; return { files: [], nextPage: "next" }; },
+  }, folder, AbortSignal.timeout(5000)), /Папка слишком велика/);
+  assert.equal(calls, 50);
+  let checks = 0;
+  await assert.rejects(scanFolder({ scopedReference: async () => { if (++checks === 2) throw Error("root moved"); return root; },
+    catalogPage: async () => ({ files: [file], nextPage: "" }),
+  }, folder, AbortSignal.timeout(5000)), /root moved/);
 });
 test("scoped reader is GET only, refuses another tree and shortcuts; archive root unchanged", async () => {
   const calls: string[] = [];

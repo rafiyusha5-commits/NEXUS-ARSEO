@@ -1,12 +1,31 @@
 "use server";
 
+import { createReturn } from "@/lib/agent/shipment-workflow";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/access";
 import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
+import { readReceivingLines } from "@/lib/shipments/receiving-lines";
 import { readDateChanges } from "@/lib/shipments/date-corrections";
+import { palletWeightColumn, validPalletWeight } from "@/lib/shipments/pallet-weight";
+
+export async function updateTransportPalletWeight(formData: FormData) {
+  const shipmentId = uuid(formData, "shipment_id");
+  const transportId = uuid(formData, "transport_id");
+  const operation = text(formData, "cargo_operation");
+  const weight = validPalletWeight(text(formData, "pallet_tare_kg"));
+  const back = (kind: string, message: string) => `/shipments/${shipmentId}?tab=delivery&${kind}=${encodeURIComponent(message)}#transports`;
+  if ((operation !== "purchase" && operation !== "sale") || weight === null) redirect(back("error", "Выберите операцию и вес паллеты от 20 до 25 кг"));
+  const { supabase } = await requireUser();
+  const { data: transport } = await supabase.from("shipment_transports").select("id").eq("id", transportId).eq("shipment_id", shipmentId).maybeSingle();
+  if (!transport) redirect(back("error", "Автомобиль не найден в поставке"));
+  const { error } = await supabase.rpc("update_shipment_transport", { p_transport_id: transportId, p_changes: { [palletWeightColumn(operation)]: String(weight) } });
+  if (error) redirect(back("error", ruleViolationMessage(error, "Не удалось сохранить вес паллеты")));
+  revalidatePath(`/shipments/${shipmentId}`);
+  redirect(back("success", "Вес паллеты сохранён для выбранной операции. Документы и приёмка не изменены"));
+}
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(formData: FormData, name: string) { const value=formData.get(name); return typeof value==="string"?value.trim():""; }
@@ -27,6 +46,7 @@ export async function createShipment(formData: FormData) {
   });
   if(error||!data) redirect(`/shipments?error=${encodeURIComponent(publicErrorMessage(error,"Не удалось создать поставку."))}`);
   revalidatePath("/shipments"); revalidatePath("/");
+  if(formData.get("assistant_workflow")==="1") redirect(createReturn(formData,String(data)));
   redirect(`/shipments/${data}?success=${encodeURIComponent("Поставка создана. Этапы RVI добавлены автоматически.")}`);
 }
 
@@ -143,34 +163,11 @@ export async function receiveShipmentTransport(formData:FormData){
   const {profile,supabase}=await requireUser();
   const shipmentId=uuid(formData,"shipment_id");
   const transportId=uuid(formData,"transport_id");
-  const itemIds=formData.getAll("item_id").map((value)=>typeof value==="string"?value.trim():"");
-  const accepted=formData.getAll("accepted_quantity").map((value)=>typeof value==="string"?value.trim():"");
-  const damaged=formData.getAll("damaged_quantity").map((value)=>typeof value==="string"?value.trim():"");
-  const batches=formData.getAll("batch_number").map((value)=>typeof value==="string"?value.trim():"");
-  const manufactured=formData.getAll("manufacture_date").map((value)=>typeof value==="string"?value.trim():"");
-  const expires=formData.getAll("expiry_date").map((value)=>typeof value==="string"?value.trim():"");
-  const reasons=formData.getAll("discrepancy_reason").map((value)=>typeof value==="string"?value.trim():"");
-  const lengths=[itemIds.length,accepted.length,damaged.length,batches.length,manufactured.length,expires.length,reasons.length];
-  if(!itemIds.length||lengths.some((length)=>length!==itemIds.length)){
-    redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent("Позиции приёмки переданы не полностью")}`);
-  }
-  const lines=itemIds.map((itemId,index)=>{
-    if(!uuidPattern.test(itemId))throw new Error("Некорректная позиция приёмки");
-    const acceptedQuantity=Number(accepted[index]);
-    const damagedQuantity=damaged[index]?Number(damaged[index]):0;
-    if(!Number.isFinite(acceptedQuantity)||acceptedQuantity<0||!Number.isFinite(damagedQuantity)||damagedQuantity<0){
-      throw new Error("Количество при приёмке не может быть отрицательным");
-    }
-    return {
-      item_id:itemId,
-      accepted_quantity:acceptedQuantity,
-      damaged_quantity:damagedQuantity,
-      batch_number:batches[index]||null,
-      manufacture_date:manufactured[index]||null,
-      expiry_date:expires[index]||null,
-      discrepancy_reason:reasons[index]||null,
-    };
-  });
+  let lines: ReturnType<typeof readReceivingLines>;
+  try { lines=readReceivingLines(formData); }
+  catch (error) { redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(error instanceof Error ? error.message : "Проверьте партии приёмки")}`); }
+  const {data:transport}=await supabase.from("shipment_transports").select("id").eq("id",transportId).eq("shipment_id",shipmentId).maybeSingle();
+  if(!transport) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Автомобиль не найден в поставке")}`);
   const locationId=uuid(formData,"location_id",false);
   const performedByName=text(formData,"performed_by_name")||profile.full_name;
   const {error}=await supabase.rpc("receive_shipment_transport",{
@@ -181,7 +178,7 @@ export async function receiveShipmentTransport(formData:FormData){
     p_notes:text(formData,"notes")||null,
   });
   if(error){
-    redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(publicErrorMessage(error,"Не удалось провести приёмку автомобиля."))}`);
+    redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось провести приёмку автомобиля."))}`);
   }
   revalidatePath(`/shipments/${shipmentId}`);
   revalidatePath(`/shipments/${shipmentId}/receiving`);

@@ -31,6 +31,11 @@ export function isPackingEvidence(value: unknown): value is PackingEvidence {
 export function comparePackingQuantities(items: CommodityLine[], references: string[], sources: PackingEvidence[]) {
   const refs = [...new Set(references.map(packingNumber))];
   const candidates = refs.length === 1 ? sources.filter(p => p.number && packingNumber(p.number) === refs[0]) : [];
+  return comparePackingItems(items,candidates);
+}
+
+/** Sources have already been explicitly linked and their current versions checked. */
+export function comparePackingItems(items: CommodityLine[], candidates: PackingEvidence[]) {
   if (!items.length || !candidates.length || candidates.some(p => p.warnings.length || !p.items.length || p.total === null || p.items.reduce((n, r) => n + r.quantity, 0) !== p.total))
     return { matched: false, message: "Упаковочный лист: недостаточно данных, проверьте чтение и ссылку из ДТ", differences: [] as string[] };
   const aggregate = (rows: { sku: string | null; quantity: number | null; unit: string | null }[]) => {

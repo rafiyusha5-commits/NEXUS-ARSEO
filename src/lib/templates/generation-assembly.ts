@@ -36,6 +36,7 @@ export function assembleGenerationData(input: AssemblyInput) {
   const { shipment } = input;
   const normalizedItems = selectedItems.map(item => ({
     ...item,
+    shipment_transport_id: item.shipment_transport_id ?? selectedTransport?.id ?? null,
     unit_price: input.includePrices ? input.priceByItem.get(String(item.id)) ?? null : null,
     currency_code: one(item.currency as unknown as Array<{ code: string }>)?.code,
   }));

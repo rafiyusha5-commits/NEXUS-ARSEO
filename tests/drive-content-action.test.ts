@@ -8,6 +8,8 @@ import * as files from "../src/lib/documents/files.ts";
 import { insideFolder } from "../src/lib/google/shipment-folder.ts";
 import { isUuid } from "../src/lib/documents/rules.ts";
 import * as processingStatus from "../src/lib/documents/processing-status.ts";
+import * as workflow from "../src/lib/agent/shipment-workflow.ts";
+import { isShipmentDriveRoot } from "../src/lib/google/shipment-drive.ts";
 const code = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -39,6 +41,7 @@ for (const mode of ["ok", "moved", "changed", "denied", "database-refused", "for
         return mode === "database-refused" ? { error: { message: "private SQL must not leak" } } : { data: document };
       } };
     const deps: Record<string, unknown> = {
+      "@/lib/agent/shipment-workflow": workflow,
       "node:crypto": { createHash, randomUUID }, "next/cache": { revalidatePath() {} },
       "next/navigation": { redirect: (url: string) => { throw Error(url); } },
       "@/lib/auth/access": { requireUser: async () => ({ supabase }) },
@@ -47,6 +50,7 @@ for (const mode of ["ok", "moved", "changed", "denied", "database-refused", "for
       "@/lib/documents/processing-status": processingStatus,
       "@/lib/google/shipment-gateway": { shipmentDriveGateway: async () => db },
       "@/lib/google/shipment-folder": { insideFolder },
+      "@/lib/google/shipment-drive": { isShipmentDriveRoot },
       "@/lib/google/drive-server": { shipmentDrive: () => ({
         scopedReference: async () => { reads++; return { ancestors: reads > 1 && mode === "moved" ? [] : [folder], version: reads > 1 && mode === "changed" ? "4" : "3" }; },
         download: async () => { downloads++; return { blob: new Blob([bytes]), filename: "invoice.pdf" }; },

@@ -1,3 +1,5 @@
+import { fullCargoGross, palletWeightColumn, validPalletWeight, type CargoOperation } from "./pallet-weight.ts";
+
 export type ShipmentLoadLine = {
   itemId: string;
   productId: string;
@@ -9,6 +11,8 @@ export type ShipmentLoadLine = {
   pallets: number | null;
   netWeightKg: number | null;
   grossWeightKg: number | null;
+  boxedGrossWeightKg: number | null;
+  grossWithPalletsKg: number | null;
   warnings: string[];
 };
 
@@ -19,13 +23,15 @@ export type ShipmentLoadSummary = {
   pallets: number | null;
   netWeightKg: number | null;
   grossWeightKg: number | null;
+  boxedGrossWeightKg: number | null;
+  grossWithPalletsKg: number | null;
   warnings: string[];
 };
 
 export function sumShipmentLoadLines(lines: ShipmentLoadLine[]) {
-  const total = (key: "pieces" | "boxes" | "pallets" | "netWeightKg" | "grossWeightKg") => {
+  const total = (key: "pieces" | "boxes" | "pallets" | "netWeightKg" | "grossWeightKg" | "boxedGrossWeightKg" | "grossWithPalletsKg") => {
     const known = lines.map((line) => line[key]).filter((value): value is number => value !== null);
-    return known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+    return known.length && known.length === lines.length ? known.reduce((sum, value) => sum + value, 0) : null;
   };
   return {
     pieces: total("pieces"),
@@ -33,6 +39,8 @@ export function sumShipmentLoadLines(lines: ShipmentLoadLine[]) {
     pallets: total("pallets"),
     netWeightKg: total("netWeightKg"),
     grossWeightKg: total("grossWeightKg"),
+    boxedGrossWeightKg: total("boxedGrossWeightKg"),
+    grossWithPalletsKg: total("grossWithPalletsKg"),
   };
 }
 
@@ -48,6 +56,7 @@ const quantityFor = (item: Record<string, unknown>) =>
 export function buildShipmentLoadSummary(
   items: Array<Record<string, unknown>>,
   packaging: Array<Record<string, unknown>>,
+  context?: { operation: CargoOperation; transports: Array<Record<string, unknown>> },
 ): ShipmentLoadSummary {
   const byProduct = new Map<string, Map<string, Record<string, unknown>>>();
   for (const pack of packaging) {
@@ -81,6 +90,10 @@ export function buildShipmentLoadSummary(
     const pieceNet = numeric(piece?.net_weight_kg);
     const boxGross = numeric(box?.gross_weight_kg);
     const boxNet = numeric(box?.net_weight_kg);
+    const boxedGrossWeightKg = boxes !== null && boxGross !== null && boxGross > 0 ? boxes * boxGross : null;
+    const transport = context?.transports.find(t => t.id === item.shipment_transport_id);
+    const tare = context ? validPalletWeight(transport?.[palletWeightColumn(context.operation)]) : null;
+    const grossWithPalletsKg = fullCargoGross(boxedGrossWeightKg, pallets, tare);
     const grossWeightKg = directGross !== null && directGross > 0
       ? quantity * directGross
       : boxGross !== null && boxGross > 0 && boxes !== null
@@ -98,6 +111,9 @@ export function buildShipmentLoadSummary(
     if (pallets === null) warnings.push("Не задано количество штук на паллете");
     if (netWeightKg === null) warnings.push("Не хватает данных для веса нетто");
     if (grossWeightKg === null) warnings.push("Не хватает данных для веса брутто");
+    if (context && boxedGrossWeightKg === null) warnings.push("Не задан вес брутто короба");
+    if (context && tare === null) warnings.push("Укажите вес паллеты для выбранной операции у автомобиля (20–25 кг)");
+    if (context && pallets !== null && !Number.isInteger(pallets)) warnings.push("Расчёт даёт неполные паллеты: полное брутто требует сверки фактической упаковки");
     if (!item.shipment_transport_id) warnings.push("Товар не распределён по автомобилю");
 
     return {
@@ -111,6 +127,8 @@ export function buildShipmentLoadSummary(
       pallets,
       netWeightKg,
       grossWeightKg,
+      boxedGrossWeightKg,
+      grossWithPalletsKg,
       warnings,
     };
   });

@@ -4,6 +4,8 @@ import ExcelJS from "exceljs";
 import { NeedsOcrError } from "@/lib/ocr/types";
 import { customsLayout, isCustomsForm, type PdfTextItem } from "./customs";
 import { INVOICE_LAYOUT_MARKER, isBilingualInvoice } from "./commodity-evidence";
+import { SUPPLIER_LAYOUT_MARKER, isSupplierLayout } from "./supplier-layout";
+import { isYilmazTable, isYilmazCertificate, yilmazPage, YILMAZ_MARKER } from "./yilmaz";
 
 // A PDF whose text layer holds fewer visible characters than this is treated as a scan.
 const MIN_TEXT_LAYER_CHARS = 40;
@@ -18,9 +20,18 @@ export async function extractDocumentText(bytes: Uint8Array, mimeType: string) {
     const result = await parse(Buffer.from(bytes) as never);
     const text = result.text?.trim() ?? "";
     if (text.replace(/\s/g, "").length < MIN_TEXT_LAYER_CHARS) throw new NeedsOcrError("scan_pdf");
-    if (isCustomsForm(text) || isBilingualInvoice(text)) {
+    if (isYilmazTable(text)) {
+      const pages: ReturnType<typeof yilmazPage>[] = [];
+      await parse(Buffer.from(bytes), { pagerender: async page => { pages.push(yilmazPage((await page.getTextContent()).items)); return ""; } });
+      return text + YILMAZ_MARKER + JSON.stringify(pages);
+    }
+    if (isYilmazCertificate(text)) {
       const layout = await parse(Buffer.from(bytes), { pagerender: async page => customsLayout((await page.getTextContent()).items) + "\n\f\n" });
-      return isCustomsForm(text) ? layout.text?.trim() || text : text + INVOICE_LAYOUT_MARKER + (layout.text?.trim() ?? "");
+      return layout.text?.trim() || text;
+    }
+    if (isCustomsForm(text) || isBilingualInvoice(text) || isSupplierLayout(text)) {
+      const layout = await parse(Buffer.from(bytes), { pagerender: async page => customsLayout((await page.getTextContent()).items) + "\n\f\n" });
+      return isCustomsForm(text) ? layout.text?.trim() || text : text + (isSupplierLayout(text) ? SUPPLIER_LAYOUT_MARKER : INVOICE_LAYOUT_MARKER) + (layout.text?.trim() ?? "");
     }
     return text;
   }

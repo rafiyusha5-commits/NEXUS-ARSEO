@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+.customs-match { min-width: 0; }
+.customs-match fieldset { min-width: 0; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d4d4d4); border-radius: 12px; }
+.customs-match legend { max-width: 100%; overflow-wrap: anywhere; }
+.customs-match select, .customs-match textarea { max-width: 100%; min-width: 0; }
+
 .source-transport-context { min-width: 0; overflow-wrap: anywhere; }
 .source-transport-context p, .source-transport-context form, .source-transport-context details { margin-top: 12px; }
 .source-transport-context form { display: grid; gap: 12px; }
@@ -306,3 +311,10 @@ input,select,textarea{border-radius:var(--radius-control)}
 .quantity-timeline summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
 .quantity-timeline li { padding: 8px 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .quantity-lineage-grid { grid-template-columns: 1fr; } .quantity-lineage-item { padding: 18px 0; } }
+
+/* Guided preparation reuses native document forms. */
+.workflow-steps{display:flex;flex-wrap:wrap;gap:10px;padding:16px;border-radius:16px;background:var(--surface,#fff)}
+.workflow-steps a{padding:10px 14px;border:1px solid currentColor;border-radius:12px;text-decoration:none}
+.workflow-steps [aria-current="step"]{background:#161616;color:#fff}
+.workflow-choice-list{display:grid;gap:12px;padding-inline-start:22px;overflow-wrap:anywhere}
+.workflow-steps a:focus-visible,.workflow-choice-list a:focus-visible{outline:3px solid #d62424;outline-offset:3px}

@@ -22,27 +22,40 @@ export async function scanFolder(drive: Pick<DriveReadonly, "scopedReference" | 
   if (root.mimeType !== FOLDER_MIME) throw new Error("Выберите папку");
   const queue = [{ id, path: "", depth: 0, ancestors: root.ancestors ?? [], page: "" }];
   const seen = new Set<string>([id]); const files: FolderEntry[] = []; let pages = 0;
-  while (queue.length) {
-    signal.throwIfAborted();
-    if (++pages > 50) throw new Error("Папка слишком велика. Выберите отдельную папку поставки");
-    const folder = queue.shift()!;
-    const page = await drive.catalogPage(folder, signal);
-    if (page.nextPage) queue.unshift({ ...folder, page: page.nextPage });
-    for (const file of page.files) {
-      if (file.mimeType === "application/vnd.google-apps.shortcut") continue;
-      if (seen.has(file.id)) throw new Error("Состав папки изменился. Повторите проверку");
-      seen.add(file.id);
-      if (file.mimeType === FOLDER_MIME) {
-        if ((file.ancestors?.length ?? 0) >= 15) throw new Error("Слишком много вложенных папок");
-        queue.push({ id: file.id, path: file.path, depth: folder.depth + 1, ancestors: file.ancestors!, page: "" });
-      } else {
-        files.push(entry(file));
-        if (files.length > 500) throw new Error("В папке больше 500 файлов. Выберите отдельную папку поставки");
+  const cancellation = new AbortController();
+  const scanSignal = AbortSignal.any([signal, cancellation.signal]);
+  try {
+    while (queue.length) {
+      scanSignal.throwIfAborted();
+      const batch = queue.splice(0, 3);
+      pages += batch.length;
+      if (pages > 50) throw new Error("Папка слишком велика. Выберите отдельную папку поставки");
+      // Each page still checks its entire live ancestry before and after reading.
+      // Bound parallelism avoids spending the deadline on serial round trips.
+      const results = await Promise.all(batch.map(async folder => {
+        try { return await drive.catalogPage(folder, scanSignal); }
+        catch (error) { cancellation.abort(); throw error; }
+      }));
+      for (const [index, page] of results.entries()) {
+        const folder = batch[index];
+        if (page.nextPage) queue.unshift({ ...folder, page: page.nextPage });
+        for (const file of page.files) {
+          if (file.mimeType === "application/vnd.google-apps.shortcut") continue;
+          if (seen.has(file.id)) throw new Error("Состав папки изменился. Повторите проверку");
+          seen.add(file.id);
+          if (file.mimeType === FOLDER_MIME) {
+            if ((file.ancestors?.length ?? 0) >= 15) throw new Error("Слишком много вложенных папок");
+            queue.push({ id: file.id, path: file.path, depth: folder.depth + 1, ancestors: file.ancestors!, page: "" });
+          } else {
+            files.push(entry(file));
+            if (files.length > 500) throw new Error("В папке больше 500 файлов. Выберите отдельную папку поставки");
+          }
+        }
       }
     }
-  }
-  await drive.scopedReference(id, signal);
-  return files;
+    await drive.scopedReference(id, scanSignal);
+    return files;
+  } finally { cancellation.abort(); }
 }
 
 export function insideFolder(file: DriveFile, folder: string, revision: string) {

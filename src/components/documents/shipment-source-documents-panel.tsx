@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { localizedName } from "@/lib/documents/labels";
+import { CustomsMatchForm } from "./customs-match-form";
+import { mappedEvidence, type CustomsMatch } from "@/lib/document-extraction/customs-matches";
 import { SourceTransportContext } from "./source-transport-context";
 import { ProcessingStatus } from "./processing-status";
 import { loadProcessingClock } from "@/lib/documents/processing-clock";
 import { CustomsEvidence } from "./customs-evidence";
+import { comparisonItems, comparisonSources } from "@/lib/document-extraction/comparison-scope";
+import { SupplierEvidence } from "./supplier-evidence";
 import { CustomsReviewForm } from "./customs-review-form";
 import { CustomsRevisionForm } from "./customs-revision-form";
 import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
@@ -40,10 +45,10 @@ const sourceLabel: Record<string, string> = {
   driver_document: "Документы водителя", waybill: "Накладная", other: "Прочий источник",
 };
 
-export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness }: { shipmentId: string; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
+export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false }: { shipmentId: string; workspace?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
   const supabase = await createClient();
   const serverNow = await loadProcessingClock();
-  const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update"] as const);
+  const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update", "products.view"] as const);
   if (!permissions["documents.view"]) return null;
   const [{ data, error, count: sourceCount }, { data: types }, { data: transportRows, error: transportsError, count: transportCount }, { data: itemRows, error: itemsError, count: itemCount }, { data: quantityHistory, error: historyError, count: historyCount }, { data: shipmentContext }, { data: contextHistory, error: contextError, count: contextCount }] = await Promise.all([
     supabase.from("shipment_source_extractions")
@@ -53,11 +58,14 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
       ? supabase.from("document_types").select("id,code,name_ru,category").eq("is_active", true).order("sort_order")
       : Promise.resolve({ data: [] }),
     supabase.from("shipment_transports").select("id,sequence_no,status,vehicle_plate,driver_name", { count: "exact" }).eq("shipment_id", shipmentId).neq("status", "cancelled").order("sequence_no"),
-    supabase.from("shipment_items").select("id,uom,shipment_transport_id,ordered_quantity,confirmed_quantity,shipped_quantity,product:products(internal_sku,name,hs_code)", { count: "exact" }).eq("shipment_id", shipmentId).order("created_at"),
+    supabase.from("shipment_items").select("id,product_id,uom,shipment_transport_id,ordered_quantity,confirmed_quantity,shipped_quantity,product:products(internal_sku,name,hs_code)", { count: "exact" }).eq("shipment_id", shipmentId).order("created_at"),
     supabase.from("shipment_item_quantity_confirmations").select("shipment_item_id,extraction_id,field,quantity,confirmed_at", { count: "exact" }).eq("shipment_id", shipmentId).order("confirmed_at", { ascending: false }),
     supabase.from("shipments").select("shipment_number,type").eq("id", shipmentId).maybeSingle(),
     supabase.from("shipment_source_context_history").select("id,extraction_id,old_transport_id,new_transport_id,reason,changed_at,changed_by,extraction:shipment_source_extractions!inner(shipment_id)", { count: "exact" }).eq("extraction.shipment_id", shipmentId).order("changed_at", { ascending: false }),
   ]);
+  const {data:matchRows,error:matchesError,count:matchesCount}=permissions["products.view"] ? await supabase.from("shipment_customs_matches").select("*,source:shipment_source_extractions!shipment_customs_matches_extraction_id_fkey!inner(shipment_id)",{count:"exact"}).eq("source.shipment_id",shipmentId).order("created_at",{ascending:false}).order("id",{ascending:false}) : {data:[],error:null,count:0};
+  const matchesComplete=!matchesError && matchesCount===(matchRows??[]).length;
+  const matches=(matchesComplete?matchRows:[]) as CustomsMatch[];
   const one = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
   const quantityItems = ((itemRows ?? []) as Array<Omit<QuantityFormItem, "product"> & { product: QuantityFormItem["product"] | QuantityFormItem["product"][] }>)
     .map(item => ({ ...item, product: one(item.product) ?? null }));
@@ -72,10 +80,17 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
   type CommodityDocument = { title: string; original_filename: string | null; archived_at: string | null; status: string; current_version: number; versions: Array<{ id: string; is_current: boolean; version_number: number }>; links: Array<{ entity_type: string; entity_id: string; removed_at: string | null }> };
   const completeComparison = !itemsError && !error && !transportsError && transportCount === vehicles.length && !historyError && historyCount === (quantityHistory ?? []).length && itemCount === quantityItems.length && sourceCount === rows.length;
   const current = (row: typeof rows[number]) => completeComparison && currentCommoditySource(row, one(row.document), shipmentId, vehicles.map(vehicle => vehicle.id));
-  const invoices = rows.filter(row => row.source_kind === "invoice" && confirmedCommoditySource(row, current(row))).map(row => row.extracted_data?.commodity_invoice).filter(isCommodityInvoice);
-  const packing = rows.filter(row => row.source_kind === "specification" && confirmedCommoditySource(row, current(row))).map(row => row.extracted_data?.packing_evidence).filter(isPackingEvidence);
+  const invoiceSources = rows.filter(row => row.source_kind === "invoice" && confirmedCommoditySource(row, current(row)));
+  const packingSources = rows.filter(row => row.source_kind === "specification" && confirmedCommoditySource(row, current(row)));
+  const matchProducts=(itemRows??[]).flatMap(item=>{const product=one(item.product);return product?.internal_sku ? [{id:item.product_id,sku:product.internal_sku,name:typeof product.name==="string"?product.name:localizedName(product.name),transport:item.shipment_transport_id}]:[];});
+  const productsFor=(transport:string|null)=>[...new Map(matchProducts.filter(p=>!transport||p.transport===transport).map(p=>[p.id,p])).values()];
+  const matchFor=(row:typeof rows[number])=>{
+    const match=matches.find(m=>m.extraction_id===row.id);
+    const invoice=rows.find(r=>r.id===match?.invoice_extraction_id), packing=rows.find(r=>r.id===match?.packing_extraction_id);
+    return current(row)&&invoice&&packing&&current(invoice)&&current(packing)?mappedEvidence(match,[row,invoice,packing],productsFor(row.shipment_transport_id)):null;
+  };
   const quantity = (value: unknown) => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
-  const shipmentCommodities = quantityItems.filter(item => !item.shipment_transport_id || vehicleById.has(item.shipment_transport_id)).map(item => ({
+  const shipmentCommodities = (transportId: string | null) => comparisonItems(quantityItems, transportId, vehicles.map(vehicle => vehicle.id)).map(item => ({
     sku: item.product?.internal_sku ?? null, unit: item.uom, hsCode: item.product?.hs_code ?? null,
     ordered: quantity(item.ordered_quantity), confirmed: quantity(item.confirmed_quantity), shipped: quantity(item.shipped_quantity),
   }));
@@ -87,8 +102,8 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     </div></div>
     {notice?.kind==="error"&&<div className="login-error admin-message" role="status">{notice.message}</div>}
     {notice?.kind==="success"&&<div className="login-success admin-message" role="status">{notice.message}</div>}
-    <p className="form-help">Выберите сразу инвойс, договор-заявку, документы автомобиля, прицепа и водителя. После загрузки система автоматически определит типы, прочитает комплект и сопоставит найденные реквизиты. {ocr.enabled?"Сканы и фотографии читаются распознаванием текста (OCR); результат всегда проверяет сотрудник.":"Сканы и фотографии пока не читаются: OCR не настроен администратором."}</p>
-    {permissions["documents.create"]&&<BulkDocumentUpload types={(types??[]).map(type=>({id:type.id,code:type.code,name:type.name_ru,category:type.category}))} primaryLink={`shipment:${shipmentId}`} autoExtractShipmentId={shipmentId} transports={vehicles.map(vehicle=>({id:vehicle.id,label:describeTransport(vehicle)}))}/>}
+    <p className="form-help">{workspace ? "Файлы из папки загружаются на первом шаге. Нажмите «Распознать и сверить», затем проверьте тип, автомобиль и каждое найденное значение." : "Выберите сразу инвойс, договор-заявку, документы автомобиля, прицепа и водителя. После загрузки система автоматически определит типы, прочитает комплект и сопоставит найденные реквизиты."} {ocr.enabled?"Сканы и фотографии читаются распознаванием текста (OCR); результат всегда проверяет сотрудник.":"Сканы и фотографии пока не читаются: OCR не настроен администратором."}</p>
+    {!workspace&&permissions["documents.create"]&&<BulkDocumentUpload types={(types??[]).map(type=>({id:type.id,code:type.code,name:type.name_ru,category:type.category}))} primaryLink={`shipment:${shipmentId}`} autoExtractShipmentId={shipmentId} transports={vehicles.map(vehicle=>({id:vehicle.id,label:describeTransport(vehicle)}))}/>}
     <div className="panel-heading source-results-heading"><div><p className="eyebrow">Шаг 2 · Проверка</p><h3>Результаты распознавания</h3></div></div>
     {error&&<div className="setup-notice">Примените миграцию <strong>202609274900_source_document_ocr.sql</strong>.</div>}
     {!error&&!completeComparison&&<p className="login-error">Не удалось получить полный список источников или позиций поставки. Сверка и подтверждение временно недоступны.</p>}
@@ -109,16 +124,22 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
       {row.extraction_method==="ocr"&&permissions["source_documents.extract"]&&(row.status==="failed"||(["extracted","needs_review","confirmed"].includes(row.status)&&permissions["source_documents.review"]))&&<form action={retryShipmentSourceOcrAction} className="source-review-actions"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="document_id" value={row.document_id}/><PendingSubmitButton className="ghost compact" pendingText="Распознаём… подождите">{row.status==="failed"?`Повторить распознавание${row.attempt_count>0?` (попыток: ${row.attempt_count})`:""}`:row.status==="confirmed"?"Отменить подтверждение и распознать заново":"Сбросить результат и распознать заново"}</PendingSubmitButton></form>}
       {conflicts>0&&<div className="login-error source-conflicts"><strong>Обнаружены расхождения между документами.</strong> Проверьте выделенные значения и оставьте правильные.</div>}
       {Array.isArray(row.extracted_data?.invoice_items)&&row.extracted_data.invoice_items.length>0&&<div className="table-wrap"><table className="data-table"><caption>Строки инвойса: подтверждаются вместе с документом и сверяются с позициями поставки</caption><thead><tr><th>№</th><th>Наименование</th><th>ТН ВЭД</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead><tbody>{(row.extracted_data.invoice_items as Array<{line_number:number;product_name:string;hs_code:string;uom:string;quantity:number;unit_price:number;line_total:number}>).map(line=><tr key={line.line_number}><td>{line.line_number}</td><td>{line.product_name}</td><td>{line.hs_code}</td><td>{line.quantity} {line.uom}</td><td>{line.unit_price}</td><td>{line.line_total}</td></tr>)}</tbody></table></div>}
-      {Boolean(row.extracted_data?.customs_record)&&<CustomsEvidence value={row.extracted_data.customs_record} invoices={invoices} packing={packing} readiness={readiness} shipment={shipmentCommodities} current={current(row)} reviewed={row.status==="confirmed"&&Boolean(row.reviewed_at)}/>}
-      {sourceCurrent&&permissions["source_documents.review"]&&Boolean(row.extracted_data?.customs_record)&&row.extracted_data.customs_record!==null&&typeof row.extracted_data.customs_record==="object"&&"kind" in row.extracted_data.customs_record&&row.extracted_data.customs_record.kind==="declaration"&&<>
-        <Link className="ghost button-link compact" href={`/documents/${row.document_id}/download?version=${row.document_version_id}`}>Открыть оригинал декларации</Link>
-        <CustomsReviewForm shipmentId={shipmentId} extractionId={row.id} versionId={row.document_version_id} record={row.extracted_data.customs_record} note={row.confirmed_data?.customs_review_note} reviewedAt={row.status==="confirmed"?row.reviewed_at:null}/>
-        {row.extraction_method==="text_layer"&&permissions["source_documents.extract"]&&<CustomsRevisionForm shipmentId={shipmentId} documentId={row.document_id} extractionId={row.id} versionId={row.document_version_id} updatedAt={row.updated_at}/>}
+      <SupplierEvidence invoice={row.extracted_data?.commodity_invoice} packing={row.extracted_data?.packing_evidence} lots={row.extracted_data?.supplier_lots} current={sourceCurrent}/>
+      {Boolean(row.extracted_data?.customs_record)&&<><p className="form-help">Область сверки: {row.shipment_transport_id ? (vehicleById.has(row.shipment_transport_id) ? `автомобиль ${describeTransport(vehicleById.get(row.shipment_transport_id)!)}` : "недоступный автомобиль") : "вся поставка"}. Позиции других автомобилей не добавляются к данным выбранной машины.</p><CustomsEvidence value={row.extracted_data.customs_record} invoices={comparisonSources(invoiceSources, row.shipment_transport_id).map(source => source.extracted_data?.commodity_invoice).filter(isCommodityInvoice)} packing={comparisonSources(packingSources, row.shipment_transport_id).map(source => source.extracted_data?.packing_evidence).filter(isPackingEvidence)} readiness={readiness} shipment={shipmentCommodities(row.shipment_transport_id)} current={current(row)} reviewed={row.status==="confirmed"&&Boolean(row.reviewed_at)&&(!row.confirmed_data.customs_mapping_id||row.confirmed_data.customs_mapping_id===matchFor(row)?.match.id)} mapped={matchFor(row)}/></>}
+      {sourceCurrent&&permissions["products.view"]&&<>
+        {!matchesComplete&&<p className="login-error">Не удалось загрузить полную историю сопоставлений. Новое сопоставление временно недоступно.</p>}
+        {matchesComplete&&<CustomsMatchForm shipmentId={shipmentId} declaration={row} invoices={invoiceSources.filter(s=>s.shipment_transport_id===row.shipment_transport_id).map(s=>({...s,title:one(s.document)?.title??"Инвойс"}))} packing={packingSources.filter(s=>s.shipment_transport_id===row.shipment_transport_id).map(s=>({...s,title:one(s.document)?.title??"Упаковочный лист"}))} products={productsFor(row.shipment_transport_id)} history={matches.filter(m=>m.extraction_id===row.id)} editable={Boolean(permissions["source_documents.review"])}/>}
+        {row.confirmed_data.customs_mapping_id&&!matchFor(row)&&<p className="login-error">Прежнее подтверждение сохранено в истории. Сопоставление устарело или недоступно: нужна новая сверка.</p>}
+      </>}
+      {sourceCurrent&&permissions["source_documents.review"]&&Boolean(row.extracted_data?.customs_record)&&row.extracted_data.customs_record!==null&&typeof row.extracted_data.customs_record==="object"&&"kind" in row.extracted_data.customs_record&&["declaration","value_declaration","transit"].includes(String(row.extracted_data.customs_record.kind))&&<>
+        <Link className="ghost button-link compact" href={`/documents/${row.document_id}/download?version=${row.document_version_id}`}>Открыть оригинал таможенного документа</Link>
+        <CustomsReviewForm shipmentId={shipmentId} extractionId={row.id} versionId={row.document_version_id} record={row.extracted_data.customs_record} mappingId={matchFor(row)?.match.id} note={row.confirmed_data?.customs_review_note} reviewedAt={row.status==="confirmed"&&(!row.confirmed_data.customs_mapping_id||row.confirmed_data.customs_mapping_id===matchFor(row)?.match.id)?row.reviewed_at:null}/>
+        {row.extracted_data.customs_record.kind==="declaration"&&row.extraction_method==="text_layer"&&permissions["source_documents.extract"]&&<CustomsRevisionForm shipmentId={shipmentId} documentId={row.document_id} extractionId={row.id} versionId={row.document_version_id} updatedAt={row.updated_at}/>}
       </>}
       {sourceCurrent&&row.source_kind==="invoice"&&row.extraction_method==="text_layer"&&row.status==="confirmed"&&permissions["source_documents.extract"]&&permissions["source_documents.review"]&&<form action={retryShipmentSourceOcrAction} className="source-review-actions"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="document_id" value={row.document_id}/><PendingSubmitButton className="ghost compact" pendingText="Обновляем строки…">Обновить строки инвойса, сохранив подтверждения</PendingSubmitButton></form>}
       {isCommodityInvoice(row.extracted_data?.commodity_invoice)&&<p>Для сверки с декларацией прочитано строк инвойса: {row.extracted_data.commodity_invoice.items.length}. {row.extracted_data.commodity_invoice.warnings.join(" ")} Эти строки не записываются автоматически в количества поставки. {row.status==="confirmed"&&"Ручные подтверждения реквизитов сохранены; товарные строки являются отдельным результатом чтения."}</p>}
       {sourceCurrent&&keys.length>0&&!["failed","pending"].includes(row.status)&&<form action={confirmShipmentSourceAction} className="source-review-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="extraction_id" value={row.id}/><div className="source-field-grid">{keys.map(key=>{const field=fieldByKey.get(key)!;const current=row.status==="confirmed"?row.confirmed_data?.[key]:row.extracted_data?.[key];const confidence=row.status==="confirmed"?undefined:row.field_evidence?.[key]?.confidence;return <label key={key} className={confidence!==undefined&&confidence<LOW_CONFIDENCE?"low-confidence":undefined}>{field.label}{confidence!==undefined&&<small>{Math.round(confidence*100)}% уверенности{confidence<LOW_CONFIDENCE?" · проверьте по оригиналу":""}</small>}<input name={`field_${key}`} type={field.type} step={field.type==="number"?"0.001":undefined} min={field.type==="number"?"0":undefined} defaultValue={current===null||current===undefined?"":String(current)}/></label>;})}</div>{permissions["source_documents.review"]&&["extracted","needs_review","confirmed"].includes(row.status)&&<div className="source-review-actions">{permissions["shipments.update"]&&<label className="check-label"><input type="checkbox" name="apply_to_shipment"/> Записать применимые данные в поставку и автомобиль</label>}<button className="primary compact" type="submit">{row.status==="confirmed"?"Сохранить исправления":"Подтвердить данные"}</button></div>}</form>}
       {quantityDocument&&<DocumentQuantitiesForm shipmentId={shipmentId} extractionId={row.id} sourceKind={row.source_kind} transportId={row.shipment_transport_id} items={quantityItems} lines={Array.isArray(row.extracted_data?.invoice_items)?row.extracted_data.invoice_items as DocumentLine[]:[]} history={(quantityHistory??[]) as QuantityHistoryRow[]} canApply={canApplyQuantities&&sourceCurrent}/>}
-    </details>;})}{!rows.length&&<div className="empty-state">Загрузите исходные документы поставки — распознавание начнётся автоматически.</div>}</div>}
+    </details>;})}{!rows.length&&<div className="empty-state">{workspace ? "Нет результатов чтения. Загрузите выбранные файлы на первом шаге, затем нажмите «Распознать и сверить»." : "Загрузите исходные документы поставки — распознавание начнётся автоматически."}</div>}</div>}
   </section>;
 }

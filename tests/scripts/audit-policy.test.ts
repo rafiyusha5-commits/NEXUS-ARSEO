@@ -49,7 +49,8 @@ describe("the dependency audit passes only a report it can read in full", () => 
     const printed = verdict.lines.join("\n");
     assert.match(printed, /ОБОСНОВАНО\s+GHSA-w5hq-g745-h8pq\s+uuid@8\.3\.2/);
     assert.match(printed, /обоснованных исключений 1/);
-    assert.doesNotMatch(printed, /НЕ ДОПУЩЕНО|УСТАРЕЛО/);
+    assert.doesNotMatch(printed, /НЕ ДОПУЩЕНО/);
+    assert.match(printed, /УСТАРЕЛО.*GHSA-g3hv-75wg-m249/);
   });
 });
 
@@ -210,5 +211,36 @@ describe("only the exact justified finding is waived", () => {
     const printed = verdict.lines.join("\n");
     assert.match(printed, /ОБОСНОВАНО\s+GHSA-w5hq-g745-h8pq/);
     assert.match(printed, /НЕ ДОПУЩЕНО\s+GHSA-1111-2222-3333/);
+  });
+});
+
+
+describe("version-bound minimatch advisory evidence", () => {
+  const entry = JUSTIFIED.find(item => item.module === "minimatch")!;
+  const finding = (version = "3.1.5", paths: readonly string[] = entry.paths) => advisory({
+    github_advisory_id: entry.advisory, module_name: entry.module,
+    findings: [{ version, paths: [...paths] }],
+  });
+  it("accepts only the examined version and exact dependency paths", () => {
+    assert.equal(evaluateAudit(run(report({ mm: finding() }, { moderate: 1 }), 1)).ok, true);
+    const actual = finding(); actual.findings = [
+      {version:"3.1.5",paths:entry.paths.filter(path => !path.includes("readdir-glob"))},
+      {version:"5.1.9",paths:entry.paths.filter(path => path.includes("readdir-glob"))},
+    ];
+    assert.equal(evaluateAudit(run(report({ mm: actual }, { moderate: 1 }), 1)).ok, true);
+    for (const version of ["3.1.4", "3.1.6", "10.2.6", "11.0.0"]) {
+      assert.equal(evaluateAudit(run(report({ mm: finding(version) }, { moderate: 1 }), 1)).ok, false);
+    }
+    assert.equal(evaluateAudit(run(report({ mm: finding("3.1.5", [...entry.paths, ".>minimatch"]) }, { moderate: 1 }), 1)).ok, false);
+    assert.equal(evaluateAudit(run(report({ mm: finding("3.1.5", entry.paths.slice(1)) }, { moderate: 1 }), 1)).ok, false);
+  });
+  it("checks every finding version, including a second version with the same path", () => {
+    const mixed = finding();
+    mixed.findings = [{ version: "3.1.5", paths: entry.paths }, { version: "10.2.6", paths: entry.paths }];
+    assert.equal(evaluateAudit(run(report({ mm: mixed }, { moderate: 1 }), 1)).ok, false);
+  });
+  it("still blocks a different advisory in the same examined dependency", () => {
+    const other = finding(); other.github_advisory_id = "GHSA-aaaa-bbbb-cccc";
+    assert.equal(evaluateAudit(run(report({ mm: other }, { moderate: 1 }), 1)).ok, false);
   });
 });

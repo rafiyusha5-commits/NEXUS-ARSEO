@@ -1,5 +1,6 @@
 "use server";
 
+import { documentActionReturn } from "@/lib/agent/shipment-workflow";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
@@ -18,8 +19,8 @@ const value = (formData: FormData, key: string) => {
   const raw = formData.get(key);
   return typeof raw === "string" ? raw.trim() : "";
 };
-const back = (shipmentId: string, kind: "error" | "success", message: string) =>
-  `/shipments/${shipmentId}?tab=documents&source_${kind}=${encodeURIComponent(message)}#source-documents`;
+const back = (form: FormData, kind: "error" | "success", message: string) =>
+  documentActionReturn(form, value(form, "shipment_id"), kind, message, true);
 
 export async function extractShipmentSourcesAction(formData: FormData) {
   const shipmentId = value(formData, "shipment_id");
@@ -27,19 +28,19 @@ export async function extractShipmentSourcesAction(formData: FormData) {
   const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "documents.view", "shipments.view"] as const);
   if (!permissions["source_documents.extract"] || !permissions["documents.view"] || !permissions["shipments.view"])
-    redirect(back(shipmentId, "error", "Недостаточно прав для распознавания исходных документов"));
+    redirect(back(formData, "error", "Недостаточно прав для распознавания исходных документов"));
 
   let summary;
   const operationId = randomUUID(), started = Date.now();
   try { summary = await extractShipmentSources(supabase, shipmentId); }
   catch (error) {
     console.info("[document-processing]", { operation_id: operationId, stage: "recognition", duration_ms: Date.now()-started, error_code: "SAVE_UNCERTAIN" });
-    redirect(back(shipmentId, "error", publicErrorMessage(error,"Не удалось распознать документы.")));
+    redirect(back(formData, "error", publicErrorMessage(error,"Не удалось распознать документы.")));
   }
   console.info("[document-processing]", { operation_id: operationId, stage: "recognition", duration_ms: Date.now()-started, error_code: summary.failed ? "SAVE_UNCERTAIN" : null });
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, summary.failed || summary.review ? "error" : "success", describeExtractionSummary(summary)));
 }
 
 // Another attempt for one unread document. Going beyond the attempt limit is a reviewer's decision (the database checks it).
@@ -50,13 +51,13 @@ export async function retryShipmentSourceOcrAction(formData: FormData) {
   const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.view", "shipments.view"] as const);
   if (!permissions["source_documents.extract"] || !permissions["documents.view"] || !permissions["shipments.view"])
-    redirect(back(shipmentId, "error", "Недостаточно прав для распознавания исходных документов"));
+    redirect(back(formData, "error", "Недостаточно прав для распознавания исходных документов"));
   let summary;
   try { summary = await extractShipmentSources(supabase, shipmentId, { documentId, force: permissions["source_documents.review"] }); }
-  catch (error) { redirect(back(shipmentId, "error", publicErrorMessage(error, "Не удалось повторить распознавание."))); }
+  catch (error) { redirect(back(formData, "error", publicErrorMessage(error, "Не удалось повторить распознавание."))); }
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, summary.failed ? "error" : "success", describeExtractionSummary(summary)));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, summary.failed ? "error" : "success", describeExtractionSummary(summary)));
 }
 
 export async function confirmShipmentSourceAction(formData: FormData) {
@@ -65,17 +66,17 @@ export async function confirmShipmentSourceAction(formData: FormData) {
   if (!UUID.test(shipmentId) || !UUID.test(extractionId)) redirect("/shipments?error=Некорректные данные");
   const raw=Object.fromEntries(SOURCE_FIELD_DEFINITIONS.map(field=>[field.key,value(formData,`field_${field.key}`)]));
   const confirmedData=sanitizeConfirmedSourceData(raw);
-  if(!Object.keys(confirmedData).length)redirect(back(shipmentId,"error","Укажите хотя бы одно подтверждённое поле"));
+  if(!Object.keys(confirmedData).length)redirect(back(formData,"error","Укажите хотя бы одно подтверждённое поле"));
   const applyToShipment=value(formData,"apply_to_shipment")==="on";
   const { supabase } = await requireUser();
   const permissions=await loadPermissions(supabase,["source_documents.review","shipments.update"] as const);
-  if(!permissions["source_documents.review"])redirect(back(shipmentId,"error","Недостаточно прав для подтверждения данных"));
+  if(!permissions["source_documents.review"])redirect(back(formData,"error","Недостаточно прав для подтверждения данных"));
   const { error } = await supabase.rpc("review_shipment_source_extraction", { p_extraction_id: extractionId,p_confirmed_data:confirmedData,p_apply_to_shipment:applyToShipment&&permissions["shipments.update"] });
-  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error,"Не удалось подтвердить распознанные данные.")));
+  if (error) redirect(back(formData, "error", ruleViolationMessage(error,"Не удалось подтвердить распознанные данные.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   await refreshLogistAfterChange(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, "success", "Распознанные данные подтверждены и будут использованы при формировании документов"));
 }
 
 export async function reviseShipmentCustomsAction(formData: FormData) {
@@ -84,19 +85,19 @@ export async function reviseShipmentCustomsAction(formData: FormData) {
   const updatedAt = value(formData, "expected_updated_at"), reason = value(formData, "reason");
   if (![shipmentId, documentId, extractionId, versionId, requestId].every(id => UUID.test(id))) redirect("/shipments?error=Некорректные данные");
   if (value(formData, "checked") !== "on" || reason.length < 10 || reason.length > 2000 || !Number.isFinite(Date.parse(updatedAt)))
-    redirect(back(shipmentId, "error", "Подтвердите новую редакцию и укажите причину (10–2000 символов)"));
+    redirect(back(formData, "error", "Подтвердите новую редакцию и укажите причину (10–2000 символов)"));
   const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.view", "shipments.view"] as const);
-  if (!Object.values(permissions).every(Boolean)) redirect(back(shipmentId, "error", "Недостаточно прав для новой редакции"));
+  if (!Object.values(permissions).every(Boolean)) redirect(back(formData, "error", "Недостаточно прав для новой редакции"));
   // Bind the selected file to the extraction before reading; the RPC repeats version/link checks under locks.
   const { data: source, error: sourceError } = await supabase.from("shipment_source_extractions").select("document_id")
     .eq("id", extractionId).eq("shipment_id", shipmentId).single();
-  if (sourceError || source?.document_id !== documentId) redirect(back(shipmentId, "error", "Источник изменился. Обновите страницу"));
+  if (sourceError || source?.document_id !== documentId) redirect(back(formData, "error", "Источник изменился. Обновите страницу"));
   try { await extractShipmentSources(supabase, shipmentId, { documentId, customsRevision: { extractionId, versionId, updatedAt, requestId, reason } }); }
-  catch (error) { redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось создать новую редакцию."))); }
+  catch (error) { redirect(back(formData, "error", ruleViolationMessage(error, "Не удалось создать новую редакцию."))); }
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", "Создана новая редакция декларации. Сверьте и подтвердите её заново. Прежняя сверка сохранена в истории, ручные реквизиты сохранены; поставка, склад и финансы не изменены"));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, "success", "Создана новая редакция декларации. Сверьте и подтвердите её заново. Прежняя сверка сохранена в истории, ручные реквизиты сохранены; поставка, склад и финансы не изменены"));
 }
 
 // Acknowledge the exact declaration shown on the page. No editable quantities or finance values.
@@ -105,21 +106,45 @@ export async function confirmShipmentCustomsAction(formData: FormData) {
   const extractionId = value(formData, "extraction_id");
   const versionId = value(formData, "document_version_id");
   if (![shipmentId, extractionId, versionId].every(id => UUID.test(id))) redirect("/shipments?error=Некорректные данные");
-  if (value(formData, "checked") !== "on") redirect(back(shipmentId, "error", "Подтвердите сверку с оригиналом декларации"));
+  if (value(formData, "checked") !== "on") redirect(back(formData, "error", "Подтвердите сверку с оригиналом декларации"));
   const note = value(formData, "review_note");
-  if (note.length < 10 || note.length > 2000) redirect(back(shipmentId, "error", "Опишите результат сверки (10–2000 символов)"));
+  if (note.length < 10 || note.length > 2000) redirect(back(formData, "error", "Опишите результат сверки (10–2000 символов)"));
   let record: unknown;
   try { record = JSON.parse(value(formData, "expected_record")); }
-  catch { redirect(back(shipmentId, "error", "Данные страницы устарели. Обновите страницу")); }
+  catch { redirect(back(formData, "error", "Данные страницы устарели. Обновите страницу")); }
   const { supabase } = await requireUser();
-  const { error } = await supabase.rpc("review_shipment_customs_evidence", {
+  const mappingId=value(formData,"mapping_id");
+  if(mappingId&&!UUID.test(mappingId))redirect(back(formData,"error","Некорректное сопоставление"));
+  const { error } = mappingId ? await supabase.rpc("review_mapped_shipment_customs", {
+    p_extraction_id:extractionId,p_mapping_id:mappingId,p_expected_record:record,p_review_note:note,
+  }) : await supabase.rpc("review_shipment_customs_evidence", {
     p_shipment_id: shipmentId, p_extraction_id: extractionId, p_document_version_id: versionId,
     p_expected_record: record, p_review_note: note,
   });
-  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось сохранить сверку декларации.")));
+  if (error) redirect(back(formData, "error", ruleViolationMessage(error, "Не удалось сохранить сверку декларации.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", "Сверка декларации с оригиналом подтверждена. Расхождения с заказом сохранены; склад и финансы не изменены"));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, "success", "Сверка таможенного документа с оригиналом подтверждена. Сохранён результат проверки; склад и финансы не изменены"));
+}
+
+export async function saveCustomsMatchAction(formData: FormData) {
+  const shipmentId=value(formData,"shipment_id"), extraction=value(formData,"extraction_id"), invoice=value(formData,"invoice_id"), packing=value(formData,"packing_id"), expected=value(formData,"expected_id");
+  const count=Number(value(formData,"line_count")), reason=value(formData,"reason");
+  if(![shipmentId,extraction,invoice,packing].every(id=>UUID.test(id)) || expected&&!UUID.test(expected) || !Number.isInteger(count) || count<1 || count>2000)
+    redirect("/shipments?error=Некорректное сопоставление");
+  if(value(formData,"checked")!=="on" || reason.length<10 || reason.length>2000)redirect(back(formData,"error","Подтвердите сверку и укажите основание (10–2000 символов)"));
+  let snapshot:unknown;
+  try {snapshot=JSON.parse(value(formData,"snapshot"));}catch {redirect(back(formData,"error","Обновите страницу и выберите документы"));}
+  const {supabase}=await requireUser();
+  const lines=Array.from({length:count},(_,n)=>({line:n+1,invoice_line:Number(value(formData,`invoice_${n+1}`)),packing_line:Number(value(formData,`packing_${n+1}`)),product_id:value(formData,`product_${n+1}`)}));
+  if(lines.some(l=>!UUID.test(l.product_id)||![l.invoice_line,l.packing_line].every(n=>Number.isInteger(n)&&n>=1&&n<=count)))redirect(back(formData,"error","Выберите товар и обе строки для каждой позиции ДТ"));
+  const {data:products,error:productError}=await supabase.from("products").select("id,internal_sku").in("id",lines.map(l=>l.product_id));
+  if(productError||lines.some(l=>!products?.some(p=>p.id===l.product_id)))redirect(back(formData,"error","Товары недоступны. Обновите страницу"));
+  const {error}=await supabase.rpc("save_shipment_customs_match",{p_extraction_id:extraction,p_invoice_id:invoice,p_packing_id:packing,p_snapshot:snapshot,
+    p_lines:lines.map(l=>({...l,sku:products!.find(p=>p.id===l.product_id)!.internal_sku})),p_reason:reason,p_expected_id:expected||null});
+  if(error)redirect(back(formData,"error",ruleViolationMessage(error,"Не удалось сохранить сопоставление")));
+  revalidatePath(`/shipments/${shipmentId}`);revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData,"success","Сопоставление сохранено с историей. Теперь проверьте итог и отдельно подтвердите чтение ДТ"));
 }
 
 // Binds an unconfirmed document or OCR proposal to one vehicle (or back to the whole shipment). Nothing is guessed.
@@ -130,11 +155,11 @@ export async function assignSourceTransportAction(formData: FormData) {
   if (!UUID.test(shipmentId) || !UUID.test(extractionId) || (transportId && !UUID.test(transportId))) redirect("/shipments?error=Некорректные данные");
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("assign_source_extraction_transport", { p_extraction_id: extractionId, p_transport_id: transportId || null, p_reason: value(formData, "context_reason") });
-  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
+  if (error) redirect(back(formData, "error", ruleViolationMessage(error, "Не удалось привязать документ к автомобилю.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
   await refreshLogistAfterChange(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
-  redirect(back(shipmentId, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
+  redirect(back(formData, "success", transportId ? "Документ привязан к автомобилю" : "Документ относится ко всей поставке"));
 }
 
 // Confirmed or shipped quantities from a confirmed invoice, packing list or waybill. The employee checks every
@@ -145,17 +170,17 @@ export async function applyDocumentQuantitiesAction(formData: FormData) {
   if (!UUID.test(shipmentId) || !UUID.test(extractionId)) redirect("/shipments?error=Некорректные данные");
   const target = value(formData, "target");
   const targets = target === "both" ? ["confirmed", "shipped"] : [target];
-  if (!targets.every(item => item === "confirmed" || item === "shipped")) redirect(back(shipmentId, "error", "Выберите, какое количество заполнить"));
-  if (value(formData, "checked") !== "on") redirect(back(shipmentId, "error", "Подтвердите, что количества сверены с оригиналом документа"));
+  if (!targets.every(item => item === "confirmed" || item === "shipped")) redirect(back(formData, "error", "Выберите, какое количество заполнить"));
+  if (value(formData, "checked") !== "on") redirect(back(formData, "error", "Подтвердите, что количества сверены с оригиналом документа"));
   let lines: ReturnType<typeof parseQuantityLines> = [];
   try { lines = parseQuantityLines(formData.entries()); }
-  catch (error) { redirect(back(shipmentId, "error", error instanceof Error ? error.message : "Проверьте количества")); }
-  if (!lines.length) redirect(back(shipmentId, "error", "Укажите количество хотя бы для одной позиции"));
+  catch (error) { redirect(back(formData, "error", error instanceof Error ? error.message : "Проверьте количества")); }
+  if (!lines.length) redirect(back(formData, "error", "Укажите количество хотя бы для одной позиции"));
   const { supabase } = await requireUser();
   const { data, error } = await supabase.rpc("apply_shipment_document_quantities", { p_extraction_id: extractionId, p_targets: targets, p_lines: lines });
-  if (error) redirect(back(shipmentId, "error", ruleViolationMessage(error, "Не удалось записать количества по документу.")));
+  if (error) redirect(back(formData, "error", ruleViolationMessage(error, "Не удалось записать количества по документу.")));
   await runDocumentCheckAfterRecognition(supabase, shipmentId);
-  revalidatePath(`/shipments/${shipmentId}`);
+  revalidatePath(`/shipments/${shipmentId}`); revalidatePath(`/assistant/shipments/${shipmentId}`);
   const changed = Number((data as { changed?: number } | null)?.changed ?? 0);
-  redirect(back(shipmentId, "success", changed ? `Количества по документу записаны: изменено значений — ${changed}` : "Количества совпадают с уже записанными, изменений нет"));
+  redirect(back(formData, "success", changed ? `Количества по документу записаны: изменено значений — ${changed}` : "Количества совпадают с уже записанными, изменений нет"));
 }

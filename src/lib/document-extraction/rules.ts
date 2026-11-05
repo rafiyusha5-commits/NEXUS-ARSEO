@@ -2,8 +2,10 @@ import { isElectronicInvoice, parseElectronicInvoice } from "./esf.ts";
 import { isCustomsForm, parseCustomsForm } from "./customs.ts";
 import { parseCommodityInvoice } from "./commodity-evidence.ts";
 import { parsePackingEvidence } from "./packing-evidence.ts";
+import { parseSupplierLayout } from "./supplier-layout.ts";
+import { isYilmazTable, parseYilmaz, parseYilmazCertificates } from "./yilmaz.ts";
 
-export const EXTRACTION_VERSION = "rules-v6";
+export const EXTRACTION_VERSION = "rules-v8";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -95,9 +97,10 @@ export function sanitizeConfirmedSourceData(value: Record<string, unknown>) {
 
 export function detectShipmentSourceKind(rawText: string, hintedKind = "other") {
   if (hintedKind !== "other") return hintedKind;
+  if (isYilmazTable(rawText) && /PACKING\s+LIST/iu.test(rawText)) return "specification";
   if (isCustomsForm(rawText)) return "other";
   if (/international\s+consignment\s+note|miedzynarodowy\s+samochodowy|(?:^|\n)\s*CMR\s*[:№#)]*\s*\d/imu.test(rawText)) return "waybill";
-  if (/despatch\s+note|dispatch\s+note/iu.test(rawText)) return "specification";
+  if (/despatch\s+note|dispatch\s+note|delivery\s+note/iu.test(rawText)) return "specification";
   if (isElectronicInvoice(rawText)) return "invoice";
   const text = rawText.toLocaleLowerCase("ru-RU");
   if (/\b(invoice|инвойс|сч[её]т[- ]фактура)\b/u.test(text)) return "invoice";
@@ -154,6 +157,11 @@ export type ExtractOptions = {
   hintedKind?: string;
 };
 
+export function extractionNeedsReview(data: Record<string, unknown>) {
+  if (data.customs_record) return true;
+  return [data.commodity_invoice, data.packing_evidence, data.supplier_lots].some(value => value && typeof value === "object" && "warnings" in value && Array.isArray(value.warnings) && value.warnings.length > 0);
+}
+
 const IDENTITY_CARD = /УДОСТОВЕРЕНИЕ\s+ЛИЧНОСТИ|ЖЕКЕ\s+КУӘЛІК/iu;
 
 export function extractShipmentFields(rawText: string, options: ExtractOptions = {}): ExtractionResult {
@@ -164,6 +172,26 @@ export function extractShipmentFields(rawText: string, options: ExtractOptions =
   // otherwise mistake numbered box headings and exporter names for facts.
   const customs = parseCustomsForm(text);
   if (customs) return { data: { customs_record: customs }, evidence, conflicts: [] };
+  const yilmaz = parseYilmaz(text);
+  if (yilmaz) {
+    Object.assign(data, yilmaz.fields);
+    for (const [key,value] of Object.entries(yilmaz.fields)) evidence[key] = { label: SOURCE_FIELD_DEFINITIONS.find(f=>f.key===key)?.label??key, value:String(value), confidence:0.9 };
+    data.supplier_lots=yilmaz.lots;
+    if(yilmaz.invoice)data.commodity_invoice=yilmaz.invoice;
+    return {data,evidence,conflicts:[]};
+  }
+  const certificates=parseYilmazCertificates(text);
+  if(certificates)return {data:{supplier_lots:certificates},evidence,conflicts:[]};
+  const supplier = parseSupplierLayout(text);
+  if (supplier) {
+    Object.assign(data, supplier.fields);
+    for (const [key, value] of Object.entries(supplier.fields)) {
+      evidence[key] = { label: SOURCE_FIELD_DEFINITIONS.find(field => field.key === key)?.label ?? key, value: String(value), confidence: 0.9 };
+    }
+    if (supplier.invoice) data.commodity_invoice = supplier.invoice;
+    if (supplier.packing) data.packing_evidence = supplier.packing;
+    return { data, evidence, conflicts: [] };
+  }
   for (const pattern of patterns) {
     for (const expression of pattern.expressions) {
       const match = expression.exec(text);
@@ -273,26 +301,32 @@ export function comparableValue(field: string, value: string) {
   return value.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
 }
 
-export function conflictsAcrossDocuments(results: Array<{ documentId: string; result: ExtractionResult }>) {
+export function conflictsAcrossDocuments(results: Array<{ documentId: string; transportId?: string | null; result: ExtractionResult }>) {
   const values = new Map<string, Map<string, { shown: string; documents: string[] }>>();
-  for (const { documentId, result } of results) {
+  const fields = new Map<string, string>();
+  for (const { documentId, transportId, result } of results) {
     for (const [field, raw] of Object.entries(result.data)) {
       if (raw === null || typeof raw === "object") continue;
       const value = String(raw).trim();
       if (!value) continue;
       const key = comparableValue(field, value);
       if (!key) continue;
-      const byValue = values.get(field) ?? new Map<string, { shown: string; documents: string[] }>();
+      // Different trucks may have separate supplier invoices, orders and weights.
+      // Unassigned sources remain shared; never guess them onto one of several trucks.
+      const scope = vehicleScoped.has(field) || ["invoice_number", "invoice_date", "order_number", "order_date"].includes(field) ? transportId ?? "" : "";
+      const fieldKey = JSON.stringify([scope, field]);
+      fields.set(fieldKey, field);
+      const byValue = values.get(fieldKey) ?? new Map<string, { shown: string; documents: string[] }>();
       const entry = byValue.get(key) ?? { shown: value, documents: [] };
       entry.documents.push(documentId);
       byValue.set(key, entry);
-      values.set(field, byValue);
+      values.set(fieldKey, byValue);
     }
   }
   const conflicts: ExtractionConflict[] = [];
-  for (const [field, byValue] of values) {
+  for (const [fieldKey, byValue] of values) {
     if (byValue.size < 2) continue;
-    conflicts.push({ field, values: [...byValue.values()].map(entry => entry.shown), documents: [...new Set([...byValue.values()].flatMap(entry => entry.documents))] });
+    conflicts.push({ field: fields.get(fieldKey)!, values: [...byValue.values()].map(entry => entry.shown), documents: [...new Set([...byValue.values()].flatMap(entry => entry.documents))] });
   }
   return conflicts;
 }

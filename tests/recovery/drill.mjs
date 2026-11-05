@@ -48,7 +48,8 @@ export async function runRecoveryDrill(c){
   const shipment=q("select to_jsonb(id) from public.shipments where project_code='BROWSER-HISTORICAL';");
   // Extend the existing completed pilot, not a parallel business fixture: retain an active reserve too.
   const order=await rpc('create_customer_order',{p_customer_id:refs.customer,p_contract_id:null,p_warehouse_id:refs.warehouse,
-    p_planned_shipment_date:q('select to_jsonb(current_date);'),p_currency_id:refs.eur,p_notes:'Synthetic recovery active reservation'});
+    // Use the same business day as the real order RPC, including after 19:00 UTC.
+    p_planned_shipment_date:q('select to_jsonb(private.business_today());'),p_currency_id:refs.eur,p_notes:'Synthetic recovery active reservation'});
   const item=await rpc('add_customer_order_item',{p_sale_id:order,p_product_id:refs.b,p_quantity:1,p_uom:'piece',p_unit_price:3,p_required_shelf_life_pct:0});
   await rpc('reserve_customer_order_item_fefo',{p_sale_item_id:item});await rpc('confirm_customer_order',{p_sale_id:order});
   // Real Storage uploads, two different byte streams and the normal document version trigger.

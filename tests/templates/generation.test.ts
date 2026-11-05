@@ -27,7 +27,7 @@ describe("shipment document generation data", () => {
     assert.equal(data.items[0].confirmed_quantity, "", "an unknown quantity stays blank");
     assert.equal(data.items[0].unit_price, "", "prices stay out of ordinary documents");
     assert.equal(data.total_amount, "");
-    assert.equal(data.total_gross_weight_kg, "15");
+    assert.equal(data.total_gross_weight_kg, "", "full gross requires carton and pallet counts and explicit vehicle tare");
     assert.equal(data.transports[0].carrier_name, "Carrier");
     assert.equal(data.transports[0].vehicle_plate, "123ABC");
   });
