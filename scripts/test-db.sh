@@ -232,6 +232,8 @@ echo "re-applying document migrations (idempotency check)"
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611030100_customs_line_matches.sql" >/dev/null
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611050100_exact_expense_allocation.sql" >/dev/null
+
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
   "${PSQL[@]}" -v repo_root="$ROOT" -o /dev/null -f "$test_file"
@@ -357,3 +359,4 @@ node "$ROOT/scripts/test-assistant-expense-reversal-concurrency.mjs" "${PSQL[@]}
 node "$ROOT/scripts/test-assistant-expense-payment-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-assistant-document-access-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-customs-match-concurrency.mjs" "${PSQL[@]}"
+node "$ROOT/scripts/test-exact-allocation-concurrency.mjs" "${PSQL[@]}"
