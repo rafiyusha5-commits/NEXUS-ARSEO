@@ -40,6 +40,7 @@ $$;
 create table tests.sec_exec_allow (role_name text, fn text, primary key (role_name, fn));
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
+  'public.exact_expense_allocation_context', 'public.save_exact_expense_allocation',
   'public.historical_sale_receipt_preview', 'public.record_historical_sale_receipt',
   'public.can_record_historical_sale', 'public.create_historical_customer_order',
   'public.list_operational_archives', 'public.read_operational_archive',
