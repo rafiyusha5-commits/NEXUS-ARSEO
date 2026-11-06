@@ -1,3 +1,4 @@
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { requireUser } from "@/lib/auth/access";
@@ -60,6 +61,7 @@ export default async function HistoricalPreparationPage({ searchParams }: { sear
       input = { shipmentId, sources: currentSources, transportIds, choices, complete: Boolean(checkedAt), items: (items.data ?? []).map(item => ({ ...item, product: Array.isArray(item.product) ? item.product[0] ?? null : item.product })) };
     }
   } catch { error = true; input = null; folderName = ""; }
+  const documentActions = await loadDocumentActions(supabase, (input?.sources ?? []).map(row => row.document_id));
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Исторические поставки</p><h1>Проект загрузки</h1></div><Link href="/shipments">К поставкам</Link></header>
     {error && <p role="alert">Проект или источники недоступны. Проверьте права, подключение и актуальность папки. Частичные данные не используются.</p>}
@@ -68,6 +70,6 @@ export default async function HistoricalPreparationPage({ searchParams }: { sear
     {!error && <section className="panel admin-section"><h2>Выберите доступный источник</h2><form action="/shipments/prepare"><label>Папка, привязанная к поставке<select name="shipment" defaultValue={params.shipment ?? ""} required><option value="" disabled>Выберите поставку-источник</option>{shipments.map(s => <option key={s.id} value={s.id}>{s.shipment_number}</option>)}</select></label><button className="primary">Подготовить проект</button></form><p>Используется существующая привязка папки. Новую папку сначала подключите в разделе документов поставки. Выбор не запускает импорт, OCR или подтверждение.</p>
       <h3>Продолжить сохранённый проект</h3>{drafts.map(d => <p key={d.id}><Link href={`/shipments/prepare?shipment=${d.source_shipment_id}&draft=${d.id}`}>{shipments.find(s => s.id === d.source_shipment_id)?.shipment_number ?? "Проект"} · {new Date(d.updated_at).toLocaleString("ru-RU")}</Link></p>)}
     </section>}
-    {input && <><section className="panel admin-section"><h2>{folderName}</h2><p>Последний сохранённый полный обход: {checkedAt ? new Date(checkedAt).toLocaleString("ru-RU") : "не выполнялся"}. Это не проверка каждого файла Drive в реальном времени.</p><Link href={`/shipments/${input.shipmentId}?tab=documents#drive-folder`}>Открыть существующее сопоставление папки и повторное сканирование</Link></section>{changed && <p role="status">Часть прежних источников недоступна или устарела. Данные скрыты, комплект требует повторной проверки.</p>}<HistoricalPreparation key={`${id}:${revision}`} input={input} id={id} revision={revision} prepareNew={prepareNew} save={saveHistoricalPreparation}/></>}
+    {input && <><section className="panel admin-section"><h2>{folderName}</h2><p>Последний сохранённый полный обход: {checkedAt ? new Date(checkedAt).toLocaleString("ru-RU") : "не выполнялся"}. Это не проверка каждого файла Drive в реальном времени.</p><Link href={`/shipments/${input.shipmentId}?tab=documents#drive-folder`}>Открыть существующее сопоставление папки и повторное сканирование</Link></section>{changed && <p role="status">Часть прежних источников недоступна или устарела. Данные скрыты, комплект требует повторной проверки.</p>}<HistoricalPreparation documentActions={documentActions} key={`${id}:${revision}`} input={input} id={id} revision={revision} prepareNew={prepareNew} save={saveHistoricalPreparation}/></>}
   </section></main>;
 }

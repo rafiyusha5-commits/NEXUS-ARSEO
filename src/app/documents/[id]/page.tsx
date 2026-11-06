@@ -1,3 +1,5 @@
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -94,6 +96,7 @@ export default async function DocumentPage({
   const activeLinks = (links ?? []) as { id: string; entity_type: string; entity_id: string; link_role: string; created_at: string; creator: Named }[];
   const targets = await resolveLinkTargets(supabase, activeLinks);
   const linkOptions = canEdit ? await loadLinkOptions(supabase) : [];
+  const documentActions = await loadDocumentActions(supabase, [doc.id]);
   const currentVersion = (versions ?? []).find((version) => version.is_current);
   const reviewHistory = (approvals ?? []) as unknown as {
     id: string; status: string; entity_version: number | null; request_comment: string | null; comment: string | null;
@@ -215,9 +218,10 @@ export default async function DocumentPage({
             {currentVersion ? (
               <div className="doc-current-file">
                 <div><strong>{doc.original_filename}</strong><small>{formatFileSize(doc.file_size_bytes)} · {doc.mime_type}</small></div>
-                <a className="primary button-link" href={`/documents/${doc.id}/download?version=${currentVersion.id}`}>Скачать</a>
+                <a className="primary button-link" href={`/documents/${doc.id}/download?version=${currentVersion.id}`}>Скачать оригинал</a>
               </div>
             ) : <div className="empty-state">Файл не найден.</div>}
+            <DocumentActions document={documentActions[doc.id]} reviewOnly/>
             {doc.description && <p className="doc-description">{doc.description}</p>}
 
             {canEdit && (
@@ -285,7 +289,7 @@ export default async function DocumentPage({
                 <div><strong>{one(version.uploader as Named)?.full_name ?? "—"}</strong><small>{formatDateTime(version.uploaded_at)}</small></div>
                 <div className="doc-version-actions">
                   {version.is_current && <span className="doc-badge doc-status-approved">Актуальная</span>}
-                  <a className="ghost button-link compact" href={`/documents/${doc.id}/download?version=${version.id}`}>Скачать</a>
+                  <a className="ghost button-link compact" href={`/documents/${doc.id}/download?version=${version.id}`}>Скачать оригинал</a>
                 </div>
               </div>
             ))}

@@ -16,6 +16,8 @@ function load(relative: string) {
   new Function("require", "module", "exports", compiled)((id: string) => {
     if (id === "@/lib/auth/access") return { requireUser: async () => ({ profile: {}, roles: [], supabase: {} }) };
     if (id === "@/lib/permissions") return { loadPermissions: async () => ({}) };
+    if (id === "@/lib/documents/load-actions") return { loadDocumentActions: async () => ({}) };
+    if (id === "@/components/documents/document-actions") return { DocumentActions: () => null };
     if (id === "@/lib/shipment-report") return { loadShipmentReport: async () => report, localizedName: () => "Synthetic", one: (value: unknown) => value };
     if (id === "@/lib/shipment-outcome") return { loadShipmentOutcome: async () => ({}) };
     if (id === "@/lib/shipment-outcome-workbook") return { outcomeWorkbookSheets: () => [] };

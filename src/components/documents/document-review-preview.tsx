@@ -1,8 +1,6 @@
+import { hasReviewTables } from "@/lib/document-extraction/review-definitions";
 import { formatDate } from "@/lib/documents/labels";
 import type { SourceFieldDefinition } from "@/lib/document-extraction/rules";
-import { isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
-import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
-import { isSupplierLots } from "@/lib/document-extraction/yilmaz";
 
 type ReviewSource = {
   id: string;
@@ -28,12 +26,7 @@ export function DocumentReviewPreview({ source, definitions }: { source: ReviewS
     }
     return [{ key, label, display }];
   });
-  const data = source.extracted_data ?? {};
-  const customs = data.customs_record;
-  const hasTables = isCommodityInvoice(data.commodity_invoice) || isPackingEvidence(data.packing_evidence)
-    || isSupplierLots(data.supplier_lots) || (Array.isArray(data.invoice_items) && data.invoice_items.length > 0)
-    || (customs && typeof customs === "object" && "fields" in customs && Array.isArray(customs.fields) && customs.fields.length > 0);
-  if (!fields.length && !hasTables) return null;
+  if (!fields.length && !hasReviewTables(source.extracted_data)) return null;
 
   return <details className="document-review-preview">
     <summary>Посмотреть поля сверки</summary>

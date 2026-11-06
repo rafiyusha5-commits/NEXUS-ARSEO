@@ -6,14 +6,19 @@ import { isUuid } from "@/lib/documents/rules.ts";
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { supabase } = await requirePortalUser();
-  const version = request.nextUrl.searchParams.get("version") ?? "";
+  let version = request.nextUrl.searchParams.get("version");
   const fallback = new URL(isUuid(id) ? `/portal/documents/${id}` : "/portal/documents", request.url);
   const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
-  if (!isUuid(id) || !isUuid(version)) return NextResponse.redirect(fallback, { status: 303, headers });
+  if (!isUuid(id) || (version !== null && !isUuid(version))) return NextResponse.redirect(fallback, { status: 303, headers });
   const { data: permissionData } = await supabase.rpc("my_external_document_permissions");
   if (!(permissionData as { download?: boolean } | null)?.download) {
     fallback.searchParams.set("error", "Скачивание не разрешено");
     return NextResponse.redirect(fallback, { status: 303, headers });
+  }
+  if (version === null) {
+    const { data: published } = await supabase.rpc("my_external_document", { p_document_id: id });
+    version = published?.[0]?.version_id ?? null;
+    if (!version || !isUuid(version)) return NextResponse.redirect(fallback, { status: 303, headers });
   }
   const { data: rows } = await supabase.rpc("my_external_document_file", { p_document_id: id, p_version_id: version });
   const file = ((rows ?? []) as { storage_path: string; original_filename: string }[])[0];

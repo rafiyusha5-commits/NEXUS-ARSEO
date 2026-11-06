@@ -40,7 +40,7 @@ export default async function PortalDocumentPage({ params, searchParams }: { par
         {document.description && <p className="doc-description">{document.description}</p>}
         <div className="doc-version-list"><div className="doc-version-row is-current">
           <span className="stage-number">v{document.version_number}</span><div><strong>{document.original_filename}</strong><small>{formatFileSize(document.file_size_bytes)}</small></div><div><strong>{formatDateTime(document.uploaded_at)}</strong></div>
-          <div className="doc-version-actions">{flags.download ? <a className="primary button-link compact" href={`/portal/documents/${id}/download?version=${document.version_id}`}>Скачать</a> : <span className="form-help">Скачивание отключено</span>}</div>
+          <div className="doc-version-actions">{flags.download ? <a className="primary button-link compact" href={`/portal/documents/${id}/download?version=${document.version_id}`}>Скачать оригинал</a> : <span className="form-help">Скачивание отключено</span>}</div>
         </div></div>
       </section>
     </section>

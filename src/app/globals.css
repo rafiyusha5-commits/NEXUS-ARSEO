@@ -371,3 +371,16 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
     border: 1px solid #8baed7;
   }
 }
+
+.document-actions {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .45rem 1.1rem;
+  min-width: 0;
+}
+.doc-row > .document-actions, .document-reference > .document-actions { grid-column: 1 / -1; }
+.document-actions a { font-weight: 650; }
+.document-actions a[href*="/download"] { color: var(--document-link); text-decoration: underline; text-underline-offset: .18em; }
+
+.linked-document-list { display: grid; gap: .8rem; padding-inline-start: 1.2rem; }

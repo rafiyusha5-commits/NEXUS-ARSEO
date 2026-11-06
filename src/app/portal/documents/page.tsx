@@ -32,11 +32,14 @@ export default async function PortalDocumentsPage({ searchParams }: { searchPara
         <div className="panel-heading"><div><p className="eyebrow">Открытые материалы</p><h2>Документы вашей компании</h2></div></div>
         <div className="doc-list portal-doc-list">
           {visibleDocuments.map((doc) => {
-            return <Link className="doc-row" href={`/portal/documents/${doc.id}`} key={doc.id}>
+            return <article className="doc-row" key={doc.id}>
               <div className="doc-main"><span className="doc-type">{doc.type_name ?? "Документ"}</span><strong>{doc.title}</strong><small>{doc.original_filename ?? "Файл"}</small></div>
               <div><strong>{doc.document_number || "Без номера"}</strong><small>{formatDate(doc.document_date)}</small></div>
               <div><strong>{doc.status === "approved" ? "Утверждён" : "Доступен"}</strong><small>{formatDateTime(doc.created_at)}</small></div>
-            </Link>;
+              <span className="document-actions"><Link href={`/portal/documents/${doc.id}`}>Открыть карточку</Link>
+                {flags.download && <a href={`/portal/documents/${doc.id}/download`}>Скачать оригинал</a>}
+              </span>
+            </article>;
           })}
           {!visibleDocuments.length && <div className="empty-state">ARSEO пока не открыл документы для вашей компании.</div>}
         </div>

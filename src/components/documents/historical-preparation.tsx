@@ -1,10 +1,12 @@
 "use client";
+import { DocumentActions } from "@/components/documents/document-actions";
+import type { DocumentActionIndex } from "@/lib/documents/action-index";
 import { useState } from "react";
 import { preparationPreview, preparationGroups, preparationVariants, preparationStates, type PreparationInput, type PreparationChoice } from "@/lib/shipments/historical-preparation";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 
-export function HistoricalPreparation({ input, id, revision, prepareNew, save }: {
-  input: PreparationInput; id: string; revision: number; prepareNew: boolean; save: (form: FormData) => Promise<void>;
+export function HistoricalPreparation({ input, id, revision, prepareNew, save, documentActions = {} }: {
+  documentActions?: DocumentActionIndex; input: PreparationInput; id: string; revision: number; prepareNew: boolean; save: (form: FormData) => Promise<void>;
 }) {
   const [choices, setChoices] = useState(input.choices);
   const [newShipment, setNewShipment] = useState(prepareNew);
@@ -17,13 +19,14 @@ export function HistoricalPreparation({ input, id, revision, prepareNew, save }:
     <nav className="historical-steps" aria-label="Этапы подготовки">{["1. Назначение документов", "2. Источники значений", "3. Действия перед переносом"].map((label, n) => <button type="button" key={label} className={step === n ? "primary" : "ghost"} aria-current={step === n ? "step" : undefined} onClick={() => setStep(n)}>{label}</button>)}</nav>
     <div><label htmlFor="historical-target">Назначение проекта</label><select id="historical-target" value={String(newShipment)} onChange={e => setNewShipment(e.target.value === "true")}><option value="false">Подготовить существующую поставку источников</option><option value="true">Подготовить новую поставку (пока не создавать)</option></select></div>
     <p className="form-help">Назначение и вид документа в проекте — предположение сотрудника для разбора, не новое подтверждение. Госномер, язык и имя папки не определяют перевозку. Для новой поставки связи и подтверждения автоматически не переносятся.</p>
-    {step === 0 && <div className="historical-cards">{preview.rows.map(row => <article key={row.id} className="historical-card"><h3>{row.title}</h3><a href={row.href}>Источник: текущая версия</a><p>Контекст Nexus: {row.transportId ? `автомобиль ${input.transportIds.indexOf(row.transportId) + 1}` : "вся поставка / автомобиль не установлен"}</p>
+    {step === 0 && <div className="historical-cards">{preview.rows.map(row => <article key={row.id} className="historical-card"><h3>{row.title}</h3><DocumentActions document={documentActions[row.documentId]} fileId={row.version}/><p>Контекст Nexus: {row.transportId ? `автомобиль ${input.transportIds.indexOf(row.transportId) + 1}` : "вся поставка / автомобиль не установлен"}</p>
       {row.stale && <p role="status">Источник изменён. Прежнее назначение не перенесено.</p>}
       <label>Операция: {row.title}<select value={row.choice.group} onChange={e => choose({ ...row.choice, group: e.target.value as PreparationChoice["group"] })}>{Object.entries(preparationGroups).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <label>Вид: {row.title}<select value={row.choice.variant} onChange={e => choose({ ...row.choice, variant: e.target.value as PreparationChoice["variant"] })}>{Object.entries(preparationVariants).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <small>{row.choice.group === "unknown" ? preparationStates.unknown : preparationStates.assumption}. Переводы и копии не объединяются и не суммируются.</small>
     </article>)}</div>}
     {step === 1 && <div>{preview.rows.map(row => <details className="historical-card" key={row.id} open><summary>{row.title} · {preparationGroups[row.choice.group]}</summary>
+      <DocumentActions document={documentActions[row.documentId]} fileId={row.version}/>
       {row.quantityConflicts.length > 0 && <div role="status"><h4>Противоречие количества</h4><ul>{row.quantityConflicts.map(c => <li key={`${c.itemId}:${c.otherHref}`}>{c.label}: здесь {c.quantity}, в документе <a href={c.otherHref}>«{c.otherTitle}»</a> — {c.otherQuantity} ({c.unit}). Проверьте, относятся ли документы к одной отгрузке.</li>)}</ul><p>Оба источника сохранены. Разница с потребностью и фактическая приёмка проверяются отдельно.</p></div>}
       <dl className="historical-values">{row.fields.filter(f => f.value !== null || ["invoice_number", "shipping_date", "cmr_number"].includes(f.key)).map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.value ?? "Нет данных"}<small>{preparationStates[field.state as keyof typeof preparationStates]} · <a href={row.href}>источник</a></small></dd></div>)}</dl>
       {row.quantities && <><h4>Документальное количество, не приёмка</h4>{!row.lines.length && <p>Товарные строки не установлены.</p>}{row.lines.map((line, n) => <p key={n}>Строка {line.line_number ?? n + 1}: {line.sku ?? line.product_name ?? "Товар не установлен"} — {line.quantity ?? "количество не установлено"} {line.uom ?? "единица не установлена"}. Установлено по документу, не перенесено. <a href={row.href}>Источник строки</a></p>)}<h4>Сопоставление с позициями</h4>{row.quantities.proposals.map(p => <p key={p.itemId}>{p.line?.sku ?? "Позиция"}: {p.quantity ?? "не установлено"} {p.line?.uom ?? ""} · {p.review ?? "Сопоставлено существующими правилами; проверьте по источнику"} <a href={row.href}>Источник</a></p>)}{row.quantities.warnings.map((w,n) => <p key={n}>{w}</p>)}</>}

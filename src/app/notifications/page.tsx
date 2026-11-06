@@ -1,3 +1,6 @@
+import { loadDocumentActions } from "@/lib/documents/load-actions";
+import { DocumentActions } from "@/components/documents/document-actions";
+import type { DocumentActionInfo } from "@/lib/documents/action-index";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
@@ -14,7 +17,7 @@ type NotificationRow = {
 
 const COLUMNS = "id, type, title, body, entity_type, entity_id, shipment_id, is_read, read_at, created_at";
 
-function NotificationItem({ item }: { item: NotificationRow }) {
+function NotificationItem({ item, document }: { item: NotificationRow; document?: DocumentActionInfo }) {
   const link = notificationLink(item);
   return (
     <article className={`notification-row${item.is_read ? " notification-read" : ""}`}>
@@ -33,6 +36,7 @@ function NotificationItem({ item }: { item: NotificationRow }) {
             <button className="primary compact" type="submit">{link.label}</button>
           </form>
         )}
+        {document && <DocumentActions document={document} hideCard/>}
         {!item.is_read && (
           <form action={markNotificationReadAction}>
             <input type="hidden" name="notification_id" value={item.id} />
@@ -64,6 +68,8 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const migrationMissing = Boolean((error && /shipment_id|schema cache/.test(error.message)) || (refreshError && /refresh_my_deadline_notifications/.test(refreshError.message)));
   const unreadItems = (unread ?? []) as NotificationRow[];
   const readItems = (read ?? []) as NotificationRow[];
+  const ids = [...unreadItems, ...readItems].filter(item => notificationLink(item)?.href.startsWith("/documents/")).map(item => item.entity_id);
+  const documents = await loadDocumentActions(supabase, ids);
 
   return (
     <main className="app-shell">
@@ -90,7 +96,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         <section className="panel admin-section">
           <div className="panel-heading"><div><p className="eyebrow">Требуют внимания</p><h2>Непрочитанные</h2></div><span className="page-count">{unreadItems.length}</span></div>
           <div className="notification-list">
-            {unreadItems.map((item) => <NotificationItem item={item} key={item.id} />)}
+            {unreadItems.map((item) => <NotificationItem document={item.entity_type === "document" && item.entity_id ? documents[item.entity_id] : undefined} item={item} key={item.id} />)}
             {!unreadItems.length && !error && <div className="empty-state">Новых уведомлений нет. Здесь появятся назначенные задачи, сроки, блокировки этапов и запросы согласования.</div>}
           </div>
         </section>
@@ -98,7 +104,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         <section className="panel admin-section">
           <div className="panel-heading"><div><p className="eyebrow">История</p><h2>Прочитанные</h2></div><span className="page-count">последние {readItems.length}</span></div>
           <div className="notification-list">
-            {readItems.map((item) => <NotificationItem item={item} key={item.id} />)}
+            {readItems.map((item) => <NotificationItem document={item.entity_type === "document" && item.entity_id ? documents[item.entity_id] : undefined} item={item} key={item.id} />)}
             {!readItems.length && !error && <div className="empty-state">Прочитанных уведомлений пока нет.</div>}
           </div>
         </section>

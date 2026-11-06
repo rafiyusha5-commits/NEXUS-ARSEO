@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
-import Link from "next/link";
+import { DocumentActions } from "@/components/documents/document-actions";
+import type { DocumentActionIndex } from "@/lib/documents/action-index";
 import { sourceState } from "@/lib/google/shipment-folder";
 import { reconciliationLabels, type Candidate, type ReconciliationState } from "@/lib/google/folder-reconciliation";
 import { DriveSubmit } from "./shipment-drive-submit";
 export type FolderBinding = { folder_id: string; folder_name: string; checked_at: string | null };
 export type FolderFile = { file_id: string; name: string; path: string; revision: string; present: boolean; imported_document_id: string | null; imported_revision: string | null; state?: ReconciliationState; candidates?: Candidate[]; verified?: boolean; operation_id?: string };
 export type FolderActions = { bind: (form: FormData) => Promise<void>; scan: (form: FormData) => Promise<void>; upload: (form: FormData) => Promise<void>; check?: (form: FormData) => Promise<void>; link?: (form: FormData) => Promise<void> };
-export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId, initialFolder }: { shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string; initialFolder?: string }) {
+export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId, initialFolder, documentActions = {} }: { documentActions?: DocumentActionIndex;  shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string; initialFolder?: string }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
   const [folder, setFolder] = useState("");
@@ -45,7 +46,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
               <DriveSubmit pending="Скачиваю только для проверки…">Проверить содержимое</DriveSubmit>
             </form>}
             {file.candidates?.map(candidate => <aside className="panel" key={candidate.id}>
-              <Link href={`/documents/${candidate.id}`}>{candidate.title}</Link>
+              <strong>{candidate.title}</strong><DocumentActions document={documentActions[candidate.id]} version={candidate.version}/>
               <p>{candidate.type} · версия {candidate.version} · {({ approved: "Документ одобрен сотрудником", uploaded: "Документ не подтверждён", under_review: "Документ на проверке" } as Record<string, string>)[candidate.status] ?? "Проверка требуется"}</p>
               {candidate.review && <p>{candidate.review}</p>}
               <p>Основание: {candidate.basis === "checksum" ? "SHA-256 скачанного содержимого совпадает" : candidate.basis === "linked" ? "Действующая связь с поставкой" : "Совпадает имя — это не доказательство дубля"}. Подтверждение прочитанных реквизитов проверяется отдельно в документе.</p>
@@ -56,7 +57,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
                 <DriveSubmit pending="Повторно проверяю источник и версию…">Связать с существующим документом</DriveSubmit>
               </form>}
             </aside>)}
-            {file.imported_document_id ? <><Link href={`/documents/${file.imported_document_id}`}>Открыть сохранённый документ</Link>{file.revision !== file.imported_revision && <p>Для замены сначала сравните оригиналы и отдельно согласуйте новую версию. Эта проверка сохраняет ручные подтверждения.</p>}</> : file.present && file.state !== "unsupported" && file.state !== "exact" && canImport && <form action={actions.upload} className="form-grid">
+            {file.imported_document_id ? <><DocumentActions document={documentActions[file.imported_document_id]}/>{file.revision !== file.imported_revision && <p>Для замены сначала сравните оригиналы и отдельно согласуйте новую версию. Эта проверка сохраняет ручные подтверждения.</p>}</> : file.present && file.state !== "unsupported" && file.state !== "exact" && canImport && <form action={actions.upload} className="form-grid">
               <input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="file_id" value={file.file_id}/><input type="hidden" name="revision" value={file.revision}/>
               <input type="hidden" name="operation_id" value={file.operation_id ?? ""}/>
               <label>Тип документа<select name="document_type_id" required defaultValue=""><option value="" disabled>Выберите тип</option>{types?.map(type => <option key={type.id} value={type.id}>{type.name_ru}</option>)}</select></label>

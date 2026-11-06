@@ -1,3 +1,5 @@
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -160,6 +162,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     ? await supabase.from("currencies").select("id, code").eq("is_active", true).order("code")
     : { data: [] };
 
+  const documentActions = await loadDocumentActions(supabase, documents.map(doc => doc.id));
   const prefillLink = parseLinkValue(params.link ?? "");
   const prefillType = isUuid(params.doc_type) ? params.doc_type : undefined;
   const returnTo = prefillLink?.entity_type === "shipment" ? `/shipments/${prefillLink.entity_id}` : "/documents";
@@ -245,10 +248,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                   const activeLinks = document.links.filter((link) => !link.removed_at);
                   const linkTypes = [...new Set(activeLinks.map((link) => link.entity_type))];
                   return (
-                    <Link className={`doc-row${document.archived_at ? " doc-archived" : ""}`} href={`/documents/${document.id}`} key={document.id}>
+                    <article className={`doc-row${document.archived_at ? " doc-archived" : ""}`} key={document.id}>
                       <div className="doc-main">
                         <span className="doc-type">{type?.name_ru ?? "Тип не указан"}</span>
-                        <strong>{document.title}</strong>
+                        <strong><Link href={`/documents/${document.id}`}>{document.title}</Link></strong>
                         <small>{document.document_number ? `№ ${document.document_number}` : "Без номера"} · версия {document.current_version} · {document.original_filename ?? "файл"}</small>
                       </div>
                       <div className="doc-dates">
@@ -268,7 +271,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                           : <span className={`doc-badge doc-status-${document.status}`}>{documentStatusLabel[document.status] ?? document.status}</span>}
                         <small>{uploader?.full_name ?? "—"} · {formatDateTime(document.created_at)}</small>
                       </div>
-                    </Link>
+                      <DocumentActions document={documentActions[document.id]}/>
+                    </article>
                   );
                 })}
                 {!documents.length && !listError && (

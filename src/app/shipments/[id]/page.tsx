@@ -1,3 +1,5 @@
+import { loadDocumentActions } from "@/lib/documents/load-actions";
+import { DocumentActions } from "@/components/documents/document-actions";
 import Link from "next/link";
 import { cargoOperation } from "@/lib/shipments/pallet-weight";
 import { QuantityProvenancePanel } from "@/components/shipments/quantity-provenance-panel";
@@ -45,7 +47,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes,driver_name,driver_phone,driver_document,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name,purchase_pallet_tare_kg,sale_pallet_tare_kg").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
-    supabase.from("expenses").select("id,expense_type,amount,incurred_at,is_planned,status,currency:currencies(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name)").eq("shipment_id",id).order("incurred_at",{ascending:false}),
+    supabase.from("expenses").select("id,document_id,expense_type,amount,incurred_at,is_planned,status,currency:currencies(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name)").eq("shipment_id",id).order("incurred_at",{ascending:false}),
     supabase.from("shipment_stage_history").select("id,from_status,to_status,performed_by_name,reason,created_at,run:shipment_stage_runs(stage:shipment_stages(name),transport:shipment_transports(sequence_no)),user:profiles!shipment_stage_history_changed_by_fkey(full_name)").eq("shipment_id",id).order("created_at",{ascending:false}),
   ]);
   if(error||!shipment)notFound();
@@ -68,6 +70,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   let generationPreview:Awaited<ReturnType<typeof loadGenerationPreview>>|null=null;
   if(generationTemplates.length){try{generationPreview=await loadGenerationPreview(supabase,generationTemplates[0].id,id,false);}catch{generationPreview=null;}}
   const documentReadiness=generationPreview?buildShipmentDocumentReadiness(generationPreview.data,generationPreview.confirmedSourceFields):null;
+  const expenseDocuments = await loadDocumentActions(supabase, notices.tab === "expenses" && permissions["finance.view"] ? (expenses ?? []).map(row => row.document_id) : []);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поставка · {shipment.type}</p><h1>{shipment.shipment_number}</h1></div><div className="topbar-actions"><span className={`status shipment-${shipment.status}`}>{shipmentStatus[shipment.status]??shipment.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}/report`}>Отчёт</Link><Link className="ghost button-link" href={`/tasks?view=all&shipment=${shipment.id}`}>Задачи поставки</Link><Link className="ghost button-link" href="/shipments">К реестру</Link></div></header>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
@@ -140,7 +143,7 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
     <ShipmentDriveFolderPanel shipmentId={shipment.id}/>
     </>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Финансы поставки</p><h2>Расходы</h2></div><span className="page-count">{expenses?.length??0}</span></div>
-      {permissions["finance.view"]?<><div className="compact-list">{expenses?.map(expense=>{const expenseCurrency=one(expense.currency);const payee=one(expense.payee);return <article className="operation-history-row" key={expense.id}><div><strong>{expenseType[expense.expense_type]??expense.expense_type}</strong><small>{expense.incurred_at} · {expense.is_planned?"план":"факт"} · {expense.status}</small></div><strong>{Number(expense.amount).toLocaleString("ru-RU")} {expenseCurrency?.code}</strong><small>{payee?.short_name||payee?.legal_name||"Получатель не указан"}</small></article>})}{!expenses?.length&&<div className="empty-state">Расходов по этой поставке пока нет.</div>}</div><div className="panel-footer-actions"><Link className="primary button-link" href={`/finance?shipment=${shipment.id}`}>Открыть расходы и себестоимость</Link></div></>:<div className="empty-state">Для просмотра расходов требуется право «Финансы: просмотр».</div>}
+      {permissions["finance.view"]?<><div className="compact-list">{expenses?.map(expense=>{const expenseCurrency=one(expense.currency);const payee=one(expense.payee);return <article className="operation-history-row" key={expense.id}><div><strong>{expenseType[expense.expense_type]??expense.expense_type}</strong>{expense.document_id && <DocumentActions document={expenseDocuments[expense.document_id]}/>}<small>{expense.incurred_at} · {expense.is_planned?"план":"факт"} · {expense.status}</small></div><strong>{Number(expense.amount).toLocaleString("ru-RU")} {expenseCurrency?.code}</strong><small>{payee?.short_name||payee?.legal_name||"Получатель не указан"}</small></article>})}{!expenses?.length&&<div className="empty-state">Расходов по этой поставке пока нет.</div>}</div><div className="panel-footer-actions"><Link className="primary button-link" href={`/finance?shipment=${shipment.id}`}>Открыть расходы и себестоимость</Link></div></>:<div className="empty-state">Для просмотра расходов требуется право «Финансы: просмотр».</div>}
     </section>
     <>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Процесс RVI</p><h2>Этапы поставки</h2></div><span className="page-count">{runs?.filter((run)=>run.status==="completed").length??0} из {runs?.length??0} завершено</span></div>
