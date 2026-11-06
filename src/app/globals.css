@@ -318,3 +318,42 @@ input,select,textarea{border-radius:var(--radius-control)}
 .workflow-steps [aria-current="step"]{background:#161616;color:#fff}
 .workflow-choice-list{display:grid;gap:12px;padding-inline-start:22px;overflow-wrap:anywhere}
 .workflow-steps a:focus-visible,.workflow-choice-list a:focus-visible{outline:3px solid #d62424;outline-offset:3px}
+
+/* A document title opens its card. A blue underline identifies a file download. */
+:root {
+  --document-link: #154c99;
+  --document-link-hover: #10386e;
+}
+
+a:is([href^="/documents/"], [href^="/portal/documents/"]) {
+  &:not(:where(.doc-row, .doc-shipment-row, .reference-row)),
+  & > div:first-child > strong {
+    color: var(--document-link);
+    text-decoration: none;
+  }
+  &:hover, &:focus-visible {
+    --document-link: var(--document-link-hover);
+  }
+  &.button-link {
+    color: var(--document-link);
+    background: #eff6ff;
+    border: 1px solid #8baed7;
+  }
+}
+
+a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/documents/"][href*="/download"],
+     [href^="/templates/"][href*="/download"], [href^="/assistant/archive/"],
+     [href$="/report/export"], [href$="/products/export"],
+     [href="/counterparties/import/template"], [href^="/products/import/template?"]) {
+  color: var(--document-link);
+  text-decoration: underline;
+  text-underline-offset: .18em;
+  &:hover, &:focus-visible {
+    color: var(--document-link-hover);
+    text-decoration-thickness: 2px;
+  }
+  &.button-link {
+    background: #eff6ff;
+    border: 1px solid #8baed7;
+  }
+}
