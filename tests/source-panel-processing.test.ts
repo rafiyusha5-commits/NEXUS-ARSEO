@@ -54,6 +54,22 @@ function load(relative: string): Record<string, unknown> {
 const panel = load("../src/components/documents/shipment-source-documents-panel.tsx").ShipmentSourceDocumentsPanel as
   (props: { shipmentId: string }) => Promise<ReactNode>;
 
+test("document summary preserves confirmed corrections and hides fields removed by the reviewer", () => {
+  const preview = load("../src/components/documents/document-review-preview.tsx").DocumentReviewPreview as
+    typeof import("../src/components/documents/document-review-preview").DocumentReviewPreview;
+  const definitions = [{ key: "order_number", label: "Номер заказа", type: "text" as const },
+    { key: "pallet_count", label: "Паллеты", type: "number" as const }];
+  const source = { id: "review-a", status: "confirmed", confirmed_data: { pallet_count: 0 },
+    extracted_data: { order_number: "old-order", pallet_count: 19, internal_note: "hidden note" } };
+  const html = renderToStaticMarkup(preview({ source, definitions }));
+  assert.match(html, /<dd>0<\/dd>/);
+  assert.match(html, /Не заполнено: Номер заказа/);
+  assert.match(html, /href="#source-result-review-a"/);
+  assert.doesNotMatch(html, /old-order|hidden note|>19</);
+  assert.equal(preview({ source: { ...source, confirmed_data: {} }, definitions }), null);
+  assert.match(renderToStaticMarkup(preview({ source: { ...source, status: "needs_review" }, definitions })), /old-order/);
+});
+
 test("actual source panel shows expired OCR with zero vehicles and with vehicles", async () => {
   for (vehicles of [[], [{ id: "vehicle", sequence_no: 1, status: "planned" }]]) {
     for (const lease of [null, "2030-01-01T00:02:00Z", "2030-01-01T00:10:00Z"]) {
