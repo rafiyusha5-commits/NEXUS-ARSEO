@@ -25,23 +25,21 @@ export function OperationTabs({
 
   return (
     <div className="operation-tabs">
-      <div className="operation-tab-list" role="tablist" aria-label={ariaLabel}>
+      <nav className="operation-tab-list" aria-label={ariaLabel}>
         {tabs.map((tab) => (
           <Link
-            aria-controls={`operation-panel-${tab.id}`}
-            aria-selected={selectedTab === tab.id}
+            aria-current={selectedTab === tab.id ? "page" : undefined}
             className="operation-tab-button"
             href={`?tab=${tab.id}`}
             id={`operation-tab-${tab.id}`}
             key={tab.id}
-            role="tab"
           >
             <span>{tab.label}</span>
             {tab.badge !== undefined && <b>{tab.badge}</b>}
           </Link>
         ))}
-      </div>
-      {tabs.map((tab, index) => selectedTab === tab.id && <div aria-labelledby={`operation-tab-${tab.id}`} className="operation-tab-panel" id={`operation-panel-${tab.id}`} key={tab.id} role="tabpanel">{panels[index]}</div>)}
+      </nav>
+      {tabs.map((tab, index) => selectedTab === tab.id && <section aria-labelledby={`operation-tab-${tab.id}`} className="operation-tab-panel" id={`operation-panel-${tab.id}`} key={tab.id}>{panels[index]}</section>)}
     </div>
   );
 }

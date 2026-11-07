@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireAccessManager } from "@/lib/auth/access";
 import { assignRole, inviteUser, removeRole, setUserActive } from "./actions";
@@ -38,9 +40,10 @@ export default async function UsersPage({
       <AppSidebar profile={profile} roles={currentRoles} active="users" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Фаза 0 · Доступ</p><h1>Пользователи</h1></div>
+          <div><p className="eyebrow">Доступ</p><h1>Пользователи</h1></div>
           <span className="page-count">{users?.length ?? 0} сотрудников</span>
         </header>
+    <WorkflowHelp section="access"/>
 
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
@@ -64,7 +67,7 @@ export default async function UsersPage({
                 {(roles ?? []).filter((role) => role.is_enabled).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
               </select>
             </label>
-            <button className="primary" type="submit" disabled={!schemaReady}>Отправить приглашение</button>
+            <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={!schemaReady}>Отправить приглашение</PendingSubmitButton>
           </form>
           <p className="form-help">Пароль задаёт сам сотрудник по ссылке из письма. Администратор пароль не видит.</p>
         </section>
@@ -86,7 +89,7 @@ export default async function UsersPage({
                       <form action={removeRole} key={role.id}>
                         <input type="hidden" name="user_id" value={employee.id} />
                         <input type="hidden" name="role_id" value={role.id} />
-                        <button className="role-chip" type="submit" title="Снять роль">{role.name} ×</button>
+                        <PendingSubmitButton pendingText="Выполняем…" className="role-chip" type="submit" title="Снять роль">{role.name} ×</PendingSubmitButton>
                       </form>
                     ))}
                   </div>
@@ -95,13 +98,13 @@ export default async function UsersPage({
                       <form action={assignRole} className="inline-form">
                         <input type="hidden" name="user_id" value={employee.id} />
                         <select name="role_id" defaultValue=""><option value="" disabled>Добавить роль</option>{available.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select>
-                        <button className="ghost compact" type="submit">Назначить</button>
+                        <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Назначить</PendingSubmitButton>
                       </form>
                     )}
                     <form action={setUserActive}>
                       <input type="hidden" name="user_id" value={employee.id} />
                       <input type="hidden" name="make_active" value={String(!employee.is_active)} />
-                      <button className="text-button danger-text" type="submit">{employee.is_active ? "Отключить" : "Восстановить"}</button>
+                      <PendingSubmitButton pendingText="Выполняем…" className="text-button danger-text" type="submit">{employee.is_active ? "Отключить" : "Восстановить"}</PendingSubmitButton>
                     </form>
                   </div>
                 </article>

@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ProductSearchFieldSelect } from "@/components/product-search-field-select";
 import { requireUser } from "@/lib/auth/access";
@@ -57,9 +59,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="products" />
     <section className="workspace admin-workspace">
-      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Номенклатура</p><h1>Товары</h1></div><div className="top-actions"><Link className="ghost button-link" href="/products/import">Импорт справочника</Link><span className="page-count">{filtered.length} из {products.length}</span></div></header>
+      <header className="topbar"><div><p className="eyebrow">Номенклатура</p><h1>Товары</h1></div><div className="top-actions"><Link className="ghost button-link" href="/products/import">Импорт справочника</Link><span className="page-count">{filtered.length} из {products.length}</span></div></header>
+    <WorkflowHelp section="products"/>
       {params.error && <div className="login-error admin-message">{params.error}</div>}{params.success && <div className="login-success admin-message">{params.success}</div>}
-      {error && <div className="setup-notice">Примените миграцию <strong>202609272000_product_catalog_classification.sql</strong> в Supabase.</div>}
+      {error && <div className="setup-notice">Не удалось загрузить данные раздела. Обновите страницу. Если ошибка повторится, сообщите администратору название раздела.</div>}
 
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Каталог</p><h2>Фильтры</h2></div></div>
         <form className="catalog-filters">
@@ -84,7 +87,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <label>ШК единицы<input name="unit_barcode" /></label><label>ШК короба<input name="box_barcode" /></label><label>ТН ВЭД<input name="hs_code" /></label>
           <label>Срок годности, дней<input name="shelf_life_days" type="number" min="1" /></label><label>Страна происхождения<input name="country_of_origin" maxLength={2} placeholder="FI" /></label>
           <label className="check-label"><input name="requires_sticker" type="checkbox" /> Нужна стикеровка</label><label className="check-label"><input name="requires_marking" type="checkbox" /> Нужен Честный знак</label>
-          <button className="primary" type="submit" disabled={Boolean(error) || !manufacturers?.length}>Создать товар</button>
+          <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error) || !manufacturers?.length}>Создать товар</PendingSubmitButton>
         </form>{!manufacturers?.length && !error && <p className="form-help">Сначала добавьте завод-поставщик в разделе «Поставщики».</p>}
       </section>
 

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -9,7 +10,8 @@ export default async function CounterpartyImportPage({ searchParams }: { searchP
   return <main className="app-shell">
     <AppSidebar profile={profile} roles={roles} active="counterparties" />
     <section className="workspace admin-workspace">
-      <header className="topbar"><div><p className="eyebrow">Фаза 1 · Справочники</p><h1>Импорт контрагентов</h1></div><Link className="ghost button-link" href="/counterparties">Вернуться к реестру</Link></header>
+      <header className="topbar"><div><p className="eyebrow">Справочники</p><h1>Импорт контрагентов</h1></div><Link className="ghost button-link" href="/counterparties">Вернуться к реестру</Link></header>
+    <WorkflowHelp section="referenceImport"/>
       {params.error && <div className="login-error admin-message">{params.error}</div>}
       {params.success && <div className="login-success admin-message">{params.success}</div>}
       <CounterpartyImportForm />

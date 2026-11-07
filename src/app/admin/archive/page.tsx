@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
@@ -26,6 +27,7 @@ export default async function ArchivePage({searchParams}:{searchParams:Promise<{
   const documentActions = await loadDocumentActions(supabase, (archive?.records.documents ?? []).map(row => typeof row.id === "string" ? row.id : null));
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="operational-archive"/><section className="workspace">
     <header className="topbar"><div><p className="eyebrow">Сохранённая история</p><h1>Архив учебных проектов</h1></div><Link className="ghost button-link" href="/shipments">К рабочим поставкам</Link></header>
+    <WorkflowHelp section="operationalArchive"/>
     <article className="panel"><p>Архив не участвует в рабочих остатках, продажах, расходах и итогах. Записи доступны только для чтения. Документы можно открыть по прежним ссылкам.</p>
       {list.error?<p role="alert">Нет доступа к полному архиву. Нужны права администратора и просмотра всех сохранённых сведений, включая цены.</p>:
         <ul>{(list.data??[]).map((a:{id:string;title:string;created_at:string})=><li key={a.id}><Link href={`/admin/archive?id=${a.id}`}>{a.title}</Link> · {new Date(a.created_at).toLocaleDateString("ru-RU")}</li>)}</ul>}

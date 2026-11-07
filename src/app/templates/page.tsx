@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TemplateCreateForm } from "@/components/template-create-form";
@@ -71,6 +72,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
             {can.view && <span className="page-count">{templates.length} в выборке</span>}
           </div>
         </header>
+    <WorkflowHelp section="templates"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         <section className="panel admin-section">

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OpeningBalanceImport } from "@/components/finance/opening-balance-import";
@@ -20,6 +21,7 @@ export default async function ReceivablesPage({ searchParams }: { searchParams: 
   const totals = totalsByCurrency(customers);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="receivables"/><section className="workspace admin-workspace receivables-workspace">
     <header className="topbar"><div><p className="eyebrow">Финансы</p><h1>Дебиторская задолженность</h1></div><div className="topbar-actions"><Link className="ghost button-link" href="/finance/bank">Поступления из банка{unmatched ? ` · не разнесено ${unmatched}` : ""}</Link></div></header>
+    <WorkflowHelp section="receivables"/>
     {notice.error && <div className="login-error admin-message">{notice.error}</div>}
     {notice.success && <div className="login-success admin-message">{notice.success}</div>}
     {error && <div className="setup-notice">Дебиторка недоступна: нужно право «Дебиторка: просмотр» или миграция <strong>202609277600_receivables.sql</strong>.</div>}

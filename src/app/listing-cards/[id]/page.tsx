@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { loadTemplatePermissions } from "@/lib/templates/supabase-gateway";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -118,6 +120,7 @@ export default async function ListingCardPage({
             <Link className="ghost button-link" href="/listing-cards">К реестру</Link>
           </div>
         </header>
+    <WorkflowHelp section="listingCards"/>
         {notices.error && <div className="login-error admin-message">{notices.error}</div>}
         {notices.success && <div className="login-success admin-message">{notices.success}</div>}
         {card.status !== "draft" && (
@@ -162,7 +165,7 @@ export default async function ListingCardPage({
                     <form action={removeCardItemAction}>
                       <input type="hidden" name="card_id" value={card.id} />
                       <input type="hidden" name="item_id" value={item.id} />
-                      <button className="ghost compact" type="submit">Удалить</button>
+                      <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Удалить</PendingSubmitButton>
                     </form>
                   ) : <span />}
                 </div>
@@ -191,7 +194,7 @@ export default async function ListingCardPage({
                 {(currencies ?? []).map((currency) => <option value={currency.id} key={currency.id}>{currency.code}</option>)}
               </select></label>
               <label>Комментарий<input name="comment" maxLength={1000} /></label>
-              <button className="primary" type="submit">Добавить позицию</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Добавить позицию</PendingSubmitButton>
               {!products?.length && <p className="form-help doc-form-full">Нет активных товаров. Добавьте товар в разделе «Товары».</p>}
             </form>
           )}
@@ -204,13 +207,13 @@ export default async function ListingCardPage({
               {actions.includes("submit") && (
                 <form action={submitCardAction}>
                   <input type="hidden" name="card_id" value={card.id} />
-                  <button className="primary" type="submit">Отправить контрагенту</button>
+                  <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Отправить контрагенту</PendingSubmitButton>
                 </form>
               )}
               {actions.includes("new_version") && (
                 <form action={createCardVersionAction}>
                   <input type="hidden" name="card_id" value={card.id} />
-                  <button className="primary" type="submit">Создать новую версию</button>
+                  <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Создать новую версию</PendingSubmitButton>
                 </form>
               )}
             </div>
@@ -226,7 +229,7 @@ export default async function ListingCardPage({
                   <option value="rejected">Контрагент отклонил</option>
                 </select></label>
                 <label>Комментарий (обязателен при отказе)<input name="comment" maxLength={1000} /></label>
-                <button className="primary" type="submit">Зафиксировать</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Зафиксировать</PendingSubmitButton>
               </form>
             )}
           </section>
@@ -268,7 +271,7 @@ export default async function ListingCardPage({
             <form action={cancelCardAction} className="doc-subform doc-archive-form">
               <input type="hidden" name="card_id" value={card.id} />
               <label>Причина<input name="reason" required minLength={3} maxLength={500} /></label>
-              <button className="ghost danger-text" type="submit">Отменить карту</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">Отменить карту</PendingSubmitButton>
             </form>
           </section>
         )}

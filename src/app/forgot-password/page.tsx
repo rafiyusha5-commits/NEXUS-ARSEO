@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import Link from "next/link";
 import { requestPasswordReset } from "./actions";
 import { AuthBrandPanel, NexusWordmark } from "@/components/brand";
@@ -41,7 +42,7 @@ export default async function ForgotPasswordPage({
             <form action={requestPasswordReset} className="login-form">
               <label htmlFor="email">Электронная почта</label>
               <input id="email" name="email" type="email" autoComplete="email" required />
-              <button className="primary login-submit" type="submit">Отправить ссылку</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary login-submit" type="submit">Отправить ссылку</PendingSubmitButton>
             </form>
           )}
           <Link className="back-link" href="/login">← Вернуться ко входу</Link>

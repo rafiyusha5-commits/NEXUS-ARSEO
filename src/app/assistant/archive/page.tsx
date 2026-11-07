@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -25,6 +26,7 @@ export default async function ArchivePage({ searchParams }: { searchParams: Prom
   const visible = allowed && required.every(code => fresh[code]);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="assistant" /><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Ассистент</p><h1>Архив Google Drive</h1></div><Link className="ghost button-link" href="/assistant">Вернуться к ассистенту</Link></header>
+    <WorkflowHelp section="archive"/>
     {!visible ? <p>Нет права доступа к архиву Google Drive.</p> : <section className="panel admin-section">
       <p>Оригиналы из папки «02_Для дистрибьюторов KZ» остаются на Google Drive. В Nexus хранится каталог и безопасный извлечённый текст. Google Drive — только чтение.</p>
       {run?.error ? <p>Каталог недоступен. Администратору необходимо проверить миграции и серверный доступ к архиву.</p> : <>

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { linkedDocuments, LinkedDocuments } from "@/components/documents/linked-documents";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -19,6 +20,7 @@ export default async function CustomerReturnsPage() {
   const documents = await linkedDocuments(supabase, "customer_return", rows.map(row => row.id));
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="customer-returns"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Продажи</p><h1>Возвраты от покупателей</h1></div></header>
+    <WorkflowHelp section="returns"/>
     {error && <div className="setup-notice">Возвраты недоступны: нужно право «Клиентские заказы: просмотр» или миграция <strong>202609277500_customer_returns.sql</strong>.</div>}
     {!error && <>
       <section className="shipment-summary-grid">

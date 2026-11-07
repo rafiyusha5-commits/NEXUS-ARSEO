@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { randomUUID } from "node:crypto";
@@ -27,6 +28,7 @@ export default async function AllocationPage({ params, searchParams }: { params:
   const actions = new Set<string>((permissions ?? []) as string[]);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="finance"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Расходы поставки</p><h1>Точное распределение</h1></div></header>
+    <WorkflowHelp section="allocation"/>
     <a href={`/finance?shipment=${expense.shipment_id}`}>Вернуться к расходам и себестоимости</a>
     {error && <p role="alert" className="login-error">{ruleViolationMessage(error)}</p>}
     {c && <><section className="panel admin-section"><h2>{c.shipment_number} · {c.amount} {c.currency}</h2><p>{c.notes}</p>

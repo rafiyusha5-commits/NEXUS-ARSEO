@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -30,6 +31,7 @@ export default async function CustomerReceivablePage({ params, searchParams }: {
   const entries = [...(statement?.entries ?? [])].reverse();
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="receivables"/><section className="workspace admin-workspace receivables-workspace">
     <header className="topbar"><div><p className="eyebrow">Дебиторка</p><h1>{statement?.customer ?? "Покупатель"}</h1></div><div className="topbar-actions"><Link className="ghost button-link" href="/finance/receivables">К списку</Link></div></header>
+    <WorkflowHelp section="receivables"/>
     {notice.error && <div className="login-error admin-message">{notice.error}</div>}
     {notice.success && <div className="login-success admin-message">{notice.success}</div>}
     {(error || !statement) && <div className="setup-notice">Данные недоступны: нужно право «Дебиторка: просмотр» или миграция <strong>202609277600_receivables.sql</strong>.</div>}

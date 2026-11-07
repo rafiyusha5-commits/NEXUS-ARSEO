@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
@@ -64,6 +65,7 @@ export default async function HistoricalPreparationPage({ searchParams }: { sear
   const documentActions = await loadDocumentActions(supabase, (input?.sources ?? []).map(row => row.document_id));
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Исторические поставки</p><h1>Проект загрузки</h1></div><Link href="/shipments">К поставкам</Link></header>
+    <WorkflowHelp section="preparation"/>
     {error && <p role="alert">Проект или источники недоступны. Проверьте права, подключение и актуальность папки. Частичные данные не используются.</p>}
     {params.error && <p role="alert">{params.error === "changed" ? "Источники или проект изменились. Обновите данные и повторно проверьте назначения." : "Сохранение не подтверждено. Проверьте доступ и откройте сохранённый проект перед повтором."}</p>}
     {params.saved && !error && <p role="status">Черновик сохранён в Nexus. Учётные операции не выполнялись.</p>}

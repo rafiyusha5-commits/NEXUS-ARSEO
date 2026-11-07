@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { ReceivingItem } from "@/components/shipments/receiving-item";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -33,6 +35,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
   const canReceive=permissions["inventory.receive"]&&transport.status==="arrived"&&!receipt&&!shipment.is_locked&&!['on_hold','cancelled','closed'].includes(shipment.status);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Приёмка поставки</p><h1>{shipment.shipment_number} · Автомобиль №{transport.sequence_no}</h1></div><div className="topbar-actions"><span className={`status transport-${transport.status}`}>{transportStatus[transport.status]??transport.status}</span><Link className="ghost button-link" href={`/shipments/${shipment.id}`}>К карточке поставки</Link></div></header>
+    <WorkflowHelp section="receiving"/>
     {query.error&&<div className="login-error admin-message">{query.error}</div>}
     {!permissions["inventory.receive"]&&<div className="login-error admin-message">Нет права на приёмку товара.</div>}
     <section className="shipment-summary-grid receiving-summary">
@@ -51,7 +54,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
         <label>Зона склада<select name="location_id" defaultValue=""><option value="">Без зоны</option>{locations?.map((location)=><option value={location.id} key={location.id}>{location.code} · {location.zone}</option>)}</select></label>
         <label>Исполнитель<input name="performed_by_name" defaultValue={profile.full_name} required/></label>
         <label className="receiving-notes">Примечание<input name="notes" placeholder="Состояние пломбы, температура, акт…"/></label>
-        <button className="primary" type="submit">Завершить приёмку</button>
+        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Завершить приёмку</PendingSubmitButton>
       </div>
     </form>}
     {!receipt&&canReceive&&!items?.length&&<div className="setup-notice">В этом автомобиле нет распределённых товаров.</div>}

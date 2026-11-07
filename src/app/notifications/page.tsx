@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { DocumentActions } from "@/components/documents/document-actions";
 import type { DocumentActionInfo } from "@/lib/documents/action-index";
@@ -33,14 +35,14 @@ function NotificationItem({ item, document }: { item: NotificationRow; document?
         {link && (
           <form action={openNotificationAction}>
             <input type="hidden" name="notification_id" value={item.id} />
-            <button className="primary compact" type="submit">{link.label}</button>
+            <PendingSubmitButton pendingText="Выполняем…" className="primary compact" type="submit">{link.label}</PendingSubmitButton>
           </form>
         )}
         {document && <DocumentActions document={document} hideCard/>}
         {!item.is_read && (
           <form action={markNotificationReadAction}>
             <input type="hidden" name="notification_id" value={item.id} />
-            <button className="ghost compact" type="submit">Прочитано</button>
+            <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Прочитано</PendingSubmitButton>
           </form>
         )}
       </div>
@@ -80,12 +82,13 @@ export default async function NotificationsPage({ searchParams }: { searchParams
           <div className="topbar-actions">
             {unreadItems.length > 0 && (
               <form action={markAllNotificationsReadAction} className="notification-mark-all">
-                <button className="ghost button-link" type="submit">Отметить все прочитанными</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="ghost button-link" type="submit">Отметить все прочитанными</PendingSubmitButton>
               </form>
             )}
             <span className="page-count">{unreadItems.length} непрочитанных</span>
           </div>
         </header>
+    <WorkflowHelp section="notifications"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         {migrationMissing && (
