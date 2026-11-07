@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
@@ -35,7 +36,8 @@ export default async function ShipmentReportPage({ params }: { params: Promise<{
   const warehouse = one(report.shipment.warehouse);
   const documentActions = await loadDocumentActions(supabase, report.documents.map(doc => doc.id));
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace report-workspace">
-    <header className="topbar"><div><p className="eyebrow">Фаза 4 · Контроль поставки</p><h1>Отчёт {report.shipment.shipment_number}</h1></div><div className="topbar-actions"><a className="primary button-link" href={`/shipments/${id}/report/export`}>Скачать XLSX</a><Link className="ghost button-link" href={`/shipments/${id}`}>К карточке</Link></div></header>
+    <header className="topbar"><div><p className="eyebrow">Контроль поставки</p><h1>Отчёт {report.shipment.shipment_number}</h1></div><div className="topbar-actions"><a className="primary button-link" href={`/shipments/${id}/report/export`}>Скачать XLSX</a><Link className="ghost button-link" href={`/shipments/${id}`}>К карточке</Link></div></header>
+    <WorkflowHelp section="report"/>
     <section className="shipment-summary-grid report-summary">
       <article className="summary-card"><p>Статус</p><strong>{shipmentStatus[report.shipment.status] ?? report.shipment.status}</strong><small>Проект: {report.shipment.project_code || "—"}</small></article>
       <article className="summary-card"><p>Контрагенты</p><strong>{supplier?.short_name || supplier?.legal_name || "—"}</strong><small>Клиент: {customer?.short_name || customer?.legal_name || "—"}</small></article>

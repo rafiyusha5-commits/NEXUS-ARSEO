@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { BankStatementImport } from "@/components/finance/bank-statement-import";
@@ -35,6 +36,7 @@ export default async function BankPaymentsPage({ searchParams }: { searchParams:
   const name = (value: unknown) => { const row = one(value as { short_name?: string | null; legal_name?: string } | null); return row?.short_name || row?.legal_name || "—"; };
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="bank"/><section className="workspace admin-workspace receivables-workspace">
     <header className="topbar"><div><p className="eyebrow">Финансы</p><h1>Поступления из банка</h1></div><div className="topbar-actions"><Link className="ghost button-link" href="/finance/receivables">Дебиторка</Link></div></header>
+    <WorkflowHelp section="bank"/>
     {notice.error && <div className="login-error admin-message">{notice.error}</div>}
     {notice.success && <div className="login-success admin-message">{notice.success}</div>}
     {error && <div className="setup-notice">Раздел недоступен: нужно право «Дебиторка: просмотр» или миграция <strong>202609277600_receivables.sql</strong>.</div>}

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -28,6 +29,7 @@ export default async function ShipmentWorkspace({ params, searchParams }: { para
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="assistant" />
     <section className="workspace admin-workspace">
       <header className="topbar"><div><p className="eyebrow">Ассистент · подготовка поставки</p><h1>{shipment.project_code || shipment.shipment_number}</h1><p>{shipment.shipment_number}</p></div><Link href={`/shipments/${id}`}>Карточка поставки</Link></header>
+    <WorkflowHelp section="shipmentWorkspace"/>
       <nav aria-label="Подготовка поставки" className="workflow-steps">
         <Link href="/assistant/shipments">Выбор поставки</Link>
         <Link aria-current={step === "files" ? "step" : undefined} href={workspacePath(id)}>1. Папка и файлы</Link>

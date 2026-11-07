@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireAccessManager } from "@/lib/auth/access";
 import { setRoleEnabled, setRolePermission } from "./actions";
@@ -29,9 +31,10 @@ export default async function RolesPage({
       <AppSidebar profile={profile} roles={currentRoles} active="roles" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Фаза 0 · Контроль доступа</p><h1>Роли и права</h1></div>
+          <div><p className="eyebrow">Контроль доступа</p><h1>Роли и права</h1></div>
           <span className="page-count">{roles?.length ?? 0} ролей · {permissions?.length ?? 0} прав</span>
         </header>
+    <WorkflowHelp section="access"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
 
@@ -53,7 +56,7 @@ export default async function RolesPage({
                             <input type="hidden" name="role_id" value={role.id} />
                             <input type="hidden" name="permission_id" value={permission.id} />
                             <input type="hidden" name="grant" value={String(!granted)} />
-                            <button className={`permission-toggle ${granted ? "granted" : "denied"}`} type="submit" aria-label={`${granted ? "Отозвать" : "Выдать"} ${permission.name} для ${role.name}`}>{granted ? "✓" : "—"}</button>
+                            <PendingSubmitButton pendingText="Выполняем…" className={`permission-toggle ${granted ? "granted" : "denied"}`} type="submit" aria-label={`${granted ? "Отозвать" : "Выдать"} ${permission.name} для ${role.name}`}>{granted ? "✓" : "—"}</PendingSubmitButton>
                           </form>
                         </td>
                       );
@@ -63,7 +66,7 @@ export default async function RolesPage({
                         <input type="hidden" name="role_id" value={role.id} />
                         <input type="hidden" name="role_code" value={role.code} />
                         <input type="hidden" name="enabled" value={String(!role.is_enabled)} />
-                        <button className={`role-status ${role.is_enabled ? "on" : "off"}`} type="submit">{role.is_enabled ? "Включена" : "Отключена"}</button>
+                        <PendingSubmitButton pendingText="Выполняем…" className={`role-status ${role.is_enabled ? "on" : "off"}`} type="submit">{role.is_enabled ? "Включена" : "Отключена"}</PendingSubmitButton>
                       </form>
                     </td>
                   </tr>

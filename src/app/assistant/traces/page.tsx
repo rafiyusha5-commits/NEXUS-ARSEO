@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TelegramUpdatesTable } from "@/components/assistant/telegram-updates";
@@ -38,6 +39,7 @@ export default async function AssistantTracesPage() {
           <div><p className="eyebrow">Ассистент</p><h1>Трассы сотрудников</h1></div>
           <div className="topbar-actions"><Link className="ghost button-link" href="/assistant">К ассистенту</Link></div>
         </header>
+    <WorkflowHelp section="audit"/>
         {!can["agent.view_traces"] ? (
           <div className="login-error admin-message">Просмотр трасс других сотрудников доступен только с правом agent.view_traces.</div>
         ) : (

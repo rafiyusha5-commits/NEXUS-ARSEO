@@ -220,6 +220,8 @@ jobs:
         run: NEXUS_TEST_PLAYWRIGHT="$RUNNER_TEMP/nexus-browser/node_modules/playwright" node scripts/test-historical-shipment.mjs
       - name: Assistant operation review on desktop and mobile (synthetic HTTP)
         run: node scripts/test-assistant-operations-ui.mjs "$RUNNER_TEMP/nexus-browser/node_modules/playwright" test-results/historical
+      - name: Workflow clarity and form submission on desktop and mobile (synthetic HTTP)
+        run: node scripts/test-workflow-clarity-ui.mjs "$RUNNER_TEMP/nexus-browser/node_modules/playwright" test-results/historical
       - name: Synthetic evidence, including failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

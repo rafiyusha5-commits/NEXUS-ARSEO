@@ -23,6 +23,7 @@ function load(relative: string) {
     if (id === "@/lib/shipment-outcome-workbook") return { outcomeWorkbookSheets: () => [] };
     if (id === "@/lib/xlsx") return { createXlsx: (sheets: typeof exportedSheets) => { exportedSheets = sheets; return Buffer.from("synthetic"); } };
     if (id === "@/components/app-sidebar") return { AppSidebar: () => null };
+    if (id === "@/components/workflow-help") return { WorkflowHelp: () => null };
     if (id === "@/components/reports/shipment-outcome-sections") return { ShipmentOutcomeSections: () => null };
     if (id === "next/link") return { default: () => null };
     if (id === "next/navigation") return { notFound: () => { throw new Error("not found"); } };

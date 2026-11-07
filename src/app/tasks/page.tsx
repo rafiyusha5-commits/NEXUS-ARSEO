@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -124,6 +126,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
             <span className="page-count">{tasks.length} в выборке</span>
           </div>
         </header>
+    <WorkflowHelp section="tasks"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         {migrationMissing && (
@@ -189,7 +192,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                             <input type="hidden" name="task_id" value={task.id} />
                             <input type="hidden" name="status" value={to} />
                             <input type="hidden" name="return_to" value={returnTo} />
-                            <button className={to === "done" || to === "in_progress" ? "primary compact" : "ghost compact"} type="submit">{statusActionLabel(task.status, to)}</button>
+                            <PendingSubmitButton pendingText="Выполняем…" className={to === "done" || to === "in_progress" ? "primary compact" : "ghost compact"} type="submit">{statusActionLabel(task.status, to)}</PendingSubmitButton>
                           </form>
                         ))}
                         {canReassign(task.status, actor) && (
@@ -206,14 +209,14 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                                   ))}
                                 </select>
                               </label>
-                              <button className="ghost compact" type="submit">Переназначить</button>
+                              <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Переназначить</PendingSubmitButton>
                             </form>
                             {canChangeDue(task.status, actor) && (
                               <form action={changeTaskDueAction} className="doc-subform">
                                 <input type="hidden" name="task_id" value={task.id} />
                                 <input type="hidden" name="return_to" value={returnTo} />
                                 <label>Срок (время Казахстана)<input type="datetime-local" name="due_at" defaultValue={isoToLocalInput(task.due_at)} /></label>
-                                <button className="ghost compact" type="submit">Изменить срок</button>
+                                <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Изменить срок</PendingSubmitButton>
                               </form>
                             )}
                           </details>
@@ -277,7 +280,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 )
               )}
               <label className="doc-form-full">Описание<textarea name="description" maxLength={2000} rows={2} /></label>
-              <button className="primary" type="submit">Создать задачу</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Создать задачу</PendingSubmitButton>
               <p className="form-help doc-form-full">
                 {can["tasks.manage"]
                   ? "Исполнитель получит уведомление. Чтобы привязать задачу к этапу, сначала выберите поставку в фильтре выше."

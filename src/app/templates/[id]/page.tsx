@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
@@ -97,6 +99,7 @@ export default async function TemplatePage({
             <Link className="ghost button-link" href="/templates">К каталогу</Link>
           </div>
         </header>
+    <WorkflowHelp section="templates"/>
         {notices.error && <div className="login-error admin-message">{notices.error}</div>}
         {notices.success && <div className="login-success admin-message">{notices.success}</div>}
         {archived && (
@@ -131,7 +134,7 @@ export default async function TemplatePage({
                 <input type="hidden" name="template_id" value={template.id} />
                 <label>Новая версия файла<input name="file" type="file" required accept={DOCUMENT_FILE_ACCEPT} /></label>
                 <label>Что изменилось<input name="comment" maxLength={1000} placeholder="Например: добавлено поле GTIN" /></label>
-                <button className="primary" type="submit">Загрузить версию</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Загрузить версию</PendingSubmitButton>
                 <p className="form-help">{DOCUMENT_FILE_TYPES_LABEL}, до {MAX_DOCUMENT_FILE_SIZE_LABEL}. Предыдущие версии сохраняются; после загрузки шаблон снова требует утверждения.</p>
               </form>
             )}
@@ -150,14 +153,14 @@ export default async function TemplatePage({
                 {actions.includes("approve") && (
                   <form action={approveTemplateAction}>
                     <input type="hidden" name="template_id" value={template.id} />
-                    <button className="primary" type="submit">Утвердить версию {template.current_version}</button>
+                    <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Утвердить версию {template.current_version}</PendingSubmitButton>
                   </form>
                 )}
                 {(actions.includes("activate") || actions.includes("deactivate")) && (
                   <form action={setTemplateActiveAction}>
                     <input type="hidden" name="template_id" value={template.id} />
                     <input type="hidden" name="is_active" value={template.is_active ? "false" : "true"} />
-                    <button className="ghost" type="submit">{template.is_active ? "Отключить" : "Включить"}</button>
+                    <PendingSubmitButton pendingText="Выполняем…" className="ghost" type="submit">{template.is_active ? "Отключить" : "Включить"}</PendingSubmitButton>
                   </form>
                 )}
               </div>
@@ -209,7 +212,7 @@ export default async function TemplatePage({
               <label className="doc-form-full">Поля для подстановки — по одному в строке, «ключ — описание»
                 <textarea name="variables" rows={3} defaultValue={variablesToText(variables)} />
               </label>
-              <button className="primary" type="submit">Сохранить</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Сохранить</PendingSubmitButton>
               {template.status === "approved" && (
                 <p className="form-help doc-form-full">Изменение типа, направления, языка, контрагента или полей вернёт шаблон в черновик — потребуется повторное утверждение.</p>
               )}
@@ -224,7 +227,7 @@ export default async function TemplatePage({
             <form action={archiveTemplateAction} className="doc-subform doc-archive-form">
               <input type="hidden" name="template_id" value={template.id} />
               <label>Причина<input name="reason" required minLength={3} maxLength={500} placeholder="Например: клиент прислал новую форму" /></label>
-              <button className="ghost danger-text" type="submit">В архив</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">В архив</PendingSubmitButton>
             </form>
           </section>
         )}

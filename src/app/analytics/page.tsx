@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -13,7 +14,7 @@ export default async function AnalyticsPage(){
  const{profile,roles,supabase}=await requireUser();
  const codes=["reports.view","shipments.view","sales.view","inventory.view","tasks.view","integrations.view"];
  const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
- if(!access.has("reports.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="analytics"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Фаза 7 · Аналитика</p><h1>Операционные показатели</h1></div></header><div className="login-error admin-message">Нет доступа к отчётам.</div></section></main>;
+ if(!access.has("reports.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="analytics"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Аналитика</p><h1>Операционные показатели</h1></div></header><div className="login-error admin-message">Нет доступа к отчётам.</div></section></main>;
 
  const empty=Promise.resolve({data:[],error:null});
  // Counts come from the database (operational_summary): a list request returns at most 1000 rows.
@@ -27,7 +28,8 @@ export default async function AnalyticsPage(){
  const failedSyncs=syncs.filter(row=>["failed","partial"].includes(row.status));
  const sourceErrors=[summaryResult,inventoryResult,syncResult].filter(result=>result.error).length;
  const hasOperationalSource=["shipments.view","sales.view","inventory.view","tasks.view","integrations.view"].some(code=>access.has(code));
- return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="analytics"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Фаза 7 · Аналитика</p><h1>Операционные показатели</h1></div><span className="page-count">на {date(today)}</span></header>
+ return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="analytics"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Аналитика</p><h1>Операционные показатели</h1></div><span className="page-count">на {date(today)}</span></header>
+    <WorkflowHelp section="analytics"/>
  {sourceErrors>0&&<div className="setup-notice">Часть источников временно недоступна. Доступные показатели рассчитаны без них.</div>}
  {!hasOperationalSource&&<div className="setup-notice">Отчёт открыт, но исходные разделы недоступны вашей роли.</div>}
  <section className="summary-grid analytics-summary">

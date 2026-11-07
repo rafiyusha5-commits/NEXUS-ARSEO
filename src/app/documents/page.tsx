@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
@@ -181,6 +183,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             {permissions.view && <span className="page-count">{documents.length} в выборке</span>}
           </div>
         </header>
+    <WorkflowHelp section="documents"/>
 
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
@@ -330,7 +333,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                 </select></label>
                 <label className="doc-form-rest">Описание<textarea name="description" maxLength={4000} rows={2} /></label>
                 <label className="doc-form-wide doc-file">Файл<input name="file" type="file" required accept={DOCUMENT_FILE_ACCEPT} /></label>
-                <button className="primary" type="submit">Зарегистрировать</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Зарегистрировать</PendingSubmitButton>
                 <p className="form-help doc-form-full">
                   Разрешены {DOCUMENT_FILE_TYPES_LABEL}, не больше {MAX_DOCUMENT_FILE_SIZE_LABEL}. Файл хранится в закрытом хранилище и скачивается по временной ссылке.
                   Повторная загрузка того же файла блокируется — откройте существующий документ и добавьте связь.

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireAccessManager } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
@@ -43,6 +44,7 @@ export default async function AuditPage() {
           <div><p className="eyebrow">Безопасность и история</p><h1>Журнал действий</h1></div>
           <span className="page-count">Последние {rows.length} событий</span>
         </header>
+    <WorkflowHelp section="audit"/>
         {error && <div className="login-error admin-message">{publicErrorMessage(error, "Не удалось загрузить журнал действий.")}</div>}
         <section className="panel admin-section">
           <div className="audit-list">

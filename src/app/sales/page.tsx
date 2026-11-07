@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -24,15 +26,16 @@ export default async function SalesPage({searchParams}:{searchParams:Promise<{er
   ]);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="sales"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Продажи</p><h1>Заказы покупателей</h1></div><span className="page-count">{sales?.length??0} заказов</span></header>
+    <WorkflowHelp section="sales"/>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
-    {error&&<div className="setup-notice">Примените миграцию <strong>202609272500_customer_orders_fefo.sql</strong> в Supabase.</div>}
+    {error&&<div className="setup-notice">Не удалось загрузить данные раздела. Обновите страницу. Если ошибка повторится, сообщите администратору название раздела.</div>}
     <details className="panel admin-section create-disclosure"><summary><span><small>Новый заказ</small><strong>Создать заказ покупателя</strong></span><b aria-hidden="true">+</b></summary><div className="create-disclosure-body"><form action={createCustomerOrder} className="reference-form">
       <label>Клиент<select name="customer_id" required defaultValue=""><option value="" disabled>Выберите клиента</option>{customers?.map(c=><option key={c.id} value={c.id}>{c.short_name||c.legal_name}{c.min_remaining_shelf_life_pct!=null?` · ОСГ ≥ ${c.min_remaining_shelf_life_pct}%`:""}</option>)}</select></label>
       <label>Склад отгрузки<select name="warehouse_id" required defaultValue=""><option value="" disabled>Выберите склад</option>{warehouses?.map(w=><option key={w.id} value={w.id}>{w.code} · {name(w.name)}</option>)}</select></label>
       <label>Плановая дата отгрузки<input name="planned_shipment_date" type="date" required min={businessToday()}/></label>
       <label>Валюта<select name="currency_id" defaultValue=""><option value="">Не выбрана</option>{currencies?.map(c=><option key={c.id} value={c.id}>{c.code}</option>)}</select></label>
       <label>Контракт<select name="contract_id" defaultValue=""><option value="">Без контракта</option>{contracts?.map(c=>{const party=one(c.counterparty);return <option key={c.id} value={c.id}>{party?.short_name||party?.legal_name} · № {c.number}</option>;})}</select></label>
-      <label>Комментарий<input name="notes"/></label><button className="primary" type="submit" disabled={Boolean(error)}>Создать заказ</button>
+      <label>Комментарий<input name="notes"/></label><PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)}>Создать заказ</PendingSubmitButton>
     </form></div></details>
     {canBackdate===true&&<HistoricalSaleForm
       customers={(customers??[]).map(c=>({id:c.id,label:c.short_name||c.legal_name}))}

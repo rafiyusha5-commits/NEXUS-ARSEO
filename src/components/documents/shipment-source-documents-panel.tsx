@@ -89,6 +89,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     ordered: quantity(item.ordered_quantity), confirmed: quantity(item.confirmed_quantity), shipped: quantity(item.shipped_quantity),
   }));
   const ocr = describeOcrConfig(loadOcrConfig());
+  const currentRows = rows.filter(current);
   return <>
   {showDocumentList && <ShipmentDocumentsPanel shipmentId={shipmentId} reviews={new Map(rows
     .filter(current)
@@ -100,7 +101,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
       }];
     }))}/>}
   <section className="panel admin-section" id="source-documents">
-    <div className="panel-heading"><div><p className="eyebrow">Шаг 1 · Исходные данные</p><h2>Загрузить комплект документов</h2></div><div className="topbar-actions">
+    <div className="panel-heading"><div><p className="eyebrow">Исходные документы</p><h2>{workspace ? "Распознать загруженные файлы" : "Загрузить и распознать документы"}</h2></div><div className="topbar-actions">
       {permissions["documents.create"]&&<Link className="ghost button-link compact" href={`/documents?link=shipment:${shipmentId}#register`}>Открыть журнал</Link>}
       {permissions["source_documents.extract"]&&<form action={extractShipmentSourcesAction}><input type="hidden" name="shipment_id" value={shipmentId}/><PendingSubmitButton className="primary compact" pendingText="Распознаём…">Распознать и сверить</PendingSubmitButton></form>}
     </div></div>
@@ -108,8 +109,17 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     {notice?.kind==="success"&&<div className="login-success admin-message" role="status">{notice.message}</div>}
     <p className="form-help">{workspace ? "Файлы из папки загружаются на первом шаге. Нажмите «Распознать и сверить», затем проверьте тип, автомобиль и каждое найденное значение." : "Выберите сразу инвойс, договор-заявку, документы автомобиля, прицепа и водителя. После загрузки система автоматически определит типы, прочитает комплект и сопоставит найденные реквизиты."} {ocr.enabled?"Сканы и фотографии читаются распознаванием текста (OCR); результат всегда проверяет сотрудник.":"Сканы и фотографии пока не читаются: OCR не настроен администратором."}</p>
     {!workspace&&permissions["documents.create"]&&<BulkDocumentUpload types={(types??[]).map(type=>({id:type.id,code:type.code,name:type.name_ru,category:type.category}))} primaryLink={`shipment:${shipmentId}`} autoExtractShipmentId={shipmentId} transports={vehicles.map(vehicle=>({id:vehicle.id,label:describeTransport(vehicle)}))}/>}
-    <div className="panel-heading source-results-heading"><div><p className="eyebrow">Шаг 2 · Проверка</p><h3>Результаты распознавания</h3></div></div>
-    {error&&<div className="setup-notice">Примените миграцию <strong>202609274900_source_document_ocr.sql</strong>.</div>}
+    <div className="panel-heading source-results-heading"><div><p className="eyebrow">Проверка по оригиналам</p><h3>Результаты распознавания</h3></div></div>
+    {error&&<div className="setup-notice" role="alert">Не удалось загрузить результаты чтения. Обновите страницу. Если ошибка повторится, сообщите администратору номер поставки.</div>}
+    {completeComparison && currentRows.length > 0 && <>
+      <dl className="source-reading-summary" aria-label="Состояние сохранённых результатов чтения">
+        <div><dt>Чтение подтверждено</dt><dd>{currentRows.filter(row => row.status === "confirmed" && row.reviewed_at).length}</dd></div>
+        <div><dt>Проверить поля</dt><dd>{currentRows.filter(row => ["extracted", "needs_review"].includes(row.status) || row.status === "confirmed" && !row.reviewed_at).length}</dd></div>
+        <div><dt>Другие результаты и история</dt><dd>{rows.length - currentRows.length}</dd></div>
+      </dl>
+      <p className="source-reading-next">Откройте строки ниже и сверьте поля с оригиналами. Там же показаны прежние версии и ошибки чтения. Комплект документов и расхождения проверяйте в блоке «Сверка».</p>
+    </>}
+    {notice?.kind === "error" && <p className="source-reading-next">Проверьте сохранённые результаты по каждому файлу ниже. Для непрочитанного документа откройте строку с причиной и повторите чтение кнопкой внутри неё. Если результаты не загрузились, сначала обновите страницу.</p>}
     {!error&&!completeComparison&&<p className="login-error">Не удалось получить полный список источников или позиций поставки. Сверка и подтверждение временно недоступны.</p>}
     {!error&&<div className="source-review-list">{rows.map(row=>{const document=one(row.document);const fields=Object.keys(row.extracted_data??{}).length;const conflicts=Array.isArray(row.conflicts)?row.conflicts.length:0;const definitions=reviewDefinitions(row);const sourceCurrent=current(row);const quantityDocument=row.status==="confirmed"&&QUANTITY_SOURCE_KINDS.has(row.source_kind);const quantitiesWritten=(quantityHistory??[]).some(entry=>entry.extraction_id===row.id);return <details className="source-review-card" key={row.id} open={["pending","extracted","needs_review"].includes(row.status)||(quantityDocument&&canApplyQuantities&&!quantitiesWritten)}><summary><div><strong>{document?.title??sourceLabel[row.source_kind]??"Исходный документ"}</strong><small>{sourceLabel[row.source_kind]??row.source_kind} · найдено полей: {fields}{conflicts?` · расхождений: ${conflicts}`:""}{quantityDocument?(quantitiesWritten?" · количества записаны":" · количества не записаны"):""}</small>{row.extraction_method==="ocr"&&<small>Распознано по изображению (OCR) · {row.ocr_provider} {row.ocr_provider_version}{row.ocr_page_count?` · стр.: ${row.ocr_page_count}`:""}{row.ocr_confidence!==null?` · уверенность ${Math.round(row.ocr_confidence*100)}%`:""}{row.processing_ms!==null?` · ${(row.processing_ms/1000).toLocaleString("ru-RU",{maximumFractionDigits:1})} с`:""}</small>}{row.error_message&&<small>{row.status==="confirmed"?"До ручной проверки OCR сообщал: ":""}{row.error_message}</small>}</div><span className={`doc-badge doc-status-${row.status}`}>{row.status==="pending"?"Состояние обработки — ниже":statusLabel[row.status]??row.status}</span></summary>
       <div id={`source-result-${row.id}`} tabIndex={-1}>

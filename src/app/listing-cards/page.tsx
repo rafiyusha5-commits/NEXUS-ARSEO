@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ListingCardCreateForm } from "@/components/listing-card-create-form";
@@ -67,10 +68,11 @@ export default async function ListingCardsPage({ searchParams }: { searchParams:
             {can["listing_cards.view"] && <span className="page-count">{cards.length} в выборке</span>}
           </div>
         </header>
+    <WorkflowHelp section="listingCards"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         {migrationMissing && (
-          <div className="setup-notice">Карты ещё не подключены к базе. Администратору: примените миграцию <strong>202609271700_document_templates_listing_cards.sql</strong> (docs/templates-listing-cards.md).</div>
+          <div className="setup-notice">Карты ввода сейчас недоступны. Обратитесь к администратору и укажите раздел «Карты ввода товаров».</div>
         )}
         {!can["listing_cards.view"] && !migrationMissing && (
           <section className="panel admin-section"><div className="empty-state">Нет доступа к картам ввода товаров. Обратитесь к администратору.</div></section>

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PortalSidebar } from "@/components/portal-sidebar";
@@ -28,6 +29,7 @@ export default async function PortalDocumentPage({ params, searchParams }: { par
     <PortalSidebar profile={profile} active="documents" />
     <section className="workspace admin-workspace portal-workspace">
       <header className="topbar"><div><p className="eyebrow">{document.type_name ?? "Документ"}</p><h1>{document.title}</h1></div><Link className="ghost button-link" href="/portal/documents">К списку</Link></header>
+    <WorkflowHelp section="portal"/>
       {notice.error && <div className="login-error admin-message">{notice.error}</div>}
       <section className="shipment-summary-grid">
         <article className="summary-card"><p>Номер</p><strong>{document.document_number || "—"}</strong></article>

@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import { PortalSidebar } from "@/components/portal-sidebar";
 import { requirePortalUser } from "@/lib/auth/access";
 import { updatePortalProfile } from "./actions";
@@ -9,6 +11,7 @@ export default async function PortalProfilePage({ searchParams }: { searchParams
     <PortalSidebar profile={profile} active="profile" />
     <section className="workspace admin-workspace portal-workspace">
       <header className="topbar"><div><p className="eyebrow">Кабинет клиента</p><h1>Профиль</h1></div></header>
+    <WorkflowHelp section="profile"/>
       {params.error && <div className="login-error admin-message">{params.error}</div>}
       {params.success && <div className="login-success admin-message">{params.success}</div>}
       <section className="panel admin-section">
@@ -17,7 +20,7 @@ export default async function PortalProfilePage({ searchParams }: { searchParams
           <label>Электронная почта<input value={user.email ?? ""} readOnly /></label>
           <label>Телефон<input name="phone" maxLength={50} defaultValue={profile.phone ?? ""} /></label>
           <label>Язык интерфейса<select name="locale" defaultValue={profile.locale}><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></select></label>
-          <button className="primary" type="submit">Сохранить</button>
+          <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Сохранить</PendingSubmitButton>
         </form>
         <p className="form-help">Чтобы изменить ФИО, компанию или набор прав, обратитесь к менеджеру ARSEO.</p>
       </section>

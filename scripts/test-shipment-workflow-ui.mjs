@@ -26,7 +26,7 @@ try{
   await page.goto(url);
   await page.getByRole('button',{name:'Привязать папку',exact:true}).waitFor();
   assert.equal(await page.locator('#calls').textContent(),'0');
-  assert.equal(await page.getByLabel('Папка этой поставки в Google Drive').inputValue(),'https://drive.google.com/drive/folders/Synthetic_folder_123');
+  assert.equal(await page.getByLabel('Ссылка на папку Google Drive').inputValue(),'https://drive.google.com/drive/folders/Synthetic_folder_123');
   assert.match(await page.getByRole('link',{name:'Открыть подготовку'}).getAttribute('href'),/^\/assistant\/shipments\?folder=/);
   await page.getByRole('button',{name:'Привязать папку',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#calls').textContent==='1');
