@@ -41,7 +41,7 @@ export function ReplenishmentShare({ run, date, enabled }: { run: string; date: 
       <button type="button" disabled={!enabled || !reviewed || busy} onClick={shareFile}>Выбрать приложение и получателя</button>
       {enabled && reviewed && <><a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">Подготовить сообщение WhatsApp</a><button type="button" onClick={copyMessage}>Скопировать текст для Telegram</button><a href="https://web.telegram.org/" target="_blank" rel="noopener noreferrer">Открыть Telegram</a></>}
     </div>
-    {enabled && reviewed && <label>Текст сообщения для отправки<textarea readOnly value={text} rows={3}/></label>}
+    {enabled && reviewed && <div className="replenishment-form"><label>Текст сообщения для отправки<textarea readOnly value={text} rows={3}/></label></div>}
     <p className="muted">WhatsApp открывает подготовленный текст. Для Telegram скопируйте текст и вставьте его в выбранный чат. Прикрепите Excel перед отправкой. Получателя и отправку выбираете вы.</p>
     {message && <p role="status">{message}</p>}
   </section>;
