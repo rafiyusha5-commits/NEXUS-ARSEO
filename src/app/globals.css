@@ -500,3 +500,8 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
 }
 
 .linked-document-list { display: grid; gap: .8rem; padding-inline-start: 1.2rem; }
+
+/* Schema approval must show access labels on narrow screens as well. */
+.calculator-schema-changes { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; }
+.calculator-schema-changes li { padding: 14px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.calculator-schema-changes p { margin: 6px 0 0; }
