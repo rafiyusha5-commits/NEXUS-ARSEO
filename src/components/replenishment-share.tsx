@@ -5,6 +5,14 @@ export function ReplenishmentShare({ run, date, enabled }: { run: string; date: 
   const [reviewed, setReviewed] = useState(false);
   const download = `/replenishment/export?run=${run}`;
   const text = `Nexus: предложение заказа для Казахстана на ${date}. Требует проверки и согласования. Excel прикладывается отдельно.`;
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage("Текст скопирован. Откройте Telegram, выберите получателя, вставьте текст и прикрепите скачанный Excel.");
+    } catch {
+      setMessage("Не удалось скопировать автоматически. Выделите и скопируйте текст в поле ниже, затем прикрепите Excel в Telegram.");
+    }
+  }
   async function explain() {
     setBusy(true); setMessage("");
     try {
@@ -31,9 +39,10 @@ export function ReplenishmentShare({ run, date, enabled }: { run: string; date: 
     <label><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} disabled={!enabled}/> Я проверю файл и получателя перед отправкой</label>
     <div className="replenishment-actions">
       <button type="button" disabled={!enabled || !reviewed || busy} onClick={shareFile}>Выбрать приложение и получателя</button>
-      {enabled && reviewed && <><a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">Подготовить сообщение WhatsApp</a><a href={`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">Подготовить сообщение Telegram</a></>}
+      {enabled && reviewed && <><a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">Подготовить сообщение WhatsApp</a><button type="button" onClick={copyMessage}>Скопировать текст для Telegram</button><a href="https://web.telegram.org/" target="_blank" rel="noopener noreferrer">Открыть Telegram</a></>}
     </div>
-    <p className="muted">Ссылки открывают сообщение. Excel нужно прикрепить перед отправкой. Получателя и отправку выбираете вы.</p>
+    {enabled && reviewed && <label>Текст сообщения для отправки<textarea readOnly value={text} rows={3}/></label>}
+    <p className="muted">WhatsApp открывает подготовленный текст. Для Telegram скопируйте текст и вставьте его в выбранный чат. Прикрепите Excel перед отправкой. Получателя и отправку выбираете вы.</p>
     {message && <p role="status">{message}</p>}
   </section>;
 }

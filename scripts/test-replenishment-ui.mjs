@@ -48,6 +48,18 @@ try {
     assert.equal(await page.getByRole('link', { name: 'Подготовить сообщение WhatsApp' }).count(), 0);
     await page.getByLabel('Я проверю файл и получателя перед отправкой').check();
     assert.match(await page.getByRole('link', { name: 'Подготовить сообщение WhatsApp' }).getAttribute('href'), /^https:\/\/wa.me\/\?text=/);
+    assert.equal(await page.getByRole('link', { name: 'Открыть Telegram', exact: true }).getAttribute('href'), 'https://web.telegram.org/');
+    await page.evaluate(() => {
+      window.copiedMessage = '';
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedMessage = text; } } });
+    });
+    await page.getByRole('button', { name: 'Скопировать текст для Telegram' }).click();
+    await page.getByRole('status').filter({ hasText: 'Текст скопирован.' }).waitFor();
+    assert.equal(await page.evaluate(() => window.copiedMessage), await page.getByLabel('Текст сообщения для отправки').inputValue());
+    await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw Error('clipboard denied'); }; });
+    await page.getByRole('button', { name: 'Скопировать текст для Telegram' }).click();
+    await page.getByRole('status').filter({ hasText: 'Не удалось скопировать автоматически.' }).waitFor();
+    assert.ok((await page.getByLabel('Текст сообщения для отправки').inputValue()).includes('Excel'));
     const download = page.getByRole('link', { name: 'Скачать Excel с расчётом и основаниями' });
     const style = await download.evaluate(el => ({ color: getComputedStyle(el).color, decoration: getComputedStyle(el).textDecorationLine }));
     assert.equal(style.color, 'rgb(7, 85, 176)'); assert.ok(style.decoration.includes('underline'));
