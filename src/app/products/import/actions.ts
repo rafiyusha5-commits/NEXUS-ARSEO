@@ -15,6 +15,7 @@ import { type Issue, normalizePackage } from "@/lib/reference-import/package.ts"
 import { type ImportReport, parseReport } from "@/lib/reference-import/report.ts";
 import { buildCalculatorPackage, CALCULATOR_FORMAT, CALCULATOR_VERSION, type CalculatorImportPackage } from "@/lib/calculator-import/parser.ts";
 import { parsePurchasePriceReport } from "@/lib/calculator-import/purchase-prices.ts";
+import { calculatorSnapshotMatches, parseCalculatorSchemaReview, type CalculatorSchemaReview } from "@/lib/calculator-import/schema-review.ts";
 import { auditCalculatorPackaging, type CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 export type ReferenceImportResult =
@@ -26,11 +27,12 @@ export type GoogleCalculatorImportResult =
       ok: true;
       report: ImportReport;
       snapshot: string;
+      schemaApproved?: boolean;
       skippedIssues: Issue[];
       qualityIssues: CalculatorQualityIssue[];
       source: { title: string; sheet: string; spreadsheetId: string; columns: number; rows: number; products: number };
     }
-  | { ok: false; message: string; report?: ImportReport; issues?: Issue[] };
+  | { ok: false; message: string; report?: ImportReport; issues?: Issue[]; schemaReview?: CalculatorSchemaReview; snapshot?: string; schemaApproved?: boolean };
 
 // Stays below serverActions.bodySizeLimit in next.config.ts.
 const MAX_PAYLOAD_CHARS = 4_000_000;
@@ -116,6 +118,7 @@ export async function runCalculatorImport(payload: string, mode: "preview" | "ap
     }
     const message = /import_calculator_master_data/.test(error.message) && /schema cache|does not exist/.test(error.message)
       ? "Импорт калькулятора ещё не подключён к базе. Администратору: примените миграцию 202609274300_calculator_master_data.sql."
+      : error.code === "NX409" ? "Структура калькулятора или сопоставление товаров изменились. Повторите чтение и проверку перед синхронизацией."
       : publicErrorMessage(error, "Не удалось обработать мастер-калькулятор.");
     return { ok: false, message, ...(report ? { report } : {}) };
   }
@@ -130,15 +133,17 @@ export async function runCalculatorImport(payload: string, mode: "preview" | "ap
 // Apply re-reads the sheet and requires the exact snapshot shown in preview, so a
 // concurrent source change can never be imported without a new dry-run.
 export async function runGoogleCalculatorImport(
-  mode: "preview" | "apply",
+  mode: "preview" | "apply" | "approve-schema",
   expectedSnapshot?: string,
+  expectedSchema?: string,
 ): Promise<GoogleCalculatorImportResult> {
-  if (mode !== "preview" && mode !== "apply") return { ok: false, message: "Неизвестный режим импорта." };
+  if (mode !== "preview" && mode !== "apply" && mode !== "approve-schema") return { ok: false, message: "Неизвестный режим импорта." };
   const { supabase } = await requireUser();
   const can = await loadPermissions(supabase, [...PERMISSIONS, "prices.purchase.view"]);
   if (!can["products.create"] || !can["products.update"]) return { ok: false, message: "Недостаточно прав для импорта справочника." };
   if (!can["prices.purchase.view"]) return { ok: false, message: "Калькулятор содержит закупочные цены и расчётные данные. Нужно право «Закупочные цены и себестоимость»." };
 
+  let schemaApproved = false;
   try {
     const rows = await readCalculatorSheet();
     const parsed = buildCalculatorPackage(rows, CALCULATOR_SOURCE_TITLE, CALCULATOR_SHEET_NAME);
@@ -155,14 +160,33 @@ export async function runGoogleCalculatorImport(
     const payload = JSON.stringify(parsed.pkg);
     if (payload.length > MAX_PAYLOAD_CHARS) return { ok: false, message: "Пакет Google Таблицы слишком большой для безопасной синхронизации." };
     const snapshot = createHash("sha256").update(payload).digest("hex");
-    if (mode === "apply" && (!expectedSnapshot || !/^[a-f0-9]{64}$/.test(expectedSnapshot) || expectedSnapshot !== snapshot)) {
+    if (!calculatorSnapshotMatches(mode, snapshot, expectedSnapshot)) {
       return { ok: false, message: "Google Таблица изменилась после проверки. Выполните проверку без записи ещё раз." };
     }
-    const result = await runCalculatorImport(payload, mode);
-    if (!result.ok) return result;
+    if (mode === "approve-schema" && (!expectedSchema || !/^[a-f0-9]{64}$/.test(expectedSchema))) {
+      return { ok: false, message: "Сначала прочитайте калькулятор и проверьте список новых столбцов." };
+    }
+    const { data: schemaData, error: schemaError } = await supabase.rpc("review_calculator_schema", {
+      p_source: { ...parsed.pkg.source, rows: [] }, p_confirm: mode === "approve-schema", p_expected_schema: expectedSchema ?? null,
+    });
+    if (schemaError) return { ok: false, message: schemaError.code === "NX409"
+      ? "Структура Nexus изменилась или требует отдельной проверки. Нажмите «Прочитать и проверить» ещё раз."
+      : publicErrorMessage(schemaError, "Не удалось проверить структуру калькулятора. Повторите чтение; если ошибка сохраняется, сообщите администратору.") };
+    const schemaReview = parseCalculatorSchemaReview(schemaData);
+    if (!schemaReview) return { ok: false, message: "Не удалось прочитать результат проверки структуры. Синхронизация остановлена." };
+    if (schemaReview.status === "approval_required" || schemaReview.status === "blocked") return {
+      ok: false, message: "Найдены изменения столбцов. Проверьте их ниже перед синхронизацией.", schemaReview, snapshot,
+    };
+    // Approval changes only source metadata and its history. Products still go
+    // through the existing dry-run and a separate explicit apply operation.
+    schemaApproved = mode === "approve-schema";
+    const result = await runCalculatorImport(payload, mode === "apply" ? "apply" : "preview");
+    if (!result.ok) return { ...result, schemaApproved };
+
     return {
       ...result,
       snapshot,
+      schemaApproved,
       skippedIssues: skippedIssues.slice(0, 200),
       qualityIssues: qualityIssues.slice(0, 300),
       source: {
@@ -175,7 +199,7 @@ export async function runGoogleCalculatorImport(
       },
     };
   } catch (error) {
-    return { ok: false, message: publicErrorMessage(error, "Не удалось прочитать мастер-калькулятор из Google Sheets.") };
+    return { ok: false, schemaApproved, message: publicErrorMessage(error, "Не удалось прочитать мастер-калькулятор из Google Sheets.") };
   }
 }
 
