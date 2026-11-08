@@ -19,8 +19,16 @@ export type ImportReport = {
   summary: Record<ImportStatus, number>;
   items: ReportItem[];
   purchasePrices?: PurchasePriceReport;
+  protectedFields?: CalculatorProtectedField[];
   dryRun: boolean;
   applied: boolean;
+};
+
+export type CalculatorProtectedField = {
+  sku: string;
+  field: "shelf_life_days" | "hs_code";
+  nexusValue: string | number;
+  sourceValue: string | number;
 };
 
 export const statusLabel: Record<ImportStatus, string> = {
@@ -54,6 +62,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 // never renders unexpected data.
 export function parseReport(value: unknown): ImportReport | null {
   if (!isRecord(value) || !isRecord(value.summary) || !Array.isArray(value.items)) return null;
+  const protectedFields: CalculatorProtectedField[] = [];
+  if (value.protected_fields !== undefined) {
+    if (!Array.isArray(value.protected_fields)) return null;
+    for (const item of value.protected_fields) {
+      if (!isRecord(item) || typeof item.sku !== "string" || !item.sku.trim() ||
+        (item.field !== "shelf_life_days" && item.field !== "hs_code")) return null;
+      const validValue = (v: unknown) => item.field === "shelf_life_days"
+        ? typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 36501
+        : typeof v === "string" && v.length > 0 && v.length <= 10;
+      if (!validValue(item.nexus_value) || !validValue(item.source_value)) return null;
+      protectedFields.push({ sku: item.sku, field: item.field,
+        nexusValue: item.nexus_value as string | number, sourceValue: item.source_value as string | number });
+    }
+  }
   const summary = Object.fromEntries(
     IMPORT_STATUSES.map((status) => [status, Number((value.summary as Record<string, unknown>)[status]) || 0]),
   ) as Record<ImportStatus, number>;
@@ -73,7 +95,8 @@ export function parseReport(value: unknown): ImportReport | null {
     });
   }
   const purchasePrices = parsePurchasePriceReport(value.purchase_prices);
-  return { summary, items, ...(purchasePrices ? {purchasePrices} : {}), dryRun: value.dry_run !== false, applied: value.applied === true };
+  return { summary, items, ...(purchasePrices ? {purchasePrices} : {}),
+    ...(protectedFields.length ? { protectedFields } : {}), dryRun: value.dry_run !== false, applied: value.applied === true };
 }
 
 export function hasProblems(report: ImportReport): boolean {

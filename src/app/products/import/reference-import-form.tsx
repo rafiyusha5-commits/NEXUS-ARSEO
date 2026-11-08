@@ -20,6 +20,7 @@ import { type Table, buildPackageFromTables, parseCsv } from "@/lib/reference-im
 import { type GoogleCalculatorImportResult, type ReferenceImportResult, runGoogleCalculatorImport, runReferenceImport } from "./actions";
 import { isCalculatorSheet } from "@/lib/calculator-import/parser.ts";
 import { CalculatorSchemaReviewPanel } from "./calculator-schema-review";
+import { ProtectedCalculatorFields } from "./protected-calculator-fields";
 import type { CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -83,6 +84,7 @@ function ReportView({ report }: { report: ImportReport }) {
   }, [report, filter]);
   return (
     <>
+      {report.protectedFields && <ProtectedCalculatorFields fields={report.protectedFields} />}
       {report.purchasePrices && <p>Закупочные цены: {report.purchasePrices.applied ? "перенесено" : "к переносу"} {report.purchasePrices.summary.update}, совпадает {report.purchasePrices.summary.unchanged}, требуют проверки {report.purchasePrices.summary.skipped}.</p>}
       <div className="ri-summary">
         {IMPORT_STATUSES.map((status) => (
