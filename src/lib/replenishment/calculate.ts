@@ -100,6 +100,8 @@ export function calculate(input: Snapshot): Calculation {
   }
   const result: Calculation = { version: ALGORITHM, asOf: input.asOf, horizonEnd: date(start + horizon - 1), lines: [], transfers: [], risks: [], warnings: [...input.warnings] };
   const remaining = new Map(supplies.map(x => [x.id, x.quantity]));
+  const protectedSafety = new Map<string, number>();
+  const unmet = new Map<string, { on: number; pct: number; quantity: number }[]>();
   const channels = new Map<string, { pct: number; daily: number }[]>();
   const localWarehouse = (city: City) => s[city];
   for (const p of products) for (const city of ["astana", "almaty"] as const) {
@@ -134,6 +136,8 @@ export function calculate(input: Snapshot): Calculation {
     pools.sort((a, b) => b.pct - a.pct);
     if (!requirements.length) line.notes.push("Для нового спроса ОСГ 70% — допущение до появления требований клиентов");
     channels.set(`${p.id}:${city}`, pools);
+    const needs: { on: number; pct: number; quantity: number }[] = [];
+    unmet.set(`${p.id}:${city}`, needs);
     const local = rows.filter(r => r.purpose === "kz" && r.usable && r.conversionKnown && (!r.city || r.city === city) && (r.kind === "stock" ? r.warehouseId === localWarehouse(city) : r.city === city));
     local.sort((a, b) => (a.expiry ?? "9999").localeCompare(b.expiry ?? "9999") || a.id.localeCompare(b.id));
     for (let t = start; t < start + horizon; t++) for (const pool of pools) {
@@ -145,7 +149,10 @@ export function calculate(input: Snapshot): Calculation {
         remaining.set(stock.id, remaining.get(stock.id)! - taken); need -= taken;
         if (stock.kind === "stock") line.usable += taken; else line.inbound += taken;
       }
-      if (need > 0.001 && !line.firstShortage) line.firstShortage = date(t);
+      if (need > 0.001) {
+        needs.push({ on: t, pct: pool.pct, quantity: need });
+        if (!line.firstShortage) line.firstShortage = date(t);
+      }
     }
     line.usable = round(line.usable); line.inbound = round(line.inbound);
     // Eligible surplus can cover safety stock, but cannot be suggested to another city twice.
@@ -154,8 +161,10 @@ export function calculate(input: Snapshot): Calculation {
       if (day(stock.availableOn) >= start + horizon || (stock.expiry && day(stock.expiry) < start + horizon - 1)) continue;
       if ((shelfPct(stock, p.shelfDays, start + horizon - 1) ?? -1) < Math.max(...pools.map(x => x.pct))) continue;
       const taken = Math.min(extra, remaining.get(stock.id)!); remaining.set(stock.id, remaining.get(stock.id)! - taken); extra -= taken;
+      protectedSafety.set(stock.id, (protectedSafety.get(stock.id) ?? 0) + taken);
       if (stock.kind === "stock") line.usable += taken; else line.inbound += taken;
     }
+    if (extra > 0.001) needs.push({ on: start + horizon - 1, pct: Math.max(...pools.map(x => x.pct)), quantity: extra });
     line.shortage = round(Math.max(0, demand + safety - line.usable - line.inbound));
     result.lines.push(line);
   }
@@ -168,14 +177,15 @@ export function calculate(input: Snapshot): Calculation {
       if ((!stock.city && donor?.blockers.length) || line.blockers.length) continue;
       const arrival = Math.max(start, day(stock.availableOn)) + s.transferDays;
       if (arrival >= start + horizon || !stock.expiry || day(stock.expiry) < arrival) continue;
-      const pools = channels.get(`${p.id}:${line.city}`)!;
-      const eligibleDemand = sum(pools.map(pool => {
-        const last = lastEligible(stock, p, pool.pct);
-        return last === null ? 0 : Math.max(0, Math.min(last, start + horizon - 1) - arrival + 1) * pool.daily;
-      }));
+      // Only still-uncovered days/channels: local stock and earlier suggestions may
+      // already cover every day before this batch loses the required shelf life.
+      const needs = unmet.get(`${p.id}:${line.city}`)!.filter(need => need.on >= arrival && need.on <= day(stock.expiry!) && (shelfPct(stock, p.shelfDays, need.on) ?? -1) >= need.pct);
+      const eligibleDemand = sum(needs.map(need => need.quantity));
       const step = Math.max(1, stock.step ?? 1);
-      const quantity = Math.floor(Math.min(remaining.get(stock.id)!, Math.max(0, line.shortage - line.proposedTransfer), Math.max(0, eligibleDemand - line.proposedTransfer)) / step) * step;
+      const quantity = Math.floor((Math.min(remaining.get(stock.id)!, Math.max(0, line.shortage - line.proposedTransfer), eligibleDemand) + 1e-8) / step) * step;
       if (quantity <= 0) continue;
+      let allocation = quantity;
+      for (const need of needs) { const taken = Math.min(allocation, need.quantity); need.quantity -= taken; allocation -= taken; }
       remaining.set(stock.id, remaining.get(stock.id)! - quantity); line.proposedTransfer += quantity;
       result.transfers.push({ supplyId: stock.id, productId: p.id, from: stock.warehouseId, to: line.city, quantity, arrival: date(arrival) });
     }
@@ -200,7 +210,7 @@ export function calculate(input: Snapshot): Calculation {
     else if (last === null) result.risks.push({ supplyId: stock.id, sku: p.sku, batch: stock.batch, quantity: stock.quantity, deadline: null, level: "unknown", message: "Недостаточно данных для ОСГ" });
     else if (last < start + horizon) {
       // An unconfirmed suggestion must not make an existing shelf-life risk disappear.
-      const atRisk = remaining.get(stock.id)! + sum(result.transfers.filter(t => t.supplyId === stock.id).map(t => t.quantity));
+      const atRisk = remaining.get(stock.id)! + (protectedSafety.get(stock.id) ?? 0) + sum(result.transfers.filter(t => t.supplyId === stock.id).map(t => t.quantity));
       if (atRisk > 0.001) result.risks.push({ supplyId: stock.id, sku: p.sku, batch: stock.batch, quantity: round(atRisk), deadline: date(last), level: last < start + s.reviewDays ? "critical" : "warning", message: "Прогнозируемый остаток к последнему дню допустимого ОСГ; предложения перемещения требуют подтверждения" });
     }
   }

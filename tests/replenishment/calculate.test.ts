@@ -100,6 +100,24 @@ describe("KZ replenishment", () => {
   it("does not propose transfers that arrive after the eligibility deadline", () => {
     const f = fixture(); f.settings.transferDays = 20; f.supplies = [stock({ warehouseId: "ACT", quantity: 1000 })]; assert.equal(calculate(f).transfers.length, 0);
   });
+  it("does not cover later shortage with a transfer whose eligible days are already supplied", () => {
+    const f = fixture(); f.products[0].shelfDays = 10; f.settings.transferDays = 0;
+    f.settings.overrides[1].daily = 0;
+    f.supplies = [stock({ quantity: 100, expiry: "2026-11-19" }), stock({ id: "ACT", warehouseId: "ACT", quantity: 50, expiry: "2026-11-19" })];
+    const r = calculate(f);
+    assert.equal(r.lines[0].usable, 50);
+    assert.equal(r.lines[0].purchase, 90);
+    assert.equal(r.lines[0].afterTransfers, 90);
+    assert.equal(r.transfers.length, 0);
+  });
+  it("safety stock is protected for the donor but remains physical stock at shelf-life risk", () => {
+    const f = fixture(); f.settings.serviceZ = 1; f.settings.overrides[1].daily = 0;
+    f.sales = [{ id: "S", productId: "P", city: "astana", customerId: "C", date: "2026-11-03", quantity: 70, requiredPct: 0 }];
+    f.supplies = [stock({ quantity: 500, expiry: "2026-11-21" })];
+    const r = calculate(f);
+    assert.ok(r.lines[0].safety > 0);
+    assert.equal(r.risks.find(r => r.supplyId === "B")?.quantity, 360);
+  });
   it("does not propose breaking a stock unit when the source is held in boxes", () => {
     const f = fixture(); f.supplies = [stock({ warehouseId: "ACT", quantity: 95, step: 20 })];
     const r = calculate(f); assert.ok(r.transfers.length > 0);
