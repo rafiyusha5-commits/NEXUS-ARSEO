@@ -68,6 +68,15 @@ describe("KZ replenishment", () => {
     assert.equal(calculate(f).lines[0].purchase, 40);
     f.commitments = [{ productId: "P", city: "astana", quantity: 300, reserved: 60 }]; assert.equal(calculate(f).lines[0].purchase, 200);
   });
+  it("includes known orders in the draft forecast even when a new SKU has zero baseline demand", () => {
+    const f = fixture(); f.settings.overrides[0].daily = 0;
+    f.commitments = [{ productId: "P", city: "astana", quantity: 300, reserved: 60 }];
+    const line = calculate(f).lines[0];
+    assert.equal(line.forecastDemand, 300);
+    assert.equal(line.demand, 240);
+    assert.equal(line.purchase, 240);
+    assert.ok(line.notes.some(n => n.includes("Открытые заказы")));
+  });
   it("customer requirements, not a global 30%, control eligible stock", () => {
     const f = fixture(); f.sales = [{ id: "S", productId: "P", city: "astana", customerId: "C", date: "2026-11-03", quantity: 70, requiredPct: 90 }];
     f.supplies = [stock({ expiry: "2027-01-01" })]; assert.equal(calculate(f).lines[0].purchase, 140); assert.equal(calculate(f).risks[0].level, "critical");

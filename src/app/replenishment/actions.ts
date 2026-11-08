@@ -61,7 +61,7 @@ export async function prepareDraft(data: FormData) {
     if (!["forecast", "purchase"].includes(kind)) throw new PublicError("Выберите действие");
     if (kind === "purchase" && result.transfers.length > 0 && data.get("use_existing_kz") !== "on") throw new PublicError("Подтвердите использование существующего запаса Казахстана и подготовку перемещений.");
     const lines = kind === "forecast"
-      ? result.lines.map(l => ({ productId: l.productId, city: l.city, quantity: Math.ceil(l.daily * (workspace.snapshot!.settings.productionDays + workspace.snapshot!.settings.transitDays + workspace.snapshot!.settings.cityDays + workspace.snapshot!.settings.reviewDays)) })).filter(l => l.quantity > 0)
+      ? result.lines.map(l => ({ productId: l.productId, city: l.city, quantity: Math.ceil(l.forecastDemand) })).filter(l => l.quantity > 0)
       : workspace.snapshot.products.map(p => {
         const rows = result.lines.filter(l => l.productId === p.id);
         return { productId: p.id, quantity: rows.reduce((n, l) => n + l.afterTransfers, 0), stock: rows.reduce((n, l) => n + l.usable + l.proposedTransfer, 0), inbound: rows.reduce((n, l) => n + l.inbound, 0), safety: rows.reduce((n, l) => n + l.safety, 0) };
