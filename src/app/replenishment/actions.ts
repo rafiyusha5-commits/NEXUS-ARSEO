@@ -71,7 +71,7 @@ export async function prepareDraft(data: FormData) {
     if (reason.length < 3 || reason.length > 800) throw new PublicError("Укажите причину от 3 до 800 символов.");
     const draft = await supabase.rpc("replenishment_prepare_draft", { p_run_id: run, p_kind: kind, p_lines: lines, p_reason: reason + (kind === "purchase" && result.transfers.length ? " · Существующий запас KZ учтён; перемещения подготовить отдельно." : ""), p_forecast_id: kind === "purchase" ? id(data, "forecast_id") : null });
     if (draft.error) throw draft.error;
-    destination = `/${kind === "forecast" ? "forecasts" : "purchase-plans"}?id=${draft.data}`;
+    destination = kind === "forecast" ? `/forecasts?forecast=${draft.data}` : `/purchase-plans?plan=${draft.data}`;
   } catch (error) { back(null, run, error); }
   revalidatePath("/replenishment"); redirect(destination);
 }

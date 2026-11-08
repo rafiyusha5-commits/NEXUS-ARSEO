@@ -61,13 +61,26 @@ export async function runReplenishmentForms({ chromium, base, email, password, r
     const run = new URL(page.url()).searchParams.get('run'); assert.match(run, /^[0-9a-f-]{36}$/);
     await form('Подготовить черновик прогноза').locator('[name="reason"]').fill('Reviewed synthetic forecast');
     await submit('Подготовить черновик прогноза');
-    const forecast = new URL(page.url()).searchParams.get('id'); assert.match(forecast, /^[0-9a-f-]{36}$/);
+    const forecast = new URL(page.url()).searchParams.get('forecast'); assert.match(forecast, /^[0-9a-f-]{36}$/);
+    // A newer unrelated draft must not hijack a link from the saved calculation.
+    const unrelated = form('Создать прогноз');
+    await unrelated.locator('[name="name"]').fill('Unrelated later forecast');
+    await unrelated.locator('[name="horizon_start"]').fill(sql("select date_trunc('month',private.business_today())::date;").trim());
+    await unrelated.locator('[name="horizon_end"]').fill(sql('select private.business_today()+90;').trim());
+    await submit('Создать прогноз');
+    assert.notEqual(new URL(page.url()).searchParams.get('forecast'), forecast);
+    await page.goto(base + '/replenishment?run=' + run);
+    await page.getByRole('link', { name: 'Открыть прогноз', exact: true }).click();
+    await page.waitForLoadState('networkidle');
+    assert.equal(new URL(page.url()).searchParams.get('forecast'), forecast);
+    assert.equal(await form('Отправить на проверку').locator('[name="p_forecast_id"]').inputValue(), forecast);
     await submit('Отправить на проверку'); await submit('Коммерчески проверено'); await submit('Утвердить версию');
     await page.goto(base + '/replenishment?run=' + run);
     await form('Подготовить черновик плана закупки').locator('[name="reason"]').fill('Reviewed synthetic purchase');
     await form('Подготовить черновик плана закупки').locator('[name="use_existing_kz"]').check();
     await submit('Подготовить черновик плана закупки');
-    const plan = new URL(page.url()).searchParams.get('id'); assert.match(plan, /^[0-9a-f-]{36}$/);
+    const plan = new URL(page.url()).searchParams.get('plan'); assert.match(plan, /^[0-9a-f-]{36}$/);
+    assert.equal(await form('На логистическую проверку').locator('[name="p_plan_id"]').inputValue(), plan);
     assert.equal(sql(`select status from public.purchase_plans where id='${plan}';`).trim(), 'draft');
     assert.equal(Number(sql(`select count(*) from public.replenishment_decisions where run_id='${run}';`)), 2);
     await page.goto(base + '/replenishment?run=' + run);
