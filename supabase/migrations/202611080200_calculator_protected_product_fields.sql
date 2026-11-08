@@ -56,6 +56,9 @@ begin
  for v_product in select value from jsonb_array_elements(v_prepared->'reference'->'products') loop
   -- Validate even protected incoming values; protection must not hide malformed input.
   v_life:=private.ri_number(v_product,'shelf_life_days',0,36501,true,'Калькулятор');
+  if v_life is not null and v_life<=0 then
+   raise exception 'Калькулятор: срок годности должен быть положительным';
+  end if;
   v_hs:=private.ri_text(v_product,'hs_code',10,'Калькулятор');
   if v_hs is not null and v_hs !~ '^[0-9]{4,10}$' then
    raise exception 'Калькулятор: ТН ВЭД должен содержать от 4 до 10 цифр';

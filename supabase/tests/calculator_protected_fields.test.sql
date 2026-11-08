@@ -79,6 +79,7 @@ do $$declare p jsonb;r jsonb;begin
  assert (select shelf_life_days=550 and hs_code='1806329010' from public.products where internal_sku='PROTECT-1'),'new manual values survive repeat sync';
  assert (select count(*)=4 from public.products where internal_sku in('PROTECT-1','EMPTY-1','NEW-1','CANON-1')),'no duplicate products';
  perform pg_temp.protection_error(format('select public.import_calculator_master_data(%L,false)',jsonb_set(p,'{reference,products,0,shelf_life_days}','{}')));
+ perform pg_temp.protection_error(format('select public.import_calculator_master_data(%L,false)',jsonb_set(p,'{reference,products,0,shelf_life_days}','0')));
  perform pg_temp.protection_error(format('select public.import_calculator_master_data(%L,false)',jsonb_set(p,'{reference,products,0,hs_code}','"not-a-code"')));
 end$$;
 reset role;
