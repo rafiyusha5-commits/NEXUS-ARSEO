@@ -73,11 +73,15 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Проверка…', exact: true }).isDisabled(), true);
     const apply = page.getByRole('button', { name: 'Синхронизировать с Nexus', exact: true });
     await apply.waitFor();
+    const preserved = page.getByRole('region', { name: 'Сохранённые значения карточек' });
+    assert.match(await preserved.innerText(), /540[\s\S]*547/);
+    assert.match(await preserved.innerText(), /0123456789[\s\S]*01234567/);
     assert.equal(await page.locator('#calls').textContent(), 'preview,approve-schema');
     assert.equal(await page.getByText('Новая структура подтверждена и сохранена в истории.', { exact: false }).count(), 1);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await apply.click();
     await page.getByText('Google Таблица синхронизирована:', { exact: false }).waitFor();
+    assert.equal(await preserved.isVisible(), true, 'source conflicts remain visible after apply');
     assert.equal(await page.locator('#calls').textContent(), 'preview,approve-schema,apply');
     for (const scenario of ['blocked', 'stale']) {
       await page.goto(url + '?' + scenario);

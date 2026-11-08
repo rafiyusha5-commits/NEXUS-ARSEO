@@ -24,5 +24,9 @@ export async function runGoogleCalculatorImport(mode: string, expected?: string,
   if (mode === "apply" && expected !== snapshot) throw Error("Apply lost snapshot");
   return { ok: true, snapshot, schemaApproved: mode === "approve-schema", skippedIssues: [], qualityIssues: [],
     source: { title: "Synthetic", sheet: "расчеты", spreadsheetId: "synthetic", rows: 6, columns: 5, products: 1 },
-    report: { summary: { create: 1, update: 0, unchanged: 0, conflict: 0, error: 0 }, items: [], dryRun: mode !== "apply", applied: mode === "apply" } };
+    report: { summary: { create: 1, update: 0, unchanged: 0, conflict: 0, error: 0 }, items: [],
+      protectedFields: [
+        { sku: "TEST-SHELF", field: "shelf_life_days", nexusValue: 540, sourceValue: 547 },
+        { sku: "TEST-CODE", field: "hs_code", nexusValue: "0123456789", sourceValue: "01234567" },
+      ], dryRun: mode !== "apply", applied: mode === "apply" } };
 }
