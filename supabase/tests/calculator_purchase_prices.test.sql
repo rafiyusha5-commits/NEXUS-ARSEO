@@ -3,6 +3,13 @@
 begin;
 insert into public.currencies(code,name) values('USD','{"en":"US dollar"}') on conflict(code) do nothing;
 delete from public.product_master_data where source_key='arseo-master-calculator' and product_id<>(select id from public.products where internal_sku='CALC-1');
+-- Currency is part of this price test's initial schema, not an unapproved addition
+-- sneaked in under the old fingerprint. The outer transaction restores the fixture.
+update tests.calculator_packages set payload=jsonb_set(payload,'{source,columns}',
+ (payload#>'{source,columns}')||jsonb_build_array(jsonb_build_object('key','purchase.currency','position',100,
+ 'field_ru','Валюта закупа','field_en',null,'block','Информация о закупе','visibility','catalog','source_number',null,'source_code',null))) where name='base';
+update public.product_master_sources set columns=(select payload#>'{source,columns}' from tests.calculator_packages where name='base')
+ where source_key='arseo-master-calculator';
 set role authenticated;
 select tests.calc_act_as('d4300000-0000-4000-8000-000000000001');
 select public.import_calculator_master_data((select payload from tests.calculator_packages where name='base'),false);
@@ -29,7 +36,6 @@ end$$;
 do $$declare r jsonb;v_payload jsonb;v_id uuid;v_currency uuid;v_price numeric;begin
  select id into v_id from public.products where internal_sku='CALC-1';
  v_payload:=(select payload from tests.calculator_packages where name='base');
- v_payload:=jsonb_set(v_payload,'{source,columns}',(v_payload#>'{source,columns}')||jsonb_build_array(jsonb_build_object('key','purchase.currency','position',100,'field_ru','Валюта закупа','field_en',null,'block','Информация о закупе','visibility','catalog','source_number',null,'source_code',null)));
  v_payload:=jsonb_set(v_payload,'{source,rows,0,catalog_data,purchase.currency}','"USD"');
  r:=public.import_calculator_master_data(v_payload,false);
  select base_purchase_price,currency_id into v_price,v_currency from public.my_product_purchase_prices(array[v_id]);

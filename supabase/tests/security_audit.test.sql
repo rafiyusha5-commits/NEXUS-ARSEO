@@ -40,6 +40,7 @@ $$;
 create table tests.sec_exec_allow (role_name text, fn text, primary key (role_name, fn));
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
+  'public.replenishment_create_profile', 'public.replenishment_set_purpose', 'public.replenishment_workspace', 'public.replenishment_capture', 'public.replenishment_prepare_draft',
   'public.exact_expense_allocation_context', 'public.save_exact_expense_allocation',
   'public.historical_sale_receipt_preview', 'public.record_historical_sale_receipt',
   'public.can_record_historical_sale', 'public.create_historical_customer_order',
@@ -47,7 +48,7 @@ select 'authenticated', unnest(array[
   'public.prepare_assistant_operation', 'public.review_assistant_operation', 'public.confirm_assistant_operation',
   'public.preview_customer_order_reservation_replacement', 'public.replace_customer_order_reservations',
   'public.return_customer_order_to_preparation',
-  'public.add_shipment_transport', 'public.import_calculator_master_data', 'public.my_product_master_confidential_data', 'public.my_product_master_sources', 'public.create_shipment_transport', 'public.update_shipment_transport', 'public.remove_shipment_transport', 'public.assign_source_extraction_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
+  'public.add_shipment_transport', 'public.import_calculator_master_data', 'public.review_calculator_schema', 'public.my_product_master_confidential_data', 'public.my_product_master_sources', 'public.create_shipment_transport', 'public.update_shipment_transport', 'public.remove_shipment_transport', 'public.assign_source_extraction_transport', 'public.allocate_shipment_item', 'public.approve_document_template',
   'public.add_sticker_template_version', 'public.change_sticker_order_status', 'public.create_marking_code_order', 'public.create_sticker_order', 'public.create_sticker_template',
   'public.add_customer_order_item', 'public.archive_document', 'public.archive_document_template', 'public.cancel_customer_order', 'public.cancel_listing_card',
   'public.change_shipment_operational_state', 'public.change_shipment_stage_status', 'public.correct_shipment_dates',

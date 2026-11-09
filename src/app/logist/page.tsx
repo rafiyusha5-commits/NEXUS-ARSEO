@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LogistProposalList } from "@/components/logist/logist-proposal-list";
@@ -29,6 +30,7 @@ export default async function LogistPage({ searchParams }: { searchParams: Promi
     <header className="topbar"><div><p className="eyebrow">Агент «Логист»</p><h1>Предложения Логиста</h1></div><div className="topbar-actions">
       {allowed && <form action={runLogistAction}><input type="hidden" name="back" value="/logist"/><PendingSubmitButton className="primary" pendingText="Проверяем поставки…">Проверить активные поставки</PendingSubmitButton></form>}
     </div></header>
+    <WorkflowHelp section="logist"/>
     {notices.logist_error && <div className="login-error admin-message" role="status">{notices.logist_error}</div>}
     {notices.logist_success && <div className="login-success admin-message" role="status">{notices.logist_success}</div>}
     {!allowed && <div className="empty-state">Нужны права «Поставки: просмотр» и «Документы: просмотр». Обратитесь к администратору.</div>}

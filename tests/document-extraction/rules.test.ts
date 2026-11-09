@@ -3,6 +3,16 @@ import { describe, it } from "node:test";
 import { conflictsAcrossDocuments, detectShipmentSourceKind, extractShipmentFields, mergeConfirmedSourceData, sanitizeConfirmedSourceData } from "../../src/lib/document-extraction/rules.ts";
 
 describe("shipment source document extraction", () => {
+  it("reads split Incoterms labels in bilingual invoices", () => {
+    for (const label of ["INCO TERM", "INCO TERMS", "INCOTERMS", "Inco\nTerm"]) {
+      const result = extractShipmentFields(`FAKTURA VAT / INVOICE\nNUMER FAKTURY (INVOICE NO): 099/2026/Z\nDATA FAKTURY (INVOICE DATE): 2026-10-10\nWarunki dostawy (Delivery terms): ${label}: EXW`);
+      assert.equal(result.data.invoice_number, "099/2026/Z");
+      assert.equal(result.data.invoice_date, "2026-10-10");
+      assert.equal(result.data.incoterms, "EXW");
+      assert.equal(result.evidence.incoterms.value, "EXW");
+    }
+    assert.equal(extractShipmentFields("Условия поставки: FCA Алматы").data.incoterms, "FCA Алматы");
+  });
   it("extracts transport and order fields from a contract request", () => {
     const result = extractShipmentFields(`
       Заказ № HS-41.1

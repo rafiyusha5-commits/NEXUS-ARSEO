@@ -51,6 +51,10 @@ export function proposeFromOcr(ocr: OcrResult, hintedKind: string): OcrProposal 
     if (evidence.confidence < LOW_CONFIDENCE) lowConfidence.push(field);
   }
   if (!Object.keys(result.data).length) {
+    const knownType = ["invoice", "specification", "waybill", "contract", "transport_order", "vehicle_document", "driver_document"].includes(sourceKind);
+    if (knownType && ocr.text.trim()) {
+      return { sourceKind, result, status: "needs_review", lowConfidence, confidence: documentConfidence, error: "Текст прочитан, но реквизиты не найдены: сверьте оригинал и введите данные вручную" };
+    }
     return { sourceKind, result, status: "failed", lowConfidence, confidence: documentConfidence, error: "Текст прочитан, но реквизиты не найдены: проверьте качество скана или введите данные вручную" };
   }
   const missingCmrNumber = sourceKind === "waybill" && /cmr|samochodowy/iu.test(ocr.text) && !result.data.cmr_number;

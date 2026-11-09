@@ -1,3 +1,6 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
+import { loadTemplatePermissions } from "@/lib/templates/supabase-gateway";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -29,7 +32,7 @@ type Card = {
   notes: string | null; status: string; submitted_at: string | null; decided_at: string | null; decision_comment: string | null;
   cancelled_at: string | null; cancel_reason: string | null; created_at: string;
   counterparty: { legal_name: string; short_name: string | null } | null;
-  template: { id: string; name: string; language: string; status: string; flow_direction: string; counterparty_id: string | null } | null;
+  template: { id: string; name: string; language: string; status: string; flow_direction: string; counterparty_id: string | null; current_version: number } | null;
   creator: Named; submitter: Named; decider: Named; canceller: Named;
 };
 type Item = {
@@ -61,7 +64,7 @@ export default async function ListingCardPage({
     .select(
       "id, card_number, version, previous_version_id, root_card_id, card_type, counterparty_id, template_id, title, effective_date, notes, status, " +
         "submitted_at, decided_at, decision_comment, cancelled_at, cancel_reason, created_at, " +
-        "counterparty:counterparties!product_listing_cards_counterparty_id_fkey(legal_name, short_name), template:document_templates(id, name, language, status, flow_direction, counterparty_id), " +
+        "counterparty:counterparties!product_listing_cards_counterparty_id_fkey(legal_name, short_name), template:document_templates(id, name, language, status, flow_direction, counterparty_id, current_version), " +
         "creator:profiles!product_listing_cards_created_by_fkey(full_name), submitter:profiles!product_listing_cards_submitted_by_fkey(full_name), " +
         "decider:profiles!product_listing_cards_decided_by_fkey(full_name), canceller:profiles!product_listing_cards_cancelled_by_fkey(full_name)",
     )
@@ -101,6 +104,7 @@ export default async function ListingCardPage({
   const usedProducts = new Set(items.map((item) => item.product_id));
   const counterparty = one(card.counterparty);
   const template = one(card.template);
+  const canDownloadTemplate = template && template.current_version > 0 && (await loadTemplatePermissions(supabase)).export;
 
   return (
     <main className="app-shell">
@@ -116,6 +120,7 @@ export default async function ListingCardPage({
             <Link className="ghost button-link" href="/listing-cards">К реестру</Link>
           </div>
         </header>
+    <WorkflowHelp section="listingCards"/>
         {notices.error && <div className="login-error admin-message">{notices.error}</div>}
         {notices.success && <div className="login-success admin-message">{notices.success}</div>}
         {card.status !== "draft" && (
@@ -128,7 +133,7 @@ export default async function ListingCardPage({
 
         <section className="shipment-summary-grid">
           <article className="summary-card"><p>Вступает в силу</p><strong>{formatDate(card.effective_date)}</strong><small>{card.title || "Без названия"}</small></article>
-          <article className="summary-card"><p>Шаблон контрагента</p><strong>{template ? template.name : "—"}</strong><small>{template ? <Link href={`/templates/${template.id}`}>открыть шаблон</Link> : "шаблон не выбран"}</small></article>
+          <article className="summary-card"><p>Шаблон контрагента</p><strong>{template ? template.name : "—"}</strong><small>{template ? <span className="document-actions"><Link href={`/templates/${template.id}`}>Открыть карточку</Link>{canDownloadTemplate && <a href={`/templates/${template.id}/download`}>Скачать оригинал</a>}</span> : "шаблон не выбран"}</small></article>
           <article className="summary-card"><p>Создал</p><strong>{one(card.creator)?.full_name ?? "—"}</strong><small>{formatDateTime(card.created_at)}</small></article>
           <article className="summary-card">
             <p>Решение контрагента</p>
@@ -160,7 +165,7 @@ export default async function ListingCardPage({
                     <form action={removeCardItemAction}>
                       <input type="hidden" name="card_id" value={card.id} />
                       <input type="hidden" name="item_id" value={item.id} />
-                      <button className="ghost compact" type="submit">Удалить</button>
+                      <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Удалить</PendingSubmitButton>
                     </form>
                   ) : <span />}
                 </div>
@@ -189,7 +194,7 @@ export default async function ListingCardPage({
                 {(currencies ?? []).map((currency) => <option value={currency.id} key={currency.id}>{currency.code}</option>)}
               </select></label>
               <label>Комментарий<input name="comment" maxLength={1000} /></label>
-              <button className="primary" type="submit">Добавить позицию</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Добавить позицию</PendingSubmitButton>
               {!products?.length && <p className="form-help doc-form-full">Нет активных товаров. Добавьте товар в разделе «Товары».</p>}
             </form>
           )}
@@ -202,13 +207,13 @@ export default async function ListingCardPage({
               {actions.includes("submit") && (
                 <form action={submitCardAction}>
                   <input type="hidden" name="card_id" value={card.id} />
-                  <button className="primary" type="submit">Отправить контрагенту</button>
+                  <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Отправить контрагенту</PendingSubmitButton>
                 </form>
               )}
               {actions.includes("new_version") && (
                 <form action={createCardVersionAction}>
                   <input type="hidden" name="card_id" value={card.id} />
-                  <button className="primary" type="submit">Создать новую версию</button>
+                  <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Создать новую версию</PendingSubmitButton>
                 </form>
               )}
             </div>
@@ -224,7 +229,7 @@ export default async function ListingCardPage({
                   <option value="rejected">Контрагент отклонил</option>
                 </select></label>
                 <label>Комментарий (обязателен при отказе)<input name="comment" maxLength={1000} /></label>
-                <button className="primary" type="submit">Зафиксировать</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Зафиксировать</PendingSubmitButton>
               </form>
             )}
           </section>
@@ -266,7 +271,7 @@ export default async function ListingCardPage({
             <form action={cancelCardAction} className="doc-subform doc-archive-form">
               <input type="hidden" name="card_id" value={card.id} />
               <label>Причина<input name="reason" required minLength={3} maxLength={500} /></label>
-              <button className="ghost danger-text" type="submit">Отменить карту</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">Отменить карту</PendingSubmitButton>
             </form>
           </section>
         )}

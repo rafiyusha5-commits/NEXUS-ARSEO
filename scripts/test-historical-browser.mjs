@@ -13,6 +13,7 @@ import {makeExternalFixtures} from '../tests/pilot/external-fixtures.mjs';
 import {runRecoveryDrill, assertLocalDocker} from '../tests/recovery/drill.mjs';
 import {startFaultHttp} from '../tests/pilot/fault-http.mjs';
 import {runDocumentFaults} from '../tests/pilot/document-faults.mjs';
+import {runReplenishmentForms} from '../tests/pilot/replenishment-forms.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const recovery=process.argv.length===3&&process.argv[2]==='--recovery';
@@ -140,6 +141,7 @@ try{
   assert.ok(requests.filter(r=>r.kind==='drive').every(r=>r.method==='GET'),'Drive is read-only');
   writeFileSync(join(output,'browser-result.json'),JSON.stringify({...evidence,backend:`Local Supabase, PostgreSQL ${version}`,externalRequests:requests.length},null,2));
   console.log('PASS full authenticated browser scenario',JSON.stringify(evidence));
+  if(!recovery)await runReplenishmentForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output});
   if(faultHttp){
     await runDocumentFaults({chromium,base:'http://127.0.0.1:3100',email,password,refs,sql,output,fixtures,http:faultHttp,
       async restart(){

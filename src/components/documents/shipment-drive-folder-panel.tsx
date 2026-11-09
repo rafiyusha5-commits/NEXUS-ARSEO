@@ -1,3 +1,4 @@
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { selectAll } from "@/lib/supabase/select-all";
 import { randomUUID } from "node:crypto";
 import { ProcessingStatus } from "./processing-status";
@@ -55,5 +56,6 @@ export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { 
     }
   } catch { failed = true; }
   if (failed) return <section className="panel admin-section" id="drive-folder"><h2>Папка Google Drive</h2><p role="status">Привязка Drive сейчас недоступна. Проверьте настройку подключения и доступ к папке. Сохранённые документы Nexus доступны в обычном списке.</p></section>;
-  return <>{binding && initialFolder && initialFolder !== `https://drive.google.com/drive/folders/${binding.folder_id}` && <p role="alert" className="login-error">У этой поставки уже другая папка. Привязка не заменена; ниже показана сохранённая папка. Проверьте выбор поставки до загрузки файлов.</p>}<ProcessingStatus receipts={receipts} serverNow={serverNow}/><ShipmentDriveFolderView initialFolder={initialFolder} operationId={randomUUID()} shipmentId={shipmentId} binding={binding} files={files} types={types} canImport={permissions["documents.create"] && permissions["documents.update"]} actions={{ bind: bindShipmentDriveFolder, scan: checkShipmentDriveFolder, upload: importShipmentDriveFile, check: checkShipmentDriveContent, link: linkShipmentDriveDocument }}/></>;
+  const documentActions = await loadDocumentActions(session, files.flatMap(file => [file.imported_document_id, ...(file.candidates ?? []).map(candidate => candidate.id)]));
+  return <>{binding && initialFolder && initialFolder !== `https://drive.google.com/drive/folders/${binding.folder_id}` && <p role="alert" className="login-error">У этой поставки уже другая папка. Привязка не заменена; ниже показана сохранённая папка. Проверьте выбор поставки до загрузки файлов.</p>}<ProcessingStatus receipts={receipts} serverNow={serverNow}/><ShipmentDriveFolderView documentActions={documentActions} initialFolder={initialFolder} operationId={randomUUID()} shipmentId={shipmentId} binding={binding} files={files} types={types} canImport={permissions["documents.create"] && permissions["documents.update"]} actions={{ bind: bindShipmentDriveFolder, scan: checkShipmentDriveFolder, upload: importShipmentDriveFile, check: checkShipmentDriveContent, link: linkShipmentDriveDocument }}/></>;
 }

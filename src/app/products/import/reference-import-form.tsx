@@ -19,6 +19,8 @@ import {
 import { type Table, buildPackageFromTables, parseCsv } from "@/lib/reference-import/tables.ts";
 import { type GoogleCalculatorImportResult, type ReferenceImportResult, runGoogleCalculatorImport, runReferenceImport } from "./actions";
 import { isCalculatorSheet } from "@/lib/calculator-import/parser.ts";
+import { CalculatorSchemaReviewPanel } from "./calculator-schema-review";
+import { ProtectedCalculatorFields } from "./protected-calculator-fields";
 import type { CalculatorQualityIssue } from "@/lib/calculator-import/quality.ts";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -82,6 +84,7 @@ function ReportView({ report }: { report: ImportReport }) {
   }, [report, filter]);
   return (
     <>
+      {report.protectedFields && <ProtectedCalculatorFields fields={report.protectedFields} />}
       {report.purchasePrices && <p>Закупочные цены: {report.purchasePrices.applied ? "перенесено" : "к переносу"} {report.purchasePrices.summary.update}, совпадает {report.purchasePrices.summary.unchanged}, требуют проверки {report.purchasePrices.summary.skipped}.</p>}
       <div className="ri-summary">
         {IMPORT_STATUSES.map((status) => (
@@ -192,13 +195,16 @@ export function ReferenceImportForm() {
     });
   }
 
-  function runGoogle(mode: "preview" | "apply") {
-    const snapshot = googleResult?.mode === "preview" && googleResult.value.ok ? googleResult.value.snapshot : undefined;
+  function runGoogle(mode: "preview" | "apply" | "approve-schema") {
+    const value = googleResult?.value;
+    const snapshot = value?.snapshot;
+    const expectedSchema = value && !value.ok ? value.schemaReview?.expected_schema ?? undefined : undefined;
+    const resultMode = mode === "apply" ? "apply" : "preview";
     startTransition(async () => {
       try {
-        setGoogleResult({ mode, value: await runGoogleCalculatorImport(mode, snapshot) });
+        setGoogleResult({ mode: resultMode, value: await runGoogleCalculatorImport(mode, snapshot, expectedSchema) });
       } catch {
-        setGoogleResult({ mode, value: { ok: false, message: "Сервер не ответил. Попробуйте ещё раз." } });
+        setGoogleResult({ mode: resultMode, value: { ok: false, message: "Сервер не ответил. Попробуйте ещё раз." } });
       }
     });
   }
@@ -236,6 +242,8 @@ export function ReferenceImportForm() {
         <section className="panel admin-section">
           <div className="login-error admin-message">{googleFailure.message}</div>
           {googleFailure.issues?.map((issue, index) => <p className="form-help" key={index}>{issue.source}, строка {issue.row ?? "—"}: {issue.message}</p>)}
+          {googleFailure.schemaApproved && <p>Новая структура сохранена в истории Nexus. Товары не изменены; повторите проверку товаров.</p>}
+          {googleFailure.schemaReview && <CalculatorSchemaReviewPanel key={`${googleFailure.snapshot}-${googleFailure.schemaReview.expected_schema}`} review={googleFailure.schemaReview} pending={pending} onConfirm={() => runGoogle("approve-schema")} />}
           {googleFailure.report && <ReportView key="google-failure" report={googleFailure.report} />}
         </section>
       )}
@@ -243,9 +251,10 @@ export function ReferenceImportForm() {
       {googlePreview && !googleApplied && (
         <section className="panel admin-section">
           <div className="panel-heading">
-            <div><p className="eyebrow">Google Sheets · предпросмотр · ничего не записано</p><h2>{googlePreview.source.products} товаров · {googlePreview.source.columns} полей</h2><p className="form-help">Лист «{googlePreview.source.sheet}» · прочитано строк: {googlePreview.source.rows}</p></div>
+            <div><p className="eyebrow">Google Sheets · предпросмотр товаров · товары ещё не изменены</p><h2>{googlePreview.source.products} товаров · {googlePreview.source.columns} полей</h2><p className="form-help">Лист «{googlePreview.source.sheet}» · прочитано строк: {googlePreview.source.rows}</p></div>
             <span className={hasProblems(googlePreview.report) ? "import-invalid" : "import-valid"}>{hasProblems(googlePreview.report) ? "Есть конфликты" : googlePreview.skippedIssues.length ? `Готово · пропущено строк: ${skippedRowCount(googlePreview.skippedIssues)}` : hasChanges(googlePreview.report) ? "Готово к синхронизации" : "Данные актуальны · можно обновить поля"}</span>
           </div>
+          {googlePreview.schemaApproved && <p className="login-success admin-message">Новая структура подтверждена и сохранена в истории. Проверьте результат ниже; запись товаров выполняется отдельной кнопкой.</p>}
           <SkippedCalculatorRows issues={googlePreview.skippedIssues} />
           <CalculatorQualityRows issues={googlePreview.qualityIssues} />
           <ReportView key={`google-preview-${googlePreview.snapshot}`} report={googlePreview.report} />

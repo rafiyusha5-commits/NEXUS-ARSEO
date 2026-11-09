@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { DocumentReviewPreview } from "./document-review-preview";
+import { ShipmentDocumentsPanel } from "./shipment-documents-panel";
 import { localizedName } from "@/lib/documents/labels";
 import { CustomsMatchForm } from "./customs-match-form";
 import { mappedEvidence, type CustomsMatch } from "@/lib/document-extraction/customs-matches";
@@ -10,6 +12,7 @@ import { comparisonItems, comparisonSources } from "@/lib/document-extraction/co
 import { SupplierEvidence } from "./supplier-evidence";
 import { CustomsReviewForm } from "./customs-review-form";
 import { CustomsRevisionForm } from "./customs-revision-form";
+import { isSupplierLots } from "@/lib/document-extraction/yilmaz";
 import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
 import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { confirmedCommoditySource, currentCommoditySource, isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
@@ -21,7 +24,7 @@ import { VEHICLE_SCOPED_FIELDS } from "@/lib/document-extraction/rules";
 import { describeOcrConfig, loadOcrConfig } from "@/lib/ocr/config";
 import { LOW_CONFIDENCE } from "@/lib/ocr/recognize";
 import { BulkDocumentUpload } from "./bulk-document-upload";
-import { SOURCE_FIELD_DEFINITIONS } from "@/lib/document-extraction/rules";
+import { reviewDefinitions } from "@/lib/document-extraction/review-definitions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { DocumentQuantitiesForm, type QuantityFormItem, type QuantityHistoryRow } from "./document-quantities-form";
 import { QUANTITY_SOURCE_KINDS, type DocumentLine } from "@/lib/shipments/document-quantities";
@@ -30,26 +33,17 @@ const statusLabel: Record<string, string> = {
   pending: "Ожидается результат", extracted: "Готово к проверке", needs_review: "Нужна проверка",
   confirmed: "Подтверждено", failed: "Не прочитано", superseded: "Устарело",
 };
-const fieldsByKind:Record<string,string[]>={
-  invoice:["invoice_number","invoice_date","order_number","order_date","gross_weight_kg","net_weight_kg","pallet_count","incoterms"],
-  transport_order:["contract_number","contract_date","carrier_name","driver_name","driver_phone","vehicle_plate","vehicle_make","trailer_plate","trailer_make","loading_address","unloading_address","temperature_setpoint","shipping_date"],
-  vehicle_document:["vehicle_plate","vehicle_make","trailer_plate","trailer_make"],
-  driver_document:["driver_name","driver_document","driver_phone"],
-  waybill:["waybill_number","cmr_number","ttn_number","shipping_date","vehicle_plate","trailer_plate","driver_name","gross_weight_kg","net_weight_kg","pallet_count"],
-  specification:["packing_list_number","order_number","gross_weight_kg","net_weight_kg","pallet_count"],
-};
-const fieldByKey=new Map(SOURCE_FIELD_DEFINITIONS.map(field=>[field.key,field]));
 const sourceLabel: Record<string, string> = {
   invoice: "Инвойс", specification: "Спецификация", contract: "Договор",
   transport_order: "Договор-заявка", vehicle_document: "Документы автомобиля",
   driver_document: "Документы водителя", waybill: "Накладная", other: "Прочий источник",
 };
 
-export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false }: { shipmentId: string; workspace?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
+export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false, showDocumentList = false }: { shipmentId: string; workspace?: boolean; showDocumentList?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
   const supabase = await createClient();
   const serverNow = await loadProcessingClock();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update", "products.view"] as const);
-  if (!permissions["documents.view"]) return null;
+  if (!permissions["documents.view"]) return showDocumentList ? <ShipmentDocumentsPanel shipmentId={shipmentId}/> : null;
   const [{ data, error, count: sourceCount }, { data: types }, { data: transportRows, error: transportsError, count: transportCount }, { data: itemRows, error: itemsError, count: itemCount }, { data: quantityHistory, error: historyError, count: historyCount }, { data: shipmentContext }, { data: contextHistory, error: contextError, count: contextCount }] = await Promise.all([
     supabase.from("shipment_source_extractions")
       .select("id,document_id,document_version_id,shipment_transport_id,source_kind,status,extracted_data,field_evidence,confirmed_data,conflicts,error_message,updated_at,reviewed_at,extraction_method,ocr_provider,ocr_provider_version,ocr_confidence,ocr_page_count,processing_ms,processing_started_at,ocr_lease_until,attempt_count,document:documents(title,original_filename,archived_at,status,current_version,versions:document_versions!document_versions_document_id_fkey(id,is_current,version_number),links:document_links(entity_type,entity_id,removed_at))", { count: "exact" })
@@ -95,8 +89,19 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     ordered: quantity(item.ordered_quantity), confirmed: quantity(item.confirmed_quantity), shipped: quantity(item.shipped_quantity),
   }));
   const ocr = describeOcrConfig(loadOcrConfig());
-  return <section className="panel admin-section" id="source-documents">
-    <div className="panel-heading"><div><p className="eyebrow">Шаг 1 · Исходные данные</p><h2>Загрузить комплект документов</h2></div><div className="topbar-actions">
+  const currentRows = rows.filter(current);
+  return <>
+  {showDocumentList && <ShipmentDocumentsPanel shipmentId={shipmentId} reviews={new Map(rows
+    .filter(current)
+    .map(row => {
+      const lots = row.extracted_data?.supplier_lots;
+      return [row.document_version_id, {
+        isPackingList: row.source_kind === "specification" && (isPackingEvidence(row.extracted_data?.packing_evidence) || (isSupplierLots(lots) && lots.kind === "packing")),
+        preview: <DocumentReviewPreview key={row.id} source={row} definitions={reviewDefinitions(row)}/>,
+      }];
+    }))}/>}
+  <section className="panel admin-section" id="source-documents">
+    <div className="panel-heading"><div><p className="eyebrow">Исходные документы</p><h2>{workspace ? "Распознать загруженные файлы" : "Загрузить и распознать документы"}</h2></div><div className="topbar-actions">
       {permissions["documents.create"]&&<Link className="ghost button-link compact" href={`/documents?link=shipment:${shipmentId}#register`}>Открыть журнал</Link>}
       {permissions["source_documents.extract"]&&<form action={extractShipmentSourcesAction}><input type="hidden" name="shipment_id" value={shipmentId}/><PendingSubmitButton className="primary compact" pendingText="Распознаём…">Распознать и сверить</PendingSubmitButton></form>}
     </div></div>
@@ -104,10 +109,20 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     {notice?.kind==="success"&&<div className="login-success admin-message" role="status">{notice.message}</div>}
     <p className="form-help">{workspace ? "Файлы из папки загружаются на первом шаге. Нажмите «Распознать и сверить», затем проверьте тип, автомобиль и каждое найденное значение." : "Выберите сразу инвойс, договор-заявку, документы автомобиля, прицепа и водителя. После загрузки система автоматически определит типы, прочитает комплект и сопоставит найденные реквизиты."} {ocr.enabled?"Сканы и фотографии читаются распознаванием текста (OCR); результат всегда проверяет сотрудник.":"Сканы и фотографии пока не читаются: OCR не настроен администратором."}</p>
     {!workspace&&permissions["documents.create"]&&<BulkDocumentUpload types={(types??[]).map(type=>({id:type.id,code:type.code,name:type.name_ru,category:type.category}))} primaryLink={`shipment:${shipmentId}`} autoExtractShipmentId={shipmentId} transports={vehicles.map(vehicle=>({id:vehicle.id,label:describeTransport(vehicle)}))}/>}
-    <div className="panel-heading source-results-heading"><div><p className="eyebrow">Шаг 2 · Проверка</p><h3>Результаты распознавания</h3></div></div>
-    {error&&<div className="setup-notice">Примените миграцию <strong>202609274900_source_document_ocr.sql</strong>.</div>}
+    <div className="panel-heading source-results-heading"><div><p className="eyebrow">Проверка по оригиналам</p><h3>Результаты распознавания</h3></div></div>
+    {error&&<div className="setup-notice" role="alert">Не удалось загрузить результаты чтения. Обновите страницу. Если ошибка повторится, сообщите администратору номер поставки.</div>}
+    {completeComparison && currentRows.length > 0 && <>
+      <dl className="source-reading-summary" aria-label="Состояние сохранённых результатов чтения">
+        <div><dt>Чтение подтверждено</dt><dd>{currentRows.filter(row => row.status === "confirmed" && row.reviewed_at).length}</dd></div>
+        <div><dt>Проверить поля</dt><dd>{currentRows.filter(row => ["extracted", "needs_review"].includes(row.status) || row.status === "confirmed" && !row.reviewed_at).length}</dd></div>
+        <div><dt>Другие результаты и история</dt><dd>{rows.length - currentRows.length}</dd></div>
+      </dl>
+      <p className="source-reading-next">Откройте строки ниже и сверьте поля с оригиналами. Там же показаны прежние версии и ошибки чтения. Комплект документов и расхождения проверяйте в блоке «Сверка».</p>
+    </>}
+    {notice?.kind === "error" && <p className="source-reading-next">Проверьте сохранённые результаты по каждому файлу ниже. Для непрочитанного документа откройте строку с причиной и повторите чтение кнопкой внутри неё. Если результаты не загрузились, сначала обновите страницу.</p>}
     {!error&&!completeComparison&&<p className="login-error">Не удалось получить полный список источников или позиций поставки. Сверка и подтверждение временно недоступны.</p>}
-    {!error&&<div className="source-review-list">{rows.map(row=>{const document=one(row.document);const fields=Object.keys(row.extracted_data??{}).length;const conflicts=Array.isArray(row.conflicts)?row.conflicts.length:0;const keys=[...new Set([...(fieldsByKind[row.source_kind]??[]),...Object.keys(row.extracted_data??{})])].filter(key=>fieldByKey.has(key));const sourceCurrent=current(row);const quantityDocument=row.status==="confirmed"&&QUANTITY_SOURCE_KINDS.has(row.source_kind);const quantitiesWritten=(quantityHistory??[]).some(entry=>entry.extraction_id===row.id);return <details className="source-review-card" key={row.id} open={["pending","extracted","needs_review"].includes(row.status)||(quantityDocument&&canApplyQuantities&&!quantitiesWritten)}><summary><div><strong>{document?.title??sourceLabel[row.source_kind]??"Исходный документ"}</strong><small>{sourceLabel[row.source_kind]??row.source_kind} · найдено полей: {fields}{conflicts?` · расхождений: ${conflicts}`:""}{quantityDocument?(quantitiesWritten?" · количества записаны":" · количества не записаны"):""}</small>{row.extraction_method==="ocr"&&<small>Распознано по изображению (OCR) · {row.ocr_provider} {row.ocr_provider_version}{row.ocr_page_count?` · стр.: ${row.ocr_page_count}`:""}{row.ocr_confidence!==null?` · уверенность ${Math.round(row.ocr_confidence*100)}%`:""}{row.processing_ms!==null?` · ${(row.processing_ms/1000).toLocaleString("ru-RU",{maximumFractionDigits:1})} с`:""}</small>}{row.error_message&&<small>{row.status==="confirmed"?"До ручной проверки OCR сообщал: ":""}{row.error_message}</small>}</div><span className={`doc-badge doc-status-${row.status}`}>{row.status==="pending"?"Состояние обработки — ниже":statusLabel[row.status]??row.status}</span></summary>
+    {!error&&<div className="source-review-list">{rows.map(row=>{const document=one(row.document);const fields=Object.keys(row.extracted_data??{}).length;const conflicts=Array.isArray(row.conflicts)?row.conflicts.length:0;const definitions=reviewDefinitions(row);const sourceCurrent=current(row);const quantityDocument=row.status==="confirmed"&&QUANTITY_SOURCE_KINDS.has(row.source_kind);const quantitiesWritten=(quantityHistory??[]).some(entry=>entry.extraction_id===row.id);return <details className="source-review-card" key={row.id} open={["pending","extracted","needs_review"].includes(row.status)||(quantityDocument&&canApplyQuantities&&!quantitiesWritten)}><summary><div><strong>{document?.title??sourceLabel[row.source_kind]??"Исходный документ"}</strong><small>{sourceLabel[row.source_kind]??row.source_kind} · найдено полей: {fields}{conflicts?` · расхождений: ${conflicts}`:""}{quantityDocument?(quantitiesWritten?" · количества записаны":" · количества не записаны"):""}</small>{row.extraction_method==="ocr"&&<small>Распознано по изображению (OCR) · {row.ocr_provider} {row.ocr_provider_version}{row.ocr_page_count?` · стр.: ${row.ocr_page_count}`:""}{row.ocr_confidence!==null?` · уверенность ${Math.round(row.ocr_confidence*100)}%`:""}{row.processing_ms!==null?` · ${(row.processing_ms/1000).toLocaleString("ru-RU",{maximumFractionDigits:1})} с`:""}</small>}{row.error_message&&<small>{row.status==="confirmed"?"До ручной проверки OCR сообщал: ":""}{row.error_message}</small>}</div><span className={`doc-badge doc-status-${row.status}`}>{row.status==="pending"?"Состояние обработки — ниже":statusLabel[row.status]??row.status}</span></summary>
+      <div id={`source-result-${row.id}`} tabIndex={-1}>
       {!sourceCurrent&&<p className="login-error">Актуальность или полнота источника не подтверждена. Обновите страницу и повторите распознавание; подтверждение и запись количеств отключены.</p>}
       {vehicles.length>0&&row.status!=="superseded"&&<div className="source-vehicle-binding">
         <span>Относится к: <strong>{row.shipment_transport_id&&vehicleById.get(row.shipment_transport_id)?`автомобилю ${describeTransport(vehicleById.get(row.shipment_transport_id)!)}`:"ко всей поставке"}</strong></span>
@@ -138,8 +153,9 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
       </>}
       {sourceCurrent&&row.source_kind==="invoice"&&row.extraction_method==="text_layer"&&row.status==="confirmed"&&permissions["source_documents.extract"]&&permissions["source_documents.review"]&&<form action={retryShipmentSourceOcrAction} className="source-review-actions"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="document_id" value={row.document_id}/><PendingSubmitButton className="ghost compact" pendingText="Обновляем строки…">Обновить строки инвойса, сохранив подтверждения</PendingSubmitButton></form>}
       {isCommodityInvoice(row.extracted_data?.commodity_invoice)&&<p>Для сверки с декларацией прочитано строк инвойса: {row.extracted_data.commodity_invoice.items.length}. {row.extracted_data.commodity_invoice.warnings.join(" ")} Эти строки не записываются автоматически в количества поставки. {row.status==="confirmed"&&"Ручные подтверждения реквизитов сохранены; товарные строки являются отдельным результатом чтения."}</p>}
-      {sourceCurrent&&keys.length>0&&!["failed","pending"].includes(row.status)&&<form action={confirmShipmentSourceAction} className="source-review-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="extraction_id" value={row.id}/><div className="source-field-grid">{keys.map(key=>{const field=fieldByKey.get(key)!;const current=row.status==="confirmed"?row.confirmed_data?.[key]:row.extracted_data?.[key];const confidence=row.status==="confirmed"?undefined:row.field_evidence?.[key]?.confidence;return <label key={key} className={confidence!==undefined&&confidence<LOW_CONFIDENCE?"low-confidence":undefined}>{field.label}{confidence!==undefined&&<small>{Math.round(confidence*100)}% уверенности{confidence<LOW_CONFIDENCE?" · проверьте по оригиналу":""}</small>}<input name={`field_${key}`} type={field.type} step={field.type==="number"?"0.001":undefined} min={field.type==="number"?"0":undefined} defaultValue={current===null||current===undefined?"":String(current)}/></label>;})}</div>{permissions["source_documents.review"]&&["extracted","needs_review","confirmed"].includes(row.status)&&<div className="source-review-actions">{permissions["shipments.update"]&&<label className="check-label"><input type="checkbox" name="apply_to_shipment"/> Записать применимые данные в поставку и автомобиль</label>}<button className="primary compact" type="submit">{row.status==="confirmed"?"Сохранить исправления":"Подтвердить данные"}</button></div>}</form>}
+      {sourceCurrent&&definitions.length>0&&!["failed","pending"].includes(row.status)&&<form action={confirmShipmentSourceAction} className="source-review-form"><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="extraction_id" value={row.id}/><div className="source-field-grid">{definitions.map(field=>{const key=field.key;const current=row.status==="confirmed"?row.confirmed_data?.[key]:row.extracted_data?.[key];const confidence=row.status==="confirmed"?undefined:row.field_evidence?.[key]?.confidence;return <label key={key} className={confidence!==undefined&&confidence<LOW_CONFIDENCE?"low-confidence":undefined}>{field.label}{confidence!==undefined&&<small>{Math.round(confidence*100)}% уверенности{confidence<LOW_CONFIDENCE?" · проверьте по оригиналу":""}</small>}<input name={`field_${key}`} type={field.type} step={field.type==="number"?"0.001":undefined} min={field.type==="number"?"0":undefined} defaultValue={current===null||current===undefined?"":String(current)}/></label>;})}</div>{permissions["source_documents.review"]&&["extracted","needs_review","confirmed"].includes(row.status)&&<div className="source-review-actions">{permissions["shipments.update"]&&<label className="check-label"><input type="checkbox" name="apply_to_shipment"/> Записать применимые данные в поставку и автомобиль</label>}<button className="primary compact" type="submit">{row.status==="confirmed"?"Сохранить исправления":"Подтвердить данные"}</button></div>}</form>}
       {quantityDocument&&<DocumentQuantitiesForm shipmentId={shipmentId} extractionId={row.id} sourceKind={row.source_kind} transportId={row.shipment_transport_id} items={quantityItems} lines={Array.isArray(row.extracted_data?.invoice_items)?row.extracted_data.invoice_items as DocumentLine[]:[]} history={(quantityHistory??[]) as QuantityHistoryRow[]} canApply={canApplyQuantities&&sourceCurrent}/>}
+      </div>
     </details>;})}{!rows.length&&<div className="empty-state">{workspace ? "Нет результатов чтения. Загрузите выбранные файлы на первом шаге, затем нажмите «Распознать и сверить»." : "Загрузите исходные документы поставки — распознавание начнётся автоматически."}</div>}</div>}
-  </section>;
+  </section></>;
 }

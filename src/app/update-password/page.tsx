@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { updatePassword } from "./actions";
 import { AuthBrandPanel, NexusWordmark } from "@/components/brand";
 
@@ -22,7 +23,7 @@ export default async function UpdatePasswordPage({
             <input id="password" name="password" type="password" autoComplete="new-password" minLength={12} required />
             <label htmlFor="confirmation">Повторите пароль</label>
             <input id="confirmation" name="confirmation" type="password" autoComplete="new-password" minLength={12} required />
-            <button className="primary login-submit" type="submit">Сохранить пароль</button>
+            <PendingSubmitButton pendingText="Выполняем…" className="primary login-submit" type="submit">Сохранить пароль</PendingSubmitButton>
           </form>
         </div>
       </section>

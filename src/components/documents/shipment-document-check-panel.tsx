@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { createClient } from "@/lib/supabase/server";
 import { loadPermissions } from "@/lib/permissions";
 import { CHECK_STATE_LABEL, FIELD_LABELS, describeValues, parseDocumentCheck, summarizeFindings, type CheckFinding } from "@/lib/document-check/rules";
@@ -16,6 +17,7 @@ export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipm
   const { data, error } = await supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId });
   const check = parseDocumentCheck(data);
   const summary = summarizeFindings(check.findings);
+  const documentActions = await loadDocumentActions(supabase, check.findings.map(finding => finding.documentId));
   const groups: Array<{ title: string; items: CheckFinding[] }> = [
     { title: "Ошибки", items: check.findings.filter((finding) => finding.severity === "error") },
     { title: "Предупреждения", items: check.findings.filter((finding) => finding.severity === "warning") },
@@ -41,7 +43,7 @@ export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipm
             {finding.field && FIELD_LABELS[finding.field] ? ` · ${FIELD_LABELS[finding.field]}` : ""}
             {values ? ` · ${values}` : ""}
           </small>
-          {finding.documentId && <Link href={`/documents/${finding.documentId}`}>{finding.documentTitle ?? "Открыть документ"}</Link>}
+          {finding.documentId && <><small>{finding.documentTitle}</small><DocumentActions document={documentActions[finding.documentId]}/></>}
         </div>
         {permissions["tasks.create"] && <form action={createDocumentCheckTaskAction}><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="finding_key" value={finding.key}/><button className="ghost compact doc-check-button" type="submit">Создать задачу</button></form>}
       </li>;

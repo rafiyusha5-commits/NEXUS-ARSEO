@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PortalSidebar } from "@/components/portal-sidebar";
@@ -28,6 +29,7 @@ export default async function PortalDocumentPage({ params, searchParams }: { par
     <PortalSidebar profile={profile} active="documents" />
     <section className="workspace admin-workspace portal-workspace">
       <header className="topbar"><div><p className="eyebrow">{document.type_name ?? "Документ"}</p><h1>{document.title}</h1></div><Link className="ghost button-link" href="/portal/documents">К списку</Link></header>
+    <WorkflowHelp section="portal"/>
       {notice.error && <div className="login-error admin-message">{notice.error}</div>}
       <section className="shipment-summary-grid">
         <article className="summary-card"><p>Номер</p><strong>{document.document_number || "—"}</strong></article>
@@ -40,7 +42,7 @@ export default async function PortalDocumentPage({ params, searchParams }: { par
         {document.description && <p className="doc-description">{document.description}</p>}
         <div className="doc-version-list"><div className="doc-version-row is-current">
           <span className="stage-number">v{document.version_number}</span><div><strong>{document.original_filename}</strong><small>{formatFileSize(document.file_size_bytes)}</small></div><div><strong>{formatDateTime(document.uploaded_at)}</strong></div>
-          <div className="doc-version-actions">{flags.download ? <a className="primary button-link compact" href={`/portal/documents/${id}/download?version=${document.version_id}`}>Скачать</a> : <span className="form-help">Скачивание отключено</span>}</div>
+          <div className="doc-version-actions">{flags.download ? <a className="primary button-link compact" href={`/portal/documents/${id}/download?version=${document.version_id}`}>Скачать оригинал</a> : <span className="form-help">Скачивание отключено</span>}</div>
         </div></div>
       </section>
     </section>

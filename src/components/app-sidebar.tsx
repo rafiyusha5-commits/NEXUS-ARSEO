@@ -19,6 +19,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Закупки", items: [
     { label: "Поступления и поставки", href: "/shipments", key: "shipments" },
     { label: "План закупок", href: "/purchase-plans", key: "purchase-plans" },
+    { label: "Автозаказ Казахстан", href: "/replenishment", key: "replenishment" },
   ] },
   { label: "Продажи", items: [
     { label: "Заказы покупателей", href: "/sales", key: "sales" },

@@ -1,3 +1,4 @@
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { createClient } from "@/lib/supabase/server";
 import { loadAgentConfig } from "@/lib/agent/config";
 import { runWebAssistant, sessionPermissions } from "@/lib/agent/server/service";
@@ -50,7 +51,11 @@ export async function POST(request: Request) {
       const send = (event: Record<string, unknown>) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
         const outcome = await runWebAssistant(supabase, user.id, question, (label) => send({ type: "stage", label }), conversationId);
-        if (outcome.ok) send({ type: "result", answer: outcome.answer, requestsUsed: outcome.requestsUsed, requestLimit: outcome.requestLimit });
+        if (outcome.ok) {
+          const ids = outcome.answer.facts.flatMap(fact => fact.link?.href.match(/^\/documents\/([0-9a-f-]{36})$/i)?.slice(1) ?? []);
+          const documentActions = await loadDocumentActions(supabase, ids);
+          send({ type: "result", answer: outcome.answer, documentActions, requestsUsed: outcome.requestsUsed, requestLimit: outcome.requestLimit });
+        }
         else send({ type: "error", code: outcome.code, message: outcome.message, refunded: outcome.refunded });
       } catch {
         send({ type: "error", code: "AGENT_INTERNAL", message: "Не удалось обработать вопрос. Повторите попытку.", refunded: false });

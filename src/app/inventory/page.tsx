@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -22,9 +24,10 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
   const total=(stock??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);
   const expiring=(stock??[]).filter(row=>["warning","critical","expired"].includes(row.shelf_life_state)).length;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="inventory"/><section className="workspace admin-workspace">
-    <header className="topbar"><div><p className="eyebrow">Фаза 2 · Складской учёт</p><h1>Партии и остатки</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory/movements">Движения</Link><Link className="secondary compact" href="/inventory/shelf-life">Контроль ОСГ</Link><span className="page-count">FIFO включён</span></div></header>
+    <header className="topbar"><div><p className="eyebrow">Складской учёт</p><h1>Партии и остатки</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory/movements">Движения</Link><Link className="secondary compact" href="/inventory/shelf-life">Контроль ОСГ</Link><span className="page-count">FIFO включён</span></div></header>
+    <WorkflowHelp section="inventory"/>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
-    {error&&<div className="setup-notice">Примените миграцию <strong>202609271200_inventory_fifo.sql</strong> в Supabase. После этого появятся регистрация партий и FIFO.</div>}
+    {error&&<div className="setup-notice">Не удалось загрузить данные раздела. Обновите страницу. Если ошибка повторится, сообщите администратору название раздела. После этого появятся регистрация партий и FIFO.</div>}
     <section className="shipment-summary-grid inventory-summary">
       <article className="summary-card"><p>Активных строк остатков</p><strong>{stock?.length??0}</strong><small>По партиям, складам и зонам</small></article>
       <article className="summary-card"><p>Количество</p><strong>{total.toLocaleString("ru-RU")}</strong><small>В единицах учёта партий</small></article>
@@ -39,20 +42,20 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
         <label>Номер партии<input name="batch_number" required placeholder="LOT-2026-001"/></label>
         <label>Дата производства<input name="manufacture_date" type="date"/></label><label>Срок годности<input name="expiry_date" type="date" required/></label>
         <label>Количество<input name="quantity" type="number" min="0.001" step="0.001" required/></label><label>Примечание<input name="notes"/></label>
-        <button className="primary" type="submit" disabled={Boolean(error)}>Принять партию</button>
+        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)}>Принять партию</PendingSubmitButton>
       </form></section>
       <section className="panel admin-section"><p className="eyebrow">Расход</p><h2>Списать по FIFO</h2><form action={issueFifo} className="inventory-form issue-form">
         <label>Товар<select name="product_id" required defaultValue=""><option value="" disabled>Выберите товар</option>{products?.map(p=><option value={p.id} key={p.id}>{p.internal_sku} · {name(p.name)}</option>)}</select></label>
         <label>Склад<select name="warehouse_id" required defaultValue=""><option value="" disabled>Выберите склад</option>{warehouses?.map(w=><option value={w.id} key={w.id}>{w.code} · {name(w.name)}</option>)}</select></label>
         <label>Единица<select name="uom" defaultValue="piece"><option value="piece">Штуки</option><option value="box">Коробки</option><option value="layer">Слои паллет</option><option value="pallet">Паллеты</option><option value="truck">Фуры</option></select></label>
         <label>Количество<input name="quantity" type="number" min="0.001" step="0.001" required/></label><label>Основание<input name="reason" required placeholder="Продажа клиенту"/></label><label>Документ/заказ<input name="reference" placeholder="№ накладной или заказа"/></label>
-        <button className="primary" type="submit" disabled={Boolean(error)}>Списать по FIFO</button>
+        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)}>Списать по FIFO</PendingSubmitButton>
       </form><p className="form-help">Система сама распределит количество по непросроченным партиям, начиная с ближайшего срока годности. При нехватке остатка операция отменится целиком.</p></section>
       <section className="panel admin-section"><p className="eyebrow">Контроль качества</p><h2>Изменить состояние партии</h2><form action={setBatchStatus} className="inventory-form issue-form">
         <label>Партия<select name="batch_id" required defaultValue=""><option value="" disabled>Выберите партию</option>{stock?.map(row=><option value={row.batch_id} key={row.balance_id}>{row.internal_sku} · {row.batch_number} · {row.warehouse_code}</option>)}</select></label>
         <label>Новое состояние<select name="status" required defaultValue="blocked"><option value="blocked">Заблокировано</option><option value="quarantine">Карантин</option><option value="available">Доступно к отбору</option></select></label>
         <label>Причина<input name="reason" placeholder="Обязательна для блокировки и карантина"/></label>
-        <button className="primary" type="submit" disabled={Boolean(error)||!stock?.length}>Сохранить состояние</button>
+        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)||!stock?.length}>Сохранить состояние</PendingSubmitButton>
       </form><p className="form-help">Заблокированные и карантинные партии автоматически исключаются из FIFO. Разблокировка выполняется только вручную.</p></section>
     </section>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Контроль ОСГ</p><h2>Остатки по партиям</h2></div><span className="page-count">{stock?.length??0} строк</span></div>

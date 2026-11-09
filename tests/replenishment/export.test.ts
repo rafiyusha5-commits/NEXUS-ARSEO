@@ -1,0 +1,26 @@
+import { it } from "node:test";
+import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
+import { exportCalculation } from "../../src/lib/replenishment/export.ts";
+import { fixture } from "./fixture.ts";
+it("cannot export an order proposal with unknown or partly decided demand", () => {
+  const data = fixture(); data.settings.overrides = [];
+  assert.throws(() => exportCalculation(data, "synthetic"), /REPLENISHMENT_NOT_READY/);
+  data.settings.overrides = [{ productId: "P", city: "astana", daily: 0, reason: "Согласовано" }];
+  assert.throws(() => exportCalculation(data, "synthetic"), /REPLENISHMENT_NOT_READY/);
+});
+it("explicit zero demand remains a numeric zero in Excel", async () => {
+  const data = fixture(); data.settings.overrides.forEach(o => o.daily = 0);
+  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(exportCalculation(data, "synthetic") as never);
+  assert.equal(workbook.worksheets[0].getCell("C4").value, 0);
+  assert.equal(workbook.worksheets[0].getCell("H4").value, 0);
+});
+it("Excel round-trips numeric facts, Unicode and treats formula-like SKUs as text", async () => {
+  const data = fixture(); data.products[0].sku = '=HYPERLINK("https://invalid.test")';
+  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(exportCalculation(data, "synthetic") as never);
+  assert.equal(workbook.worksheets.length, 4); const sheet = workbook.worksheets[0];
+  assert.equal(sheet.getCell("A4").value, data.products[0].sku); assert.equal(sheet.getCell("B4").value, "Астана");
+  assert.equal(sheet.getCell("H4").value, 140); assert.equal(sheet.getCell("I4").value, 140);
+  assert.equal(sheet.getCell("K4").value, "Товар"); assert.equal(sheet.getCell("L4").value, 10); assert.equal(sheet.getCell("M4").value, 14);
+  assert.equal(sheet.getCell("A4").type, ExcelJS.ValueType.String);
+});

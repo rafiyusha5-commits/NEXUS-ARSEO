@@ -19,6 +19,7 @@ test("workspace uses session permissions, rejects hidden records and never mutat
       "react/jsx-runtime": jsx, "next/link": { default: ({ children, href }: { children: ReactNode; href: string }) => jsx.jsx("a", { href, children }) },
       "next/navigation": { notFound() { throw Error("NOT_FOUND"); }, redirect() { throw Error("REDIRECT"); } },
       "@/components/app-sidebar": { AppSidebar: () => null },
+      "@/components/workflow-help": { WorkflowHelp: () => null },
       "@/components/assistant/shipment-workflow-scope": { ShipmentWorkflowScope: ({ children }: { children: ReactNode }) => children },
       "@/components/documents/shipment-drive-folder-panel": { ShipmentDriveFolderPanel: () => jsx.jsx("p", { children: "EXISTING DRIVE PANEL" }) },
       "@/components/documents/shipment-source-documents-panel": { ShipmentSourceDocumentsPanel: () => jsx.jsx("p", { children: "EXISTING SOURCE PANEL" }) },

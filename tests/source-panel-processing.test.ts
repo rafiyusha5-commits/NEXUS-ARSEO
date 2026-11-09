@@ -39,6 +39,7 @@ function load(relative: string): Record<string, unknown> {
     if (id === "@/lib/documents/processing-clock") return { loadProcessingClock: async () => now };
     if (id === "@/lib/supabase/server") return { createClient: async () => ({ from: query }) };
     if (id === "@/lib/permissions") return { loadPermissions: async () => ({ "documents.view": allowed }) };
+    if (id === "@/lib/document-extraction/review-definitions") return { reviewDefinitions: () => [], hasReviewTables: () => false };
     if (id === "@/lib/document-extraction/rules") return { SOURCE_FIELD_DEFINITIONS: [], VEHICLE_SCOPED_FIELDS: [] };
     if (id === "@/lib/shipments/document-quantities") return { QUANTITY_SOURCE_KINDS: [] };
     if (id === "@/lib/document-extraction/commodity-evidence") return { currentCommoditySource: () => false, isCommodityInvoice: () => false };
@@ -53,6 +54,22 @@ function load(relative: string): Record<string, unknown> {
 }
 const panel = load("../src/components/documents/shipment-source-documents-panel.tsx").ShipmentSourceDocumentsPanel as
   (props: { shipmentId: string }) => Promise<ReactNode>;
+
+test("document summary preserves confirmed corrections and hides fields removed by the reviewer", () => {
+  const preview = load("../src/components/documents/document-review-preview.tsx").DocumentReviewPreview as
+    typeof import("../src/components/documents/document-review-preview").DocumentReviewPreview;
+  const definitions = [{ key: "order_number", label: "Номер заказа", type: "text" as const },
+    { key: "pallet_count", label: "Паллеты", type: "number" as const }];
+  const source = { id: "review-a", status: "confirmed", confirmed_data: { pallet_count: 0 },
+    extracted_data: { order_number: "old-order", pallet_count: 19, internal_note: "hidden note" } };
+  const html = renderToStaticMarkup(preview({ source, definitions }));
+  assert.match(html, /<dd>0<\/dd>/);
+  assert.match(html, /Не заполнено: Номер заказа/);
+  assert.match(html, /href="#source-result-review-a"/);
+  assert.doesNotMatch(html, /old-order|hidden note|>19</);
+  assert.equal(preview({ source: { ...source, confirmed_data: {} }, definitions }), null);
+  assert.match(renderToStaticMarkup(preview({ source: { ...source, status: "needs_review" }, definitions })), /old-order/);
+});
 
 test("actual source panel shows expired OCR with zero vehicles and with vehicles", async () => {
   for (vehicles of [[], [{ id: "vehicle", sequence_no: 1, status: "planned" }]]) {

@@ -1,3 +1,7 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -160,6 +164,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     ? await supabase.from("currencies").select("id, code").eq("is_active", true).order("code")
     : { data: [] };
 
+  const documentActions = await loadDocumentActions(supabase, documents.map(doc => doc.id));
   const prefillLink = parseLinkValue(params.link ?? "");
   const prefillType = isUuid(params.doc_type) ? params.doc_type : undefined;
   const returnTo = prefillLink?.entity_type === "shipment" ? `/shipments/${prefillLink.entity_id}` : "/documents";
@@ -178,6 +183,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             {permissions.view && <span className="page-count">{documents.length} в выборке</span>}
           </div>
         </header>
+    <WorkflowHelp section="documents"/>
 
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
@@ -245,10 +251,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                   const activeLinks = document.links.filter((link) => !link.removed_at);
                   const linkTypes = [...new Set(activeLinks.map((link) => link.entity_type))];
                   return (
-                    <Link className={`doc-row${document.archived_at ? " doc-archived" : ""}`} href={`/documents/${document.id}`} key={document.id}>
+                    <article className={`doc-row${document.archived_at ? " doc-archived" : ""}`} key={document.id}>
                       <div className="doc-main">
                         <span className="doc-type">{type?.name_ru ?? "Тип не указан"}</span>
-                        <strong>{document.title}</strong>
+                        <strong><Link href={`/documents/${document.id}`}>{document.title}</Link></strong>
                         <small>{document.document_number ? `№ ${document.document_number}` : "Без номера"} · версия {document.current_version} · {document.original_filename ?? "файл"}</small>
                       </div>
                       <div className="doc-dates">
@@ -268,7 +274,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                           : <span className={`doc-badge doc-status-${document.status}`}>{documentStatusLabel[document.status] ?? document.status}</span>}
                         <small>{uploader?.full_name ?? "—"} · {formatDateTime(document.created_at)}</small>
                       </div>
-                    </Link>
+                      <DocumentActions document={documentActions[document.id]}/>
+                    </article>
                   );
                 })}
                 {!documents.length && !listError && (
@@ -326,7 +333,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                 </select></label>
                 <label className="doc-form-rest">Описание<textarea name="description" maxLength={4000} rows={2} /></label>
                 <label className="doc-form-wide doc-file">Файл<input name="file" type="file" required accept={DOCUMENT_FILE_ACCEPT} /></label>
-                <button className="primary" type="submit">Зарегистрировать</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Зарегистрировать</PendingSubmitButton>
                 <p className="form-help doc-form-full">
                   Разрешены {DOCUMENT_FILE_TYPES_LABEL}, не больше {MAX_DOCUMENT_FILE_SIZE_LABEL}. Файл хранится в закрытом хранилище и скачивается по временной ссылке.
                   Повторная загрузка того же файла блокируется — откройте существующий документ и добавьте связь.

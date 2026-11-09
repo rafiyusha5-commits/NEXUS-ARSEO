@@ -1,3 +1,7 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -81,6 +85,7 @@ export default async function TemplatePage({
     : { data: [] };
   const counterparty = one(template.counterparty);
 
+  const documentActions = await loadDocumentActions(supabase, (generations ?? []).map(row => one(row.document)?.id));
   return (
     <main className="app-shell">
       <AppSidebar profile={profile} roles={roles} active="templates" />
@@ -94,6 +99,7 @@ export default async function TemplatePage({
             <Link className="ghost button-link" href="/templates">К каталогу</Link>
           </div>
         </header>
+    <WorkflowHelp section="templates"/>
         {notices.error && <div className="login-error admin-message">{notices.error}</div>}
         {notices.success && <div className="login-success admin-message">{notices.success}</div>}
         {archived && (
@@ -118,7 +124,7 @@ export default async function TemplatePage({
             {currentVersion ? (
               <div className="doc-current-file">
                 <div><strong>{currentVersion.original_filename}</strong><small>{formatFileSize(currentVersion.file_size_bytes)} · {currentVersion.mime_type}</small></div>
-                {actions.includes("download") && <a className="primary button-link" href={`/templates/${template.id}/download?version=${currentVersion.id}`}>Скачать</a>}
+                {actions.includes("download") && <a className="primary button-link" href={`/templates/${template.id}/download?version=${currentVersion.id}`}>Скачать оригинал</a>}
               </div>
             ) : <div className="empty-state">Файл не найден.</div>}
             {!actions.includes("download") && <p className="form-help">Скачивание файла шаблона доступно с правом «Шаблоны: скачивание».</p>}
@@ -128,7 +134,7 @@ export default async function TemplatePage({
                 <input type="hidden" name="template_id" value={template.id} />
                 <label>Новая версия файла<input name="file" type="file" required accept={DOCUMENT_FILE_ACCEPT} /></label>
                 <label>Что изменилось<input name="comment" maxLength={1000} placeholder="Например: добавлено поле GTIN" /></label>
-                <button className="primary" type="submit">Загрузить версию</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Загрузить версию</PendingSubmitButton>
                 <p className="form-help">{DOCUMENT_FILE_TYPES_LABEL}, до {MAX_DOCUMENT_FILE_SIZE_LABEL}. Предыдущие версии сохраняются; после загрузки шаблон снова требует утверждения.</p>
               </form>
             )}
@@ -147,14 +153,14 @@ export default async function TemplatePage({
                 {actions.includes("approve") && (
                   <form action={approveTemplateAction}>
                     <input type="hidden" name="template_id" value={template.id} />
-                    <button className="primary" type="submit">Утвердить версию {template.current_version}</button>
+                    <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Утвердить версию {template.current_version}</PendingSubmitButton>
                   </form>
                 )}
                 {(actions.includes("activate") || actions.includes("deactivate")) && (
                   <form action={setTemplateActiveAction}>
                     <input type="hidden" name="template_id" value={template.id} />
                     <input type="hidden" name="is_active" value={template.is_active ? "false" : "true"} />
-                    <button className="ghost" type="submit">{template.is_active ? "Отключить" : "Включить"}</button>
+                    <PendingSubmitButton pendingText="Выполняем…" className="ghost" type="submit">{template.is_active ? "Отключить" : "Включить"}</PendingSubmitButton>
                   </form>
                 )}
               </div>
@@ -172,7 +178,7 @@ export default async function TemplatePage({
                 <div><strong>{one(version.uploader as Named)?.full_name ?? "—"}</strong><small>{formatDateTime(version.uploaded_at)}</small></div>
                 <div className="doc-version-actions">
                   {version.is_current && <span className="doc-badge doc-status-approved">Актуальная</span>}
-                  {actions.includes("download") && <a className="ghost button-link compact" href={`/templates/${template.id}/download?version=${version.id}`}>Скачать</a>}
+                  {actions.includes("download") && <a className="ghost button-link compact" href={`/templates/${template.id}/download?version=${version.id}`}>Скачать оригинал</a>}
                 </div>
               </div>
             ))}
@@ -181,7 +187,7 @@ export default async function TemplatePage({
 
         {can.generate && <section className="panel admin-section">
           <div className="panel-heading"><div><p className="eyebrow">Автозаполнение</p><h2>Сформированные документы</h2></div><span className="page-count">{generations?.length ?? 0}</span></div>
-          <div className="compact-list">{(generations ?? []).map((generation) => { const shipment = one(generation.shipment); const document = one(generation.document); return <div className="doc-link-row" key={generation.id}><div><strong>{document?.title ?? "Документ"}</strong><small>{shipment?.shipment_number ?? "Поставка"} · {formatDateTime(generation.generated_at)}{generation.contains_prices ? " · с ценами" : ""}</small></div>{document && <Link className="ghost button-link compact" href={`/documents/${document.id}`}>Открыть</Link>}</div>; })}{!generations?.length && <div className="empty-state">По этому шаблону документы ещё не формировались.</div>}</div>
+          <div className="compact-list">{(generations ?? []).map((generation) => { const shipment = one(generation.shipment); const document = one(generation.document); return <div className="doc-link-row" key={generation.id}><div><strong>{document?.title ?? "Документ"}</strong><small>{shipment?.shipment_number ?? "Поставка"} · {formatDateTime(generation.generated_at)}{generation.contains_prices ? " · с ценами" : ""}</small></div>{document && <DocumentActions document={documentActions[document.id]}/>}</div>; })}{!generations?.length && <div className="empty-state">По этому шаблону документы ещё не формировались.</div>}</div>
         </section>}
 
         {actions.includes("edit") && (
@@ -206,7 +212,7 @@ export default async function TemplatePage({
               <label className="doc-form-full">Поля для подстановки — по одному в строке, «ключ — описание»
                 <textarea name="variables" rows={3} defaultValue={variablesToText(variables)} />
               </label>
-              <button className="primary" type="submit">Сохранить</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Сохранить</PendingSubmitButton>
               {template.status === "approved" && (
                 <p className="form-help doc-form-full">Изменение типа, направления, языка, контрагента или полей вернёт шаблон в черновик — потребуется повторное утверждение.</p>
               )}
@@ -221,7 +227,7 @@ export default async function TemplatePage({
             <form action={archiveTemplateAction} className="doc-subform doc-archive-form">
               <input type="hidden" name="template_id" value={template.id} />
               <label>Причина<input name="reason" required minLength={3} maxLength={500} placeholder="Например: клиент прислал новую форму" /></label>
-              <button className="ghost danger-text" type="submit">В архив</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">В архив</PendingSubmitButton>
             </form>
           </section>
         )}

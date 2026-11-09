@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import Link from "next/link";
 import { login } from "./actions";
 import { hasSupabaseEnv } from "@/lib/supabase/config";
@@ -43,7 +44,7 @@ export default async function LoginPage({
             <label htmlFor="password">Пароль</label>
             <input id="password" name="password" type="password" autoComplete="current-password" minLength={8} required />
             <Link className="forgot-link" href="/forgot-password">Забыли пароль?</Link>
-            <button className="primary login-submit" type="submit" disabled={!configured}>Войти</button>
+            <PendingSubmitButton pendingText="Выполняем…" className="primary login-submit" type="submit" disabled={!configured}>Войти</PendingSubmitButton>
           </form>
 
           {!configured && <Link className="demo-link" href="/">Открыть текущий демо-интерфейс →</Link>}

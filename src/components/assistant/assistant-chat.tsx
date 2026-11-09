@@ -1,5 +1,7 @@
 "use client";
 
+import { DocumentActions } from "@/components/documents/document-actions";
+import type { DocumentActionIndex } from "@/lib/documents/action-index";
 import Link from "next/link";
 import { preparationRequest } from "@/lib/agent/shipment-workflow";
 import { useRef, useState } from "react";
@@ -9,7 +11,7 @@ import { OperationReview } from "./operation-review";
 
 type Event =
   | { type: "stage"; label: string }
-  | { type: "result"; answer: AgentAnswer; requestsUsed: number; requestLimit: number }
+  | { type: "result"; answer: AgentAnswer; documentActions?: DocumentActionIndex; requestsUsed: number; requestLimit: number }
   | { type: "error"; code: string; message: string; refunded: boolean };
 
 // Only server-built relative links to known Nexus pages are rendered.
@@ -19,6 +21,7 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false, i
   const [question, setQuestion] = useState(initialQuestion);
   const [preparation, setPreparation] = useState<ReturnType<typeof preparationRequest>>(null);
   const [stages, setStages] = useState<string[]>([]);
+  const [documentActions, setDocumentActions] = useState<DocumentActionIndex>({});
   const [answer, setAnswer] = useState<AgentAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,6 +65,7 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false, i
           const item = JSON.parse(line) as Event;
           if (item.type === "stage") setStages((current) => [...current, item.label]);
           else if (item.type === "result") {
+            setDocumentActions(item.documentActions ?? {});
             setAnswer(item.answer);
             setUsed(item.requestsUsed);
           } else setError(item.message);
@@ -116,7 +120,9 @@ export function AssistantChat({ initialUsed, limit, operationsEnabled = false, i
                 {fact.values.map((value) => <div key={value.field}><dt>{value.label}</dt><dd style={{ whiteSpace: "pre-wrap" }}>{value.value}</dd></div>)}
               </dl>
               <small>источник: {fact.source.tool}{fact.source.row >= 0 ? `, запись ${fact.source.row + 1}` : ""}</small>
-              {fact.link && SAFE_LINK.test(fact.link.href) && <Link className="text-button" href={fact.link.href}>Открыть: {fact.link.label}</Link>}
+              {fact.link && SAFE_LINK.test(fact.link.href) && (fact.link.href.startsWith("/documents/") && documentActions[fact.link.href.slice("/documents/".length)]
+                ? <DocumentActions document={documentActions[fact.link.href.slice("/documents/".length)]}/>
+                : <Link className="text-button" href={fact.link.href}>{fact.link.href.startsWith("/assistant/archive/") ? "Скачать оригинал" : `Открыть: ${fact.link.label}`}</Link>)}
             </article>
           ))}
           {answer.commentary.length > 0 && (

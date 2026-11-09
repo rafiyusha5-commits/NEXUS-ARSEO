@@ -51,6 +51,9 @@ insert into tests.calculator_matching_packages(name,payload) values('legacy',$js
   {"row":7,"internal_sku":"MIXED-1","category":"Конфеты","catalog_data":{"product.category":"Конфеты"},"sales_data":{},"confidential_data":{}}
  ]}
 }$json$);
+-- Reuse the established schema; an arbitrary equal fingerprint no longer bypasses identity checks.
+update tests.calculator_matching_packages set payload=jsonb_set(payload,'{source,columns}',
+ (select payload#>'{source,columns}' from tests.calculator_packages where name='base'));
 grant select on tests.calculator_matching_packages to authenticated;
 
 set role authenticated;

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TemplateCreateForm } from "@/components/template-create-form";
@@ -12,6 +13,7 @@ import { createTemplateAction } from "./actions";
 type SearchParams = { q?: string; type?: string; direction?: string; language?: string; status?: string; active?: string; error?: string; success?: string };
 type Row = {
   id: string; name: string; language: string; flow_direction: string; purpose: string | null; status: string; is_active: boolean;
+  versions: { id: string; version_number: number; is_current: boolean }[];
   current_version: number; updated_at: string;
   type: { name_ru: string } | { name_ru: string }[] | null;
   counterparty: { legal_name: string; short_name: string | null } | { legal_name: string; short_name: string | null }[] | null;
@@ -38,7 +40,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
   if (can.view && !typesError) {
     let query = supabase
       .from("document_templates")
-      .select("id, name, language, flow_direction, purpose, status, is_active, current_version, updated_at, type:document_types(name_ru), counterparty:counterparties(legal_name, short_name)")
+      .select("id, name, language, flow_direction, purpose, status, is_active, current_version, updated_at, versions:document_template_versions(id,version_number,is_current), type:document_types(name_ru), counterparty:counterparties(legal_name, short_name)")
       .order("updated_at", { ascending: false })
       .limit(300);
     if (typeFilter) query = query.eq("document_type_id", typeFilter);
@@ -70,6 +72,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
             {can.view && <span className="page-count">{templates.length} в выборке</span>}
           </div>
         </header>
+    <WorkflowHelp section="templates"/>
         {params.error && <div className="login-error admin-message">{params.error}</div>}
         {params.success && <div className="login-success admin-message">{params.success}</div>}
         <section className="panel admin-section">
@@ -121,9 +124,10 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
             {listError && !migrationMissing && <div className="login-error admin-message">Не удалось загрузить библиотеку образцов.</div>}
             <div className="doc-list">
               {templates.map((template) => {
+                const file = template.versions.find(version => version.is_current && version.version_number === template.current_version);
                 const counterparty = one(template.counterparty);
                 return (
-                  <Link className={`doc-row template-row${template.status === "archived" ? " doc-archived" : ""}`} href={`/templates/${template.id}`} key={template.id}>
+                  <article className={`doc-row template-row${template.status === "archived" ? " doc-archived" : ""}`} key={template.id}>
                     <div className="doc-main">
                       <span className="doc-type">{templateDirectionLabel[template.flow_direction]} · {one(template.type)?.name_ru ?? "Тип не указан"}</span>
                       <strong>{template.name}</strong>
@@ -137,7 +141,10 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
                     <div className="doc-meta">
                       <span className={`doc-badge template-status-${template.status}`}>{templateStatusLabel[template.status] ?? template.status}</span>
                     </div>
-                  </Link>
+                    <span className="document-actions"><Link href={`/templates/${template.id}`}>Открыть карточку</Link>
+                      {can.export && file && <a href={`/templates/${template.id}/download?version=${file.id}`}>Скачать оригинал</a>}
+                    </span>
+                  </article>
                 );
               })}
               {!templates.length && !listError && (

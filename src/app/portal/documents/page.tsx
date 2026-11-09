@@ -1,3 +1,5 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { PortalSidebar } from "@/components/portal-sidebar";
 import { requirePortalUser } from "@/lib/auth/access";
@@ -25,6 +27,7 @@ export default async function PortalDocumentsPage({ searchParams }: { searchPara
     <PortalSidebar profile={profile} active="documents" />
     <section className="workspace admin-workspace portal-workspace">
       <header className="topbar"><div><p className="eyebrow">Кабинет клиента</p><h1>Документы</h1></div><span className="page-count">{visibleDocuments.length} документов</span></header>
+    <WorkflowHelp section="portal"/>
       {params.error && <div className="login-error admin-message">{params.error}</div>}
       {params.success && <div className="login-success admin-message">{params.success}</div>}
       {!flags.view && <section className="panel admin-section"><div className="empty-state">Просмотр документов не разрешён. Обратитесь к менеджеру ARSEO.</div></section>}
@@ -32,11 +35,14 @@ export default async function PortalDocumentsPage({ searchParams }: { searchPara
         <div className="panel-heading"><div><p className="eyebrow">Открытые материалы</p><h2>Документы вашей компании</h2></div></div>
         <div className="doc-list portal-doc-list">
           {visibleDocuments.map((doc) => {
-            return <Link className="doc-row" href={`/portal/documents/${doc.id}`} key={doc.id}>
+            return <article className="doc-row" key={doc.id}>
               <div className="doc-main"><span className="doc-type">{doc.type_name ?? "Документ"}</span><strong>{doc.title}</strong><small>{doc.original_filename ?? "Файл"}</small></div>
               <div><strong>{doc.document_number || "Без номера"}</strong><small>{formatDate(doc.document_date)}</small></div>
               <div><strong>{doc.status === "approved" ? "Утверждён" : "Доступен"}</strong><small>{formatDateTime(doc.created_at)}</small></div>
-            </Link>;
+              <span className="document-actions"><Link href={`/portal/documents/${doc.id}`}>Открыть карточку</Link>
+                {flags.download && <a href={`/portal/documents/${doc.id}/download`}>Скачать оригинал</a>}
+              </span>
+            </article>;
           })}
           {!visibleDocuments.length && <div className="empty-state">ARSEO пока не открыл документы для вашей компании.</div>}
         </div>
@@ -51,7 +57,7 @@ export default async function PortalDocumentsPage({ searchParams }: { searchPara
           <label>Язык<select name="language" defaultValue=""><option value="">Не указан</option><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="other">Другой</option></select></label>
           <label className="doc-form-wide">Файл<input name="file" type="file" accept={DOCUMENT_FILE_ACCEPT} required /></label>
           <label className="doc-form-full">Комментарий<textarea name="description" maxLength={4000} rows={2} /></label>
-          <button className="primary" type="submit">Загрузить</button>
+          <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Загрузить</PendingSubmitButton>
         </form><p className="form-help">{DOCUMENT_FILE_TYPES_LABEL}, до {MAX_DOCUMENT_FILE_SIZE_LABEL}. Документ будет доступен только вашей компании и сотрудникам ARSEO.</p>
       </section>}
     </section>

@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -29,6 +30,7 @@ export default async function Home() {
   const currentDate=new Intl.DateTimeFormat("ru-RU",{weekday:"long",day:"numeric",month:"long",timeZone:"Asia/Qyzylorda"}).format(now);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="overview"/><section className="workspace" id="overview">
     <header className="topbar overview-topbar"><div><p className="eyebrow overview-date"><span className="brand-diamond" aria-hidden="true"/>{currentDate} · Добрый день, {firstName}</p><h1>Сводка дня</h1></div><div className="top-actions"><Link className="ghost button-link" href="/products">Поиск товара</Link>{can["shipments.view"]&&<Link className="primary button-link" href="/shipments">+ Новая поставка</Link>}</div></header>
+    <WorkflowHelp section="overview"/>
     <section className="summary-grid" aria-label="Сводка">
       <article className="summary-card"><p>Активные поставки</p><strong>{shipmentResult.count??shipments.length}</strong><small className={urgentEvents.length?"warning-text":""}>{urgentEvents.length} сроков требуют внимания</small></article>
       <article className="summary-card"><p>В пути и на таможне</p><strong>{shipments.filter(item=>["in_transit","customs"].includes(item.status)).length}</strong><small className="info-text">операционные поставки</small></article>

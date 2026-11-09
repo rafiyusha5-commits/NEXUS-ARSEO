@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { isUuid } from "@/lib/documents/rules";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -37,6 +38,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
           <div><p className="eyebrow">Главная</p><h1>Ассистент</h1></div>
           <div className="topbar-actions">{can["documents.drive.view"] && <Link className="ghost button-link" href="/assistant/archive">Архив Google Drive</Link>}{can["agent.use"] && <Link className="ghost button-link" href="/assistant/telegram">Telegram</Link>}{can["agent.view_traces"] && <Link className="ghost button-link" href="/assistant/traces">Трассы сотрудников</Link>}</div>
         </header>
+    <WorkflowHelp section="assistant"/>
 
         {!can["agent.use"] && <div className="login-error admin-message">У вас нет права пользоваться ассистентом (agent.use).</div>}
         {can["agent.use"] && migrationMissing && <div className="setup-notice">Ассистент ещё не подготовлен в базе данных: примените миграцию 202609275200_agent_web_mvp.sql.</div>}

@@ -1,3 +1,4 @@
+import { linkedDocuments, LinkedDocuments } from "@/components/documents/linked-documents";
 import { cancelCustomerReturnAction, createCustomerReturnAction, decideReturnItemAction } from "@/app/sales/returns-actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { loadPermissions } from "@/lib/permissions";
@@ -25,6 +26,7 @@ export async function CustomerReturnsPanel({ saleId, saleStatus, warehouseId }: 
   if (error) return <section className="panel admin-section"><div className="setup-notice">Возвраты недоступны. Если модуль ещё не подключён, примените миграцию <strong>202609277500_customer_returns.sql</strong>.</div></section>;
   const options = ((optionRows ?? []) as ReturnOption[]).filter(option => Number(option.available) > 0);
   const returns = (returnRows ?? []) as ReturnRow[];
+  const documents = await linkedDocuments(supabase, "customer_return", returns.map(row => row.id));
   const canDecide = permissions["inventory.receive"] || permissions["inventory.write_off"];
   return <>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Возврат от покупателя</p><h2>Оформить возврат</h2></div></div>
@@ -47,7 +49,7 @@ export async function CustomerReturnsPanel({ saleId, saleStatus, warehouseId }: 
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Карантин и решения</p><h2>Возвраты по заказу</h2></div><span className="page-count">{returns.length}</span></div>
       {!returns.length && <p className="empty-state">Возвратов по заказу не было.</p>}
       <div className="customer-return-list">{returns.map(entry => <article key={entry.id} className={`customer-return return-${entry.status}`}>
-        <div className="customer-return-head"><strong>{entry.return_number}</strong><span className="reference-tag">{RETURN_STATUS[entry.status] ?? entry.status}</span><time>{dateTime(entry.received_at)}</time></div>
+        <LinkedDocuments entries={documents.get(entry.id)}/><div className="customer-return-head"><strong>{entry.return_number}</strong><span className="reference-tag">{RETURN_STATUS[entry.status] ?? entry.status}</span><time>{dateTime(entry.received_at)}</time></div>
         {entry.reason && <small>{entry.reason}</small>}
         {entry.status === "cancelled" && <small>Отменён: {entry.cancellation_reason}</small>}
         <ul>{entry.items.map(item => { const product = one(one(item.sale_item as { product: unknown } | null)?.product as { internal_sku?: string; name?: { ru?: string } } | null); const batch = one(item.batch as { batch_number?: string } | null); return <li key={item.id}>

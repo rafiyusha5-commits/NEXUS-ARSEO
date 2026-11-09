@@ -1,3 +1,7 @@
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { WorkflowHelp } from "@/components/workflow-help";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -94,6 +98,7 @@ export default async function DocumentPage({
   const activeLinks = (links ?? []) as { id: string; entity_type: string; entity_id: string; link_role: string; created_at: string; creator: Named }[];
   const targets = await resolveLinkTargets(supabase, activeLinks);
   const linkOptions = canEdit ? await loadLinkOptions(supabase) : [];
+  const documentActions = await loadDocumentActions(supabase, [doc.id]);
   const currentVersion = (versions ?? []).find((version) => version.is_current);
   const reviewHistory = (approvals ?? []) as unknown as {
     id: string; status: string; entity_version: number | null; request_comment: string | null; comment: string | null;
@@ -121,6 +126,7 @@ export default async function DocumentPage({
             <Link className="ghost button-link" href="/documents">К реестру</Link>
           </div>
         </header>
+    <WorkflowHelp section="documents"/>
 
         {notices.error && <div className="login-error admin-message">{notices.error}</div>}
         {notices.success && <div className="login-success admin-message">{notices.success}</div>}
@@ -150,9 +156,9 @@ export default async function DocumentPage({
               <input type="hidden" name="document_id" value={doc.id} />
               <input type="hidden" name="shared" value="true" />
               <label>Клиент<select name="counterparty_id" required defaultValue={doc.counterparty_id ?? ""}><option value="" disabled>Выберите клиента</option>{(customers ?? []).map((customer) => <option key={customer.id} value={customer.id}>{customer.legal_name}</option>)}</select></label>
-              <button className="primary" type="submit">Открыть клиенту</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Открыть клиенту</PendingSubmitButton>
             </form> : <div className="setup-notice">Это внутренний загруженный документ или документ с ценами. Внешним пользователям его открыть нельзя.</div>}
-            {doc.visibility === "shared_with_counterparty" && <form action={setDocumentExternalAccessAction} className="inline-form"><input type="hidden" name="document_id" value={doc.id} /><input type="hidden" name="shared" value="false" /><button className="ghost danger-text" type="submit">Закрыть внешний доступ</button></form>}
+            {doc.visibility === "shared_with_counterparty" && <form action={setDocumentExternalAccessAction} className="inline-form"><input type="hidden" name="document_id" value={doc.id} /><input type="hidden" name="shared" value="false" /><PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">Закрыть внешний доступ</PendingSubmitButton></form>}
             <p className="form-help">Опубликовать можно только связанную с выбранным клиентом текущую версию безопасного документа без цен. Изменение записывается в журнал действий.</p>
           </section>
         )}
@@ -171,7 +177,7 @@ export default async function DocumentPage({
             <form action={submitDocumentForReviewAction} className="doc-subform">
               <input type="hidden" name="document_id" value={doc.id} />
               <label>Комментарий для согласующего<input name="comment" maxLength={1000} placeholder="Что нужно проверить" /></label>
-              <button className="primary" type="submit">Отправить на согласование</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Отправить на согласование</PendingSubmitButton>
             </form>
           )}
 
@@ -182,14 +188,14 @@ export default async function DocumentPage({
                 <input type="hidden" name="approval_id" value={pendingReview.id} />
                 <input type="hidden" name="decision" value="approved" />
                 <label>Комментарий к решению<input name="comment" maxLength={1000} placeholder="Необязательно" /></label>
-                <button className="primary" type="submit">Утвердить</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Утвердить</PendingSubmitButton>
               </form>
               <form action={decideDocumentReviewAction} className="doc-subform">
                 <input type="hidden" name="document_id" value={doc.id} />
                 <input type="hidden" name="approval_id" value={pendingReview.id} />
                 <input type="hidden" name="decision" value="rejected" />
                 <label>Причина отклонения<input name="comment" required minLength={3} maxLength={1000} placeholder="Что нужно исправить" /></label>
-                <button className="ghost danger-text" type="submit">Отклонить</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">Отклонить</PendingSubmitButton>
               </form>
             </div>
           )}
@@ -215,9 +221,10 @@ export default async function DocumentPage({
             {currentVersion ? (
               <div className="doc-current-file">
                 <div><strong>{doc.original_filename}</strong><small>{formatFileSize(doc.file_size_bytes)} · {doc.mime_type}</small></div>
-                <a className="primary button-link" href={`/documents/${doc.id}/download?version=${currentVersion.id}`}>Скачать</a>
+                <a className="primary button-link" href={`/documents/${doc.id}/download?version=${currentVersion.id}`}>Скачать оригинал</a>
               </div>
             ) : <div className="empty-state">Файл не найден.</div>}
+            <DocumentActions document={documentActions[doc.id]} reviewOnly/>
             {doc.description && <p className="doc-description">{doc.description}</p>}
 
             {canEdit && (
@@ -225,7 +232,7 @@ export default async function DocumentPage({
                 <input type="hidden" name="document_id" value={doc.id} />
                 <label>Новая версия файла<input name="file" type="file" required accept={DOCUMENT_FILE_ACCEPT} /></label>
                 <label>Что изменилось<input name="comment" maxLength={1000} placeholder="Например: исправлена сумма" /></label>
-                <button className="primary" type="submit">Загрузить версию</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Загрузить версию</PendingSubmitButton>
                 <p className="form-help">{DOCUMENT_FILE_TYPES_LABEL}, до {MAX_DOCUMENT_FILE_SIZE_LABEL}. Предыдущие версии сохраняются.</p>
               </form>
             )}
@@ -247,7 +254,7 @@ export default async function DocumentPage({
                       <form action={removeDocumentLinkAction}>
                         <input type="hidden" name="document_id" value={doc.id} />
                         <input type="hidden" name="link_id" value={link.id} />
-                        <button className="ghost compact" type="submit">Снять связь</button>
+                        <PendingSubmitButton pendingText="Выполняем…" className="ghost compact" type="submit">Снять связь</PendingSubmitButton>
                       </form>
                     )}
                   </div>
@@ -269,7 +276,7 @@ export default async function DocumentPage({
                 <label>Назначение<select name="link_role" defaultValue="related">
                   {Object.entries(linkRoleLabel).map(([code, label]) => <option value={code} key={code}>{label}</option>)}
                 </select></label>
-                <button className="primary" type="submit">Добавить связь</button>
+                <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Добавить связь</PendingSubmitButton>
               </form>
             )}
           </section>
@@ -285,7 +292,7 @@ export default async function DocumentPage({
                 <div><strong>{one(version.uploader as Named)?.full_name ?? "—"}</strong><small>{formatDateTime(version.uploaded_at)}</small></div>
                 <div className="doc-version-actions">
                   {version.is_current && <span className="doc-badge doc-status-approved">Актуальная</span>}
-                  <a className="ghost button-link compact" href={`/documents/${doc.id}/download?version=${version.id}`}>Скачать</a>
+                  <a className="ghost button-link compact" href={`/documents/${doc.id}/download?version=${version.id}`}>Скачать оригинал</a>
                 </div>
               </div>
             ))}
@@ -315,7 +322,7 @@ export default async function DocumentPage({
                 {(currencies ?? []).map((item) => <option value={item.id} key={item.id}>{item.code}</option>)}
               </select></label>
               <label className="doc-form-full">Описание<textarea name="description" maxLength={4000} rows={2} defaultValue={doc.description ?? ""} /></label>
-              <button className="primary" type="submit">Сохранить</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Сохранить</PendingSubmitButton>
             </form>
           </section>
         )}
@@ -327,7 +334,7 @@ export default async function DocumentPage({
             <form action={archiveDocumentAction} className="doc-subform doc-archive-form">
               <input type="hidden" name="document_id" value={doc.id} />
               <label>Причина<input name="reason" required minLength={3} maxLength={500} placeholder="Например: заменён новым документом" /></label>
-              <button className="ghost danger-text" type="submit">В архив</button>
+              <PendingSubmitButton pendingText="Выполняем…" className="ghost danger-text" type="submit">В архив</PendingSubmitButton>
             </form>
           </section>
         )}

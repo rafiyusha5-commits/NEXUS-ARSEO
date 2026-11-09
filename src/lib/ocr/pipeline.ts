@@ -39,7 +39,7 @@ export type PreparedOcr =
   | { state: "failed"; extractionId: string; leaseStartedAt: string; message: string; ms: number };
 
 const LANGUAGES = ["ru", "kk", "en"];
-const OCR_EXTRACTOR_VERSION = "ocr-rules-v3";
+const OCR_EXTRACTOR_VERSION = "ocr-rules-v4";
 
 export const permissionMessage = "Нет права передавать документы на OCR";
 

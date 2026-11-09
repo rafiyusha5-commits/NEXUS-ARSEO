@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -20,6 +21,7 @@ export default async function ShelfLifeRiskPage({ searchParams }: { searchParams
 
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shelf-life"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Агент «Контроль ОСГ»</p><h1>Сроки годности под риском</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory">Остатки и партии</Link></div></header>
+    <WorkflowHelp section="shelfLife"/>
     {!allowed && <div className="empty-state">Нужны права «Остатки: просмотр» и «Товары: просмотр». Обратитесь к администратору.</div>}
     {allowed && error && <div className="setup-notice">Список недоступен. Если модуль ещё не подключён, примените миграцию <strong>202609276500_shelf_life_control_agent.sql</strong>.</div>}
     {allowed && !error && <>

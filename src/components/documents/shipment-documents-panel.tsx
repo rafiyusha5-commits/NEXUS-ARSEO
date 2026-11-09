@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { documentStatusLabel, formatDate } from "@/lib/documents/labels.ts";
 import {
@@ -20,6 +21,8 @@ type LinkedDocument = {
   valid_until: string | null;
   status: string;
   archived_at: string | null;
+  current_version: number;
+  versions: { id: string; version_number: number; is_current: boolean; original_filename: string; mime_type: string }[];
   type: { name_ru: string } | { name_ru: string }[] | null;
 };
 
@@ -32,7 +35,10 @@ const one = <T,>(value: T | T[] | null | undefined) => (Array.isArray(value) ? v
 
 // Self-contained block for the shipment page: loads its own data with the user's
 // session, so the shipment page only needs to render <ShipmentDocumentsPanel />.
-export async function ShipmentDocumentsPanel({ shipmentId }: { shipmentId: string }) {
+export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
+  shipmentId: string;
+  reviews?: ReadonlyMap<string, { preview: ReactNode; isPackingList: boolean }>;
+}) {
   if (!isUuid(shipmentId)) return null;
   const supabase = await createClient();
   const permissions = await loadDocumentPermissions(supabase);
@@ -68,8 +74,9 @@ export async function ShipmentDocumentsPanel({ shipmentId }: { shipmentId: strin
   const [linksResult, requirementsResult] = await Promise.all([
     supabase
       .from("document_links")
-      .select("entity_type, document:documents(id, document_type_id, document_number, title, document_date, valid_until, status, archived_at, type:document_types(name_ru))")
+      .select("entity_type, document:documents(id, document_type_id, document_number, title, document_date, valid_until, status, archived_at, current_version, type:document_types(name_ru), versions:document_versions!document_versions_document_id_fkey(id,version_number,is_current,original_filename,mime_type))")
       .is("removed_at", null)
+      .eq("document.versions.is_current", true)
       .or(linkFilter),
     supabase
       .from("document_requirements")
@@ -129,16 +136,19 @@ export async function ShipmentDocumentsPanel({ shipmentId }: { shipmentId: strin
         </div>
       )}
 
-      <div className="doc-shipment-list">
+      <div className="doc-shipment-list" id="shipment-document-list">
         {documents.map(({ document, viaTransport }) => {
           const requirement = coverage.byType.get(document.document_type_id);
           const expiry = documentExpiry(document.valid_until, today);
+          const file = document.versions.find(version => version.is_current && version.version_number === document.current_version);
+          const review = file && reviews?.get(file.id);
+          const cardUrl = `/documents/${document.id}`;
           return (
-            <Link className="doc-shipment-row" href={`/documents/${document.id}`} key={document.id}>
+            <article className="doc-shipment-row" id={`shipment-document-${document.id}`} key={document.id} aria-label={document.title}>
               <div>
-                <span className="doc-type">{one(document.type)?.name_ru ?? "Документ"}{viaTransport ? " · по перевозке" : ""}</span>
-                <strong>{document.document_number ? `№ ${document.document_number}` : document.title}</strong>
-                <small>{document.document_number ? document.title : "Без номера"}</small>
+                <span className="doc-type">{review?.isPackingList ? "Упаковочный лист" : one(document.type)?.name_ru ?? "Документ"}{viaTransport ? " · по перевозке" : ""}</span>
+                <Link href={cardUrl}><strong>{document.document_number ? `№ ${document.document_number}` : document.title}</strong></Link>
+                <small>{file ? `${file.original_filename} · версия ${file.version_number}` : document.title}</small>
               </div>
               <div><strong>{formatDate(document.document_date)}</strong><small>дата</small></div>
               <span className={`doc-badge doc-status-${document.status}`}>{documentStatusLabel[document.status] ?? document.status}</span>
@@ -150,7 +160,13 @@ export async function ShipmentDocumentsPanel({ shipmentId }: { shipmentId: strin
                 {expiry.state === "expired" && <span className="doc-badge doc-expired">Истёк</span>}
                 {expiry.state === "expiring" && <span className="doc-badge doc-expiring">{expiry.daysLeft} дн.</span>}
               </div>
-            </Link>
+              <div className="shipment-document-actions">
+                <Link href={cardUrl}>Открыть карточку</Link>
+                {file ? <a href={`${cardUrl}/download?version=${file.id}`}>Скачать оригинал{file.mime_type === "application/pdf" ? " PDF" : ""}</a>
+                  : <span className="form-help">Файл для скачивания недоступен</span>}
+              </div>
+              {review?.preview}
+            </article>
           );
         })}
         {!documents.length && (

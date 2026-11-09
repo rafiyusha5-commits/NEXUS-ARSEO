@@ -4,6 +4,7 @@ import { OcrPermissionError, persistOcrOutcome, recognizeDocument, type OcrDocum
 import { LOW_CONFIDENCE, proposeFromOcr, valueConfidence } from "../../src/lib/ocr/recognize.ts";
 import { OcrError, type OcrInput, type OcrProvider, type OcrResult } from "../../src/lib/ocr/types.ts";
 import { describeExtractionSummary } from "../../src/lib/document-extraction/summary.ts";
+import { reviewDefinitions } from "../../src/lib/document-extraction/review-definitions.ts";
 import { fakeDb, limits, pdfBytes, pngBytes } from "./helpers.ts";
 
 const SCAN_TEXT = "Фамилия и инициалы водителя: Тестов Т.Т.\nГос.номер авто: 000TST00\nМарка авто: TESTTRUCK\nГос.номер прицепа: 00TRL00";
@@ -95,6 +96,29 @@ describe("OCR pipeline: idempotent re-runs", () => {
 });
 
 describe("OCR pipeline: errors and storing the proposal", () => {
+  it("offers manual review for readable typed text without fields and persists an unconfirmed fenced result", async () => {
+    const ocr = { text: "Wydanie zewnętrzne\nTowary dostarczone", pageCount: 2, confidence: 0.93, words: [] };
+    const proposal = proposeFromOcr(ocr, "waybill");
+    assert.equal(proposal.status, "needs_review");
+    assert.equal(proposal.sourceKind, "waybill");
+    assert.deepEqual(proposal.result.data, {});
+    assert.deepEqual(proposal.result.evidence, {});
+    assert.match(proposal.error ?? "", /введите данные вручную/);
+    for (const sourceKind of ["invoice", "specification", "waybill", "contract", "transport_order", "vehicle_document", "driver_document"]) {
+      assert.equal(proposeFromOcr(ocr, sourceKind).status, "needs_review");
+      assert.ok(reviewDefinitions({ source_kind: sourceKind, extracted_data: {}, confirmed_data: {} }).length > 0, `${sourceKind} must expose fields for manual review`);
+    }
+    const { db, calls } = fakeDb({ finish_shipment_source_ocr_fenced: () => ({ data: "e1" }) });
+    const saved = await persistOcrOutcome(deps({ db }), { state: "recognized", extractionId: "e1", leaseStartedAt: "2030-01-01T00:00:00Z", proposal, ocr, ms: 10 });
+    assert.equal(saved.status, "needs_review");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, "finish_shipment_source_ocr_fenced");
+    assert.equal(calls[0].args.p_status, "needs_review");
+    assert.equal(calls[0].args.p_lease_started_at, "2030-01-01T00:00:00Z");
+    assert.deepEqual(calls[0].args.p_extracted_data, {});
+    for (const hinted of ["other", "unrecognized_type"]) assert.equal(proposeFromOcr(ocr, hinted).status, "failed");
+    assert.equal(proposeFromOcr({ ...ocr, text: " \n " }, "waybill").status, "failed");
+  });
   it("records a provider failure as a failed row with a safe message and the time spent", async () => {
     const { db, calls } = fakeDb(claim("run"));
     const failing = provider(async () => { throw new OcrError("provider_error", "Сервис распознавания вернул ошибку 503", true); });

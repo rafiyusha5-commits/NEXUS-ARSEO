@@ -1,3 +1,4 @@
+import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requireUser } from "@/lib/auth/access";
@@ -18,9 +19,10 @@ export default async function ProductImportPage() {
       <AppSidebar profile={profile} roles={roles} active="products" />
       <section className="workspace admin-workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Фаза 1 · Справочники</p><h1>Импорт контрагентов и товаров</h1></div>
+          <div><p className="eyebrow">Справочники</p><h1>Импорт контрагентов и товаров</h1></div>
           <Link className="ghost button-link" href="/products">Вернуться к товарам</Link>
         </header>
+    <WorkflowHelp section="referenceImport"/>
         {allowed ? (
           <ReferenceImportForm />
         ) : (
