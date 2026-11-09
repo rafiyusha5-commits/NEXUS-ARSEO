@@ -4,6 +4,7 @@ import { isCommodityInvoice } from "./commodity-evidence.ts";
 import { SOURCE_FIELD_DEFINITIONS } from "./rules.ts";
 
 const fieldsByKind:Record<string,string[]>={
+  contract:["contract_number","contract_date","incoterms"],
   invoice:["invoice_number","invoice_date","order_number","order_date","gross_weight_kg","net_weight_kg","pallet_count","incoterms"],
   transport_order:["contract_number","contract_date","carrier_name","driver_name","driver_phone","vehicle_plate","vehicle_make","trailer_plate","trailer_make","loading_address","unloading_address","temperature_setpoint","shipping_date"],
   vehicle_document:["vehicle_plate","vehicle_make","trailer_plate","trailer_make"],
