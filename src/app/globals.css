@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+.replenishment-workspace { min-width: 0; }
+.replenishment-workspace .admin-panel { padding: 24px; margin-bottom: 24px; }
+.replenishment-workspace .admin-panel { background: var(--surface, white); border: 1px solid var(--border, #ddd); border-radius: 20px; }
+.replenishment-workspace button { background: #151515; color: white; border: 0; border-radius: 24px; padding: 12px 20px; cursor: pointer; }
+.replenishment-workspace button:disabled { background: #e5e5e5; color: #666; cursor: not-allowed; }
+.replenishment-workspace details { margin: 16px 0; }
+.replenishment-workspace summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
+.replenishment-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 16px; margin: 16px 0; }
+.replenishment-form label { display: grid; gap: 6px; }
+.replenishment-wide { grid-column: 1 / -1; }
+.replenishment-form input:not([type=checkbox]), .replenishment-form select, .replenishment-form textarea { width: 100%; min-width: 0; }
+.replenishment-form input:not([type=checkbox]), .replenishment-form select, .replenishment-form textarea, .replenishment-actions select { padding: 12px; border: 1px solid var(--border, #ccc); border-radius: 12px; background: white; color: #151515; font: inherit; }
+.replenishment-workspace :is(a,button,input,select,textarea,summary):focus-visible { outline: 3px solid #0755b0; outline-offset: 3px; }
+.replenishment-form fieldset { border: 1px solid var(--border, #ddd); padding: 16px; }
+.replenishment-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+.replenishment-actions label, .replenishment-actions select, .replenishment-form fieldset { min-width: 0; max-width: 100%; }
+.replenishment-workspace button { max-width: 100%; min-height: 44px; white-space: normal; }
+.replenishment-table { overflow-x: auto; max-width: 100%; margin: 20px 0; }
+.replenishment-table table { border-collapse: collapse; width: 100%; min-width: 760px; }
+.replenishment-table th, .replenishment-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border, #ddd); }
+.replenishment-workspace p, .replenishment-workspace li { overflow-wrap: anywhere; }
+.replenishment-share .document-download-link { color: #0755b0; text-decoration: underline; text-underline-offset: 3px; }
+
 .customs-match { min-width: 0; }
 .customs-match fieldset { min-width: 0; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d4d4d4); border-radius: 12px; }
 .customs-match legend { max-width: 100%; overflow-wrap: anywhere; }
