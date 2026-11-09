@@ -95,6 +95,25 @@ describe("OCR pipeline: idempotent re-runs", () => {
 });
 
 describe("OCR pipeline: errors and storing the proposal", () => {
+  it("offers manual review for readable typed text without fields and persists an unconfirmed fenced result", async () => {
+    const ocr = { text: "Wydanie zewnętrzne\nTowary dostarczone", pageCount: 2, confidence: 0.93, words: [] };
+    const proposal = proposeFromOcr(ocr, "waybill");
+    assert.equal(proposal.status, "needs_review");
+    assert.equal(proposal.sourceKind, "waybill");
+    assert.deepEqual(proposal.result.data, {});
+    assert.deepEqual(proposal.result.evidence, {});
+    assert.match(proposal.error ?? "", /введите данные вручную/);
+    const { db, calls } = fakeDb({ finish_shipment_source_ocr_fenced: () => ({ data: "e1" }) });
+    const saved = await persistOcrOutcome(deps({ db }), { state: "recognized", extractionId: "e1", leaseStartedAt: "2030-01-01T00:00:00Z", proposal, ocr, ms: 10 });
+    assert.equal(saved.status, "needs_review");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, "finish_shipment_source_ocr_fenced");
+    assert.equal(calls[0].args.p_status, "needs_review");
+    assert.equal(calls[0].args.p_lease_started_at, "2030-01-01T00:00:00Z");
+    assert.deepEqual(calls[0].args.p_extracted_data, {});
+    for (const hinted of ["other", "unrecognized_type"]) assert.equal(proposeFromOcr(ocr, hinted).status, "failed");
+    assert.equal(proposeFromOcr({ ...ocr, text: " \n " }, "waybill").status, "failed");
+  });
   it("records a provider failure as a failed row with a safe message and the time spent", async () => {
     const { db, calls } = fakeDb(claim("run"));
     const failing = provider(async () => { throw new OcrError("provider_error", "Сервис распознавания вернул ошибку 503", true); });

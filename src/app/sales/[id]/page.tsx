@@ -133,7 +133,9 @@ export default async function SalePage({
     ]),
   ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
 
-  const customerDocuments = await linkedDocuments(supabase, "customer", notices.tab === "documents" ? [sale.customer_id] : []);
+  // Use the same employee-visible files for the tab count and its contents on every tab.
+  const customerDocuments = await linkedDocuments(supabase, "customer", [sale.customer_id]);
+  const documentCount = (letters?.length ?? 0) + (customerDocuments.get(sale.customer_id)?.length ?? 0);
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="sales"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Заказ покупателя</p><h1>{sale.sale_number}</h1></div><div className="topbar-actions"><span className={`status sale-${sale.status}`}>{statuses[sale.status] ?? sale.status}</span><Link className="ghost button-link" href="/sales">К реестру</Link></div></header>
     <WorkflowHelp section="sales"/>
@@ -144,7 +146,7 @@ export default async function SalePage({
       { id: "main", label: "Основное" },
       { id: "items", label: "Товары", badge: items?.length ?? 0 },
       { id: "shipping", label: "Отгрузка", badge: activeReservations.length },
-      { id: "documents", label: "Документы", badge: letters?.length ?? 0 },
+      { id: "documents", label: "Документы", badge: documentCount },
       { id: "payment", label: "Оплата" },
       { id: "stages", label: "Этапы", badge: `${stageSteps.filter((step) => step.complete).length}/${stageSteps.length}` },
       { id: "history", label: "История", badge: history.length },

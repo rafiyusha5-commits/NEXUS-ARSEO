@@ -5,7 +5,7 @@ import { parsePackingEvidence } from "./packing-evidence.ts";
 import { parseSupplierLayout } from "./supplier-layout.ts";
 import { isYilmazTable, parseYilmaz, parseYilmazCertificates } from "./yilmaz.ts";
 
-export const EXTRACTION_VERSION = "rules-v8";
+export const EXTRACTION_VERSION = "rules-v9";
 
 export type ExtractionEvidence = { label: string; value: string; confidence: number };
 export type ExtractionConflict = { field: string; values: string[]; documents?: string[] };
@@ -43,7 +43,7 @@ const patterns: Pattern[] = [
   { field: "pallet_count", label: "Количество паллет", expressions: [/(?:количество|кол-во|к-во)\s+(?:паллет|поддонов)\s*[:—-]?\s*([0-9]{1,5})/iu] },
   { field: "gross_weight_kg", label: "Вес брутто", expressions: [/(?:вес|масса)\s+брутто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
   { field: "net_weight_kg", label: "Вес нетто", expressions: [/(?:вес|масса)\s+нетто(?:\s*,?\s*кг)?\s*[:—-]?\s*([0-9][0-9 .,]{0,20})/iu] },
-  { field: "incoterms", label: "Условия поставки", expressions: [/(?:условия\s+(?:поставки|оплаты)|incoterms?)\s*[:—-]?\s*([^\n]{3,180})/iu] },
+  { field: "incoterms", label: "Условия поставки", expressions: [/(?:условия\s+(?:поставки|оплаты)|\binco\s*terms?\b)\s*[:—-]?\s*([^\n]{3,180})/iu] },
   // Requisites that the export CMR / ТТН / packing list print and the counterparty directory does not hold.
   { field: "loading_city", label: "Город погрузки", expressions: [/город\s+погрузки\s*[:—-]?\s*([^\n]{2,80})/iu] },
   { field: "loading_country", label: "Страна погрузки", expressions: [/страна\s+погрузки\s*[:—-]?\s*([^\n]{2,60})/iu] },
