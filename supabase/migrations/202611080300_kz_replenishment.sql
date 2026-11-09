@@ -246,6 +246,20 @@ begin
  if p_kind is null or p_kind not in('forecast','purchase') or jsonb_typeof(p_lines)<>'array' or p_lines is null or jsonb_array_length(p_lines) not between 1 and 1000 or coalesce(length(btrim(p_reason)),0) not between 3 and 1000 then raise exception 'Проверьте предложение и причину';end if;
  if p_kind='forecast' and not(private.has_permission('forecasts.create') and private.has_permission('forecasts.update'))
  or p_kind='purchase' and not(private.has_permission('purchase_plans.update') and private.has_permission('forecasts.detail')) then raise exception 'Недостаточно прав' using errcode='42501';end if;
+ -- Every product/city needs demand evidence, even when the proposal omits that line.
+ -- Check before idempotent returns: decisions saved by older code are not proof of readiness.
+ if exists(
+  select 1 from jsonb_array_elements(run.snapshot->'products') product
+  cross join (values('astana'),('almaty')) cities(city)
+  where not exists(select 1 from jsonb_array_elements(run.snapshot->'settings'->'overrides') manual
+    where manual->>'productId'=product->>'id' and manual->>'city'=cities.city
+    and jsonb_typeof(manual->'daily')='number' and (manual->>'daily')::numeric between 0 and 1000000
+    and length(btrim(manual->>'reason')) between 3 and 1000)
+  and (coalesce((run.snapshot->'settings'->>'historyConfirmed')::boolean,false)=false
+    or not exists(select 1 from jsonb_array_elements(run.snapshot->'sales') sale
+      where sale->>'productId'=product->>'id' and sale->>'city'=cities.city
+      and (sale->>'date')::date between (run.snapshot->>'historyStart')::date and (run.snapshot->>'historyEnd')::date))
+ ) then raise exception 'Спрос неизвестен: подтвердите полную историю или задайте стартовый спрос с причиной для каждого товара и города';end if;
  select * into prior from public.replenishment_decisions where run_id=p_run_id and kind=p_kind;
  if found then
   if prior.payload is distinct from p_lines or prior.reason is distinct from btrim(p_reason) or (p_kind='purchase' and prior.forecast_id is distinct from p_forecast_id) then raise exception 'Повтор содержит другое решение';end if;

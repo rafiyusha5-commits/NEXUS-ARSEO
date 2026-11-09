@@ -9,8 +9,9 @@ function Example() {
   const [mode, setMode] = useState("ready"), [payload, setPayload] = useState("");
   const data = structuredClone(snapshot);
   if (mode === "unknown") data.settings.overrides = [];
+  if (mode === "zero") data.settings.overrides.forEach(o => o.daily = 0);
   const workspace: Workspace = { profile, profiles: [profile], snapshot: data, sources: [], purposes: [], warehouses: [{ id: "ACT", name: "Актобе" }, { id: "AST", name: "Астана" }, { id: "ALA", name: "Алматы" }], suppliers: [{ id: "S", name: "Синтетический поставщик" }], runs: [], decisions: [], fresh: mode !== "stale" };
   const action = async (form: FormData) => { setPayload(JSON.stringify(Object.fromEntries(form))); };
-  return <main className="workspace admin-workspace replenishment-workspace" style={{ margin: 0, width: "100%" }}><label>Сценарий<select value={mode} onChange={e => setMode(e.target.value)}><option value="ready">Готово</option><option value="unknown">Нет истории</option><option value="stale">Устарело</option></select></label><ReplenishmentWorkspace workspace={workspace} runId={profile.id} requestId={profile.id} actions={{ createProfile: action, capture: action, setPurpose: action, prepareDraft: action }}/><output id="payload" style={{ overflowWrap: "anywhere" }}>{payload}</output></main>;
+  return <main className="workspace admin-workspace replenishment-workspace" style={{ margin: 0, width: "100%" }}><label>Сценарий<select value={mode} onChange={e => setMode(e.target.value)}><option value="ready">Готово</option><option value="unknown">Нет истории</option><option value="zero">Явный ноль</option><option value="stale">Устарело</option></select></label><ReplenishmentWorkspace workspace={workspace} runId={profile.id} requestId={profile.id} actions={{ createProfile: action, capture: action, setPurpose: action, prepareDraft: action }}/><output id="payload" style={{ overflowWrap: "anywhere" }}>{payload}</output></main>;
 }
 createRoot(document.getElementById("root")!).render(<Example/>);

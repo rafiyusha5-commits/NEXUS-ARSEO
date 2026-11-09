@@ -46,6 +46,17 @@ export async function runReplenishmentForms({ chromium, base, email, password, r
     await config.locator('[name="reason"]').fill('Synthetic delivery lead times');
     await submit('Сохранить отдельную версию настроек');
     assert.ok(await page.getByText('Нет истории: задайте стартовый спрос, в том числе ноль с причиной', { exact: true }).count());
+    await submit('Пересчитать и сохранить новую версию');
+    const unknownRun = new URL(page.url()).searchParams.get('run'); assert.match(unknownRun, /^[0-9a-f-]{36}$/);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      assert.deepEqual(await page.locator('#result tbody tr td:nth-child(2)').allTextContents(), ['Спрос неизвестен', 'Спрос неизвестен']);
+      assert.deepEqual(await page.locator('#result tbody tr td:nth-child(5)').allTextContents(), ['Закупка не рассчитана', 'Закупка не рассчитана']);
+      for (const label of ['Подготовить черновик прогноза', 'Подготовить черновик плана закупки']) assert.equal(await page.getByRole('button', { name: label, exact: true }).isDisabled(), true);
+    }
+    assert.equal((await context.request.get(base + '/replenishment/export?run=' + unknownRun)).status(), 409);
+    assert.equal(Number(sql(`select count(*) from public.replenishment_decisions where run_id='${unknownRun}';`)), 0);
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByText('Новая версия настроек и стартовый спрос', { exact: true }).click();
     await config.locator(`[name="${ids.product}:astana"]`).fill('10');
     await config.locator(`[name="${ids.product}:astana:reason"]`).fill('Synthetic new product demand');

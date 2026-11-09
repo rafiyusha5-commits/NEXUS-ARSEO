@@ -26,6 +26,7 @@ export type Snapshot = {
 export type Risk = { supplyId: string; sku: string; batch: string; quantity: number; deadline: string | null; level: "critical" | "warning" | "unknown"; message: string };
 export type Transfer = { supplyId: string; productId: string; from: string; to: City; quantity: number; arrival: string };
 export type Line = {
+  demandKnown: boolean;
   productId: string; sku: string; city: City; daily: number; demand: number; forecastDemand: number;
   safety: number; usable: number; inbound: number; proposedTransfer: number;
   shortage: number; purchase: number; afterTransfers: number; excludedExport: number;
@@ -110,6 +111,7 @@ export function calculate(input: Snapshot): Calculation {
     const quantities = Array.from({ length: days }, (_, i) => sum(history.filter(r => day(r.date) === historyStart + i).map(r => r.quantity)));
     const historicalDaily = sum(quantities) / days;
     const manual = s.overrides.find(r => r.productId === p.id && r.city === city);
+    const demandKnown = !!manual || (s.historyConfirmed && history.length > 0);
     const daily = manual?.daily ?? historicalDaily;
     const sd = Math.sqrt(sum(quantities.map(q => (q - historicalDaily) ** 2)) / days);
     const safety = s.serviceZ * sd * Math.sqrt(horizon);
@@ -120,7 +122,7 @@ export function calculate(input: Snapshot): Calculation {
     const forecastDemand = Math.max(daily * horizon, sum(obligations.map(o => o.quantity)));
     const demand = Math.max(0, forecastDemand - reserved);
     const rows = supplies.filter(r => r.productId === p.id);
-    const line: Line = { productId: p.id, sku: p.sku, city, daily, demand: round(demand), forecastDemand, safety: round(safety), usable: 0, inbound: 0, proposedTransfer: 0, shortage: 0, purchase: 0, afterTransfers: 0, excludedExport: sum(rows.filter(r => r.purpose === "export").map(r => r.quantity)), unknown: sum(rows.filter(r => r.purpose === "unknown").map(r => r.quantity)), firstShortage: null, blockers: [], notes: [] };
+    const line: Line = { productId: p.id, sku: p.sku, city, demandKnown, daily, demand: round(demand), forecastDemand, safety: round(safety), usable: 0, inbound: 0, proposedTransfer: 0, shortage: 0, purchase: 0, afterTransfers: 0, excludedExport: sum(rows.filter(r => r.purpose === "export").map(r => r.quantity)), unknown: sum(rows.filter(r => r.purpose === "unknown").map(r => r.quantity)), firstShortage: null, blockers: [], notes: [] };
     if (forecastDemand > daily * horizon) line.notes.push("Открытые заказы превышают оценку спроса: прогноз включает весь их объём, а закупка исключает уже зарезервированное количество");
     if (!s.historyConfirmed && !manual) line.blockers.push("Подтвердите полноту истории продаж, включая дни отсутствия товара, или задайте спрос с причиной");
     if (!history.length && !manual) line.blockers.push("Нет истории: задайте стартовый спрос, в том числе ноль с причиной");

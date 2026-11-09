@@ -3,6 +3,7 @@ import { calculate, type Snapshot } from "./calculate.ts";
 import { cityName } from "./workspace.ts";
 export function exportCalculation(snapshot: Snapshot, runId: string): Buffer {
   const result = calculate(snapshot);
+  if (result.lines.some(l => l.blockers.length) || result.warnings.length) throw new Error("REPLENISHMENT_NOT_READY");
   return createXlsx([
     { name: "Заказ — предложение", rows: [
       ["ПРЕДЛОЖЕНИЕ, НЕ УТВЕРЖДЁННЫЙ ЗАКАЗ", runId], ["Дата", result.asOf, "Алгоритм", result.version],

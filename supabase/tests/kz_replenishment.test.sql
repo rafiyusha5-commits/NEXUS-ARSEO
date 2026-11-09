@@ -43,7 +43,7 @@ grant execute on function pg_temp.kz_fails(text) to authenticated;
 set role authenticated;
 select set_config('request.jwt.claim.sub','a8000000-0000-4000-8000-000000000001',true);
 insert into kz_ids(profile) select public.replenishment_create_profile('a8100000-0000-4000-8000-000000000001','Тестовый расчёт',
- '{"aktobe":"a8200000-0000-4000-8000-000000000001","astana":"a8200000-0000-4000-8000-000000000002","almaty":"a8200000-0000-4000-8000-000000000003","productionDays":14,"transitDays":30,"cityDays":3,"reviewDays":7,"transferDays":2,"historyDays":90,"serviceZ":1.65,"historyConfirmed":true,"overrides":[]}', 'Синтетическая проверка');
+ '{"aktobe":"a8200000-0000-4000-8000-000000000001","astana":"a8200000-0000-4000-8000-000000000002","almaty":"a8200000-0000-4000-8000-000000000003","productionDays":14,"transitDays":30,"cityDays":3,"reviewDays":7,"transferDays":2,"historyDays":90,"serviceZ":1.65,"historyConfirmed":true,"overrides":[{"productId":"a8300000-0000-4000-8000-000000000001","city":"almaty","daily":0,"reason":"Нет стартовых продаж"},{"productId":"a8300000-0000-4000-8000-000000000002","city":"astana","daily":2,"reason":"Стартовый спрос"},{"productId":"a8300000-0000-4000-8000-000000000002","city":"almaty","daily":0,"reason":"Нет стартовых продаж"}]}', 'Синтетическая проверка');
 do $$declare w jsonb;s jsonb;p uuid;begin
  select profile into p from kz_ids;w:=public.replenishment_workspace(p);
  assert jsonb_array_length(w->'snapshot'->'products')=2,'new products are not silently dropped';
@@ -75,6 +75,82 @@ select public.review_forecast(forecast,true,'Синтетическая комм
 select public.approve_forecast(forecast) from kz_ids;
 update kz_ids set plan=public.replenishment_prepare_draft(run,'purchase','[{"productId":"a8300000-0000-4000-8000-000000000001","quantity":100}]','Проверено перед закупкой',forecast);
 do $$begin assert(select status='draft' from public.purchase_plans where id=(select plan from kz_ids)),'purchase remains draft';end$$;
+-- Missing demand must fail at the authenticated RPC boundary, not only in the UI.
+-- Keep these fixtures out of the concurrency runner's committed baseline.
+savepoint demand_regression;
+reset role;
+create temp table missing_demand_runs(run uuid, variant int);
+grant select,insert on missing_demand_runs to authenticated;
+create function pg_temp.kz_unknown_demand(r uuid,k text,lines jsonb,f uuid default null) returns void language plpgsql as $$begin
+ begin perform public.replenishment_prepare_draft(r,k,lines,'Сотрудник проверил предложение',f);
+ exception when sqlstate 'P0001' then
+  if sqlerrm like 'Спрос неизвестен:%' then return;end if;raise;
+ end;
+ raise exception 'Unknown demand was accepted: %, %',r,k;
+end$$;
+grant execute on function pg_temp.kz_unknown_demand(uuid,text,jsonb,uuid) to authenticated;
+set role authenticated;
+do $$declare base jsonb;settings jsonb;p uuid;r uuid;src jsonb;i int;begin
+ select public.replenishment_workspace(profile)->'profile'->'settings' into base from kz_ids;
+ for i in 0..3 loop
+  settings:=case i
+   when 0 then jsonb_set(base,'{historyConfirmed}','false') -- sales exist, completeness unconfirmed
+   when 1 then jsonb_set(base,'{overrides}','[]') -- omitted product with no history
+   when 2 then jsonb_set(base,'{overrides}',(base->'overrides')-2) -- one city's explicit demand is absent
+   else jsonb_set(jsonb_set(base,'{overrides}','[]'),'{historyConfirmed}','false') end;
+  p:=public.replenishment_create_profile('a8100000-0000-4000-8000-000000000001','Unknown demand '||i,settings,'Проверка неизвестного спроса');
+  src:=public.replenishment_workspace(p)->'sources'->0;
+  perform public.replenishment_set_purpose(p,src->>'id',src->>'signature',180,0,null,null,'Синтетический запас KZ');
+  r:=public.replenishment_capture(p,gen_random_uuid());
+  insert into missing_demand_runs values(r,i);
+  -- Payload contains only a product/city with actual history; unresolved other lines still block it.
+  perform pg_temp.kz_unknown_demand(r,'forecast','[{"productId":"a8300000-0000-4000-8000-000000000001","city":"astana","quantity":100}]');
+ end loop;
+end$$;
+reset role;
+-- Model decisions that already existed before the fix, including an approved forecast and a draft plan.
+insert into public.replenishment_decisions(run_id,kind,payload,forecast_id,purchase_plan_id,reason,created_by)
+select r.run,d.kind,d.payload,d.forecast_id,d.purchase_plan_id,'Сотрудник проверил предложение',d.created_by
+from missing_demand_runs r cross join public.replenishment_decisions d where d.run_id=(select run from kz_ids)
+and (d.kind='forecast' or r.variant=3);
+create temp table demand_state as select
+ (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.forecasts x) forecasts,
+ (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.forecast_lines x) forecast_lines,
+ (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.purchase_plans x) plans,
+ (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.purchase_plan_lines x) plan_lines,
+ (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.replenishment_decisions x) decisions;
+set role authenticated;
+do $$declare r uuid;f uuid;begin
+ select forecast into f from kz_ids;
+ for r in select run from missing_demand_runs loop
+  perform pg_temp.kz_unknown_demand(r,'forecast','[{"productId":"a8300000-0000-4000-8000-000000000001","city":"astana","quantity":100}]');
+  perform pg_temp.kz_unknown_demand(r,'purchase','[{"productId":"a8300000-0000-4000-8000-000000000001","quantity":100}]',f);
+ end loop;
+end$$;
+reset role;
+do $$begin
+ assert (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.forecasts x)=(select forecasts from demand_state),'forecasts unchanged on rejection';
+ assert (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.forecast_lines x)=(select forecast_lines from demand_state),'forecast lines unchanged';
+ assert (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.purchase_plans x)=(select plans from demand_state),'plans unchanged on rejection';
+ assert (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.purchase_plan_lines x)=(select plan_lines from demand_state),'plan lines unchanged';
+ assert (select md5(jsonb_agg(to_jsonb(x) order by id)::text) from public.replenishment_decisions x)=(select decisions from demand_state),'decisions unchanged';
+end$$;
+-- Explicit zero for every product/city remains a valid employee decision without sales history.
+set role authenticated;
+do $$declare settings jsonb;manual jsonb;p uuid;r uuid;f uuid;begin
+ select public.replenishment_workspace(profile)->'profile'->'settings' into settings from kz_ids;
+ select jsonb_agg(jsonb_build_object('productId',product->>'id','city',city,'daily',0,'reason','Согласованный нулевой спрос')) into manual
+ from kz_ids cross join lateral jsonb_array_elements(public.replenishment_workspace(profile)->'snapshot'->'products') product
+ cross join (values('astana'),('almaty')) cities(city);
+ settings:=jsonb_set(jsonb_set(settings,'{overrides}',manual),'{historyConfirmed}','false');
+ p:=public.replenishment_create_profile('a8100000-0000-4000-8000-000000000001','Explicit zero',settings,'Нулевой спрос подтверждён');
+ perform public.replenishment_set_purpose(p,s->>'id',s->>'signature',180,0,null,null,'Синтетический запас KZ') from jsonb_array_elements(public.replenishment_workspace(p)->'sources') s;
+ r:=public.replenishment_capture(p,gen_random_uuid());
+ -- RPC accepts an employee proposal once demand is explicitly decided; it does not auto-create it.
+ f:=public.replenishment_prepare_draft(r,'forecast','[{"productId":"a8300000-0000-4000-8000-000000000001","city":"astana","quantity":10}]','Ручное предложение сотрудника');
+ assert f is not null,'explicit zero must not be treated as unknown';
+end$$;
+rollback to demand_regression;
 select pg_temp.kz_fails('update public.replenishment_runs set fingerprint=''forged''');
 select pg_temp.kz_fails('select * from public.replenishment_runs');
 select set_config('request.jwt.claim.sub','a8000000-0000-4000-8000-000000000002',true);

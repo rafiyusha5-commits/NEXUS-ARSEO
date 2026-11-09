@@ -67,6 +67,13 @@ try {
     await page.getByText('Пояснение модели — проверьте по таблице', { exact: true }).waitFor();
     await page.getByLabel('Сценарий').selectOption('unknown'); assert.equal(await draft.isDisabled(), true);
     await page.getByText('Нет истории: задайте стартовый спрос, в том числе ноль с причиной', { exact: true }).first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Подготовить черновик плана закупки', exact: true }).isDisabled(), true);
+    assert.equal(await download.count(), 0);
+    assert.deepEqual(await page.locator('tbody tr td:nth-child(2)').allTextContents(), ['Спрос неизвестен', 'Спрос неизвестен']);
+    assert.deepEqual(await page.locator('tbody tr td:nth-child(5)').allTextContents(), ['Закупка не рассчитана', 'Закупка не рассчитана']);
+    await page.getByLabel('Сценарий').selectOption('zero');
+    assert.deepEqual(await page.locator('tbody tr td:nth-child(2)').allTextContents(), ['0', '0']);
+    assert.equal(await draft.isDisabled(), false, 'explicit zero is a known demand decision');
     await page.getByLabel('Сценарий').selectOption('stale'); assert.equal(await draft.isDisabled(), true); assert.equal(await download.count(), 0);
     await page.getByLabel('Сценарий').selectOption('ready');
     if (process.argv[3]) { await mkdir(resolve(process.argv[3]), { recursive: true }); await page.screenshot({ path: join(resolve(process.argv[3]), `replenishment-${width}.png`), fullPage: true }); }

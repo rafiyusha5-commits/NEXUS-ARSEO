@@ -6,6 +6,29 @@ function stock(change: Partial<Supply> = {}): Supply {
   return { id: "B", productId: "P", warehouseId: "AST", batch: "LOT", quantity: 100, expiry: "2028-01-01", manufactured: null, availableOn: "2026-11-08", kind: "stock", purpose: "kz", city: null, usable: true, conversionKnown: true, ...change };
 }
 describe("KZ replenishment", () => {
+  it("distinguishes unknown demand from an explicit zero, per product and city", () => {
+    const f = fixture(); f.settings.overrides = []; f.settings.historyConfirmed = false;
+    f.settings.productionDays = 0; f.settings.transitDays = 60; f.settings.cityDays = 0;
+    f.supplies = [stock({ quantity: 552 }), stock({ id: "ALA", warehouseId: "ALA", quantity: 312 })];
+    assert.ok(calculate(f).lines.every(l => !l.demandKnown && l.blockers.length));
+    f.settings.historyConfirmed = true;
+    assert.ok(calculate(f).lines.every(l => !l.demandKnown), "checkbox without history is not demand evidence");
+    f.settings.overrides = [{ productId: "P", city: "astana", daily: 0, reason: "Согласованный нулевой спрос" }];
+    const r = calculate(f);
+    assert.equal(r.lines[0].demandKnown, true); assert.equal(r.lines[0].demand, 0);
+    assert.equal(r.lines[0].blockers.length, 0); assert.equal(r.lines[1].demandKnown, false);
+    assert.equal(r.transfers.length, 0);
+  });
+  it("unconfirmed history and known customer orders do not replace a demand decision", () => {
+    const f = fixture(); f.settings.overrides = []; f.settings.historyConfirmed = false;
+    f.sales = [{ id: "S", productId: "P", city: "astana", customerId: "C", date: "2026-11-03", quantity: 70, requiredPct: 80 }];
+    f.commitments = [{ productId: "P", city: "almaty", quantity: 100, reserved: 0 }];
+    assert.ok(calculate(f).lines.every(l => !l.demandKnown && l.blockers.length));
+    f.settings.historyConfirmed = true;
+    assert.deepEqual(calculate(f).lines.map(l => l.demandKnown), [true, false]);
+    f.sales[0].date = f.asOf;
+    assert.ok(calculate(f).lines.every(l => !l.demandKnown), "today is outside the history window");
+  });
   it("keeps cities separate and rounds purchase to boxes", () => {
     const f = fixture(); f.supplies = [stock()]; const r = calculate(f);
     assert.equal(r.lines[0].purchase, 40); assert.equal(r.lines[1].purchase, 70);
