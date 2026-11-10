@@ -91,6 +91,18 @@ test("work hours and explicit maintenance are respected in Kazakhstan time",()=>
  assert.equal(expectedOnline(policy,new Date("2026-11-10T16:00:00Z")),false);
  assert.equal(expectedOnline({...policy,maintenanceUntil:"2026-11-10T12:00:00Z"},new Date("2026-11-10T06:00:00Z")),false);
  assert.equal(windowPolicy({...policy,reason:""}),null);
+ assert.equal(windowPolicy({...policy,notificationWindowSeconds:0}),null);
+ assert.equal(windowPolicy({...policy,notificationWindowSeconds:90})?.notificationWindowSeconds,90);
+});
+test("observer flapping keeps the latest state without bypassing the persisted delivery interval",()=>{
+ const e={...event(),code:"UNAVAILABLE" as const};
+ let state=transition(null,e,1000,60);assert.equal(state.nextAt,1000);
+ state={...state,pending:null,lastDeliveryAt:1000};
+ for(let i=1;i<=100;i++)state=transition(state,{...e,code:i%2?"OK":"UNAVAILABLE",correlation:randomUUID()},1000+i,60);
+ assert.equal(state.nextAt,61000);assert.equal(state.pending?.code,"UNAVAILABLE");assert.equal(state.attempts,0);
+ const restored=readObserverState(JSON.parse(JSON.stringify(state)));assert.deepEqual(restored,state);
+ assert.equal(transition(restored,e,62000,60).nextAt,61000); // eligible on the next collection, not suppressed forever
+ assert.equal(readObserverState({...state,lastDeliveryAt:-1}),null);
 });
 test("monitoring client cannot call arbitrary business RPCs or leak their errors",async()=>{
  let calls=0;const c=monitoringClient("https://synthetic.invalid","key",async()=>{calls++;return new Response("password / SQL / document",{status:500});});

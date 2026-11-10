@@ -52,10 +52,52 @@ create table if not exists private.system_health_delivery (
  unique(incident_id,phase)
 );
 create index if not exists system_health_delivery_pending on private.system_health_delivery(state,available_at);
+alter table private.system_health_delivery add column if not exists notified_at timestamptz;
+create table if not exists private.system_health_policy (
+ environment text primary key check(environment in ('test','production','training','recovery')),
+ notification_window_seconds integer not null default 300 check(notification_window_seconds between 30 and 3600),
+ delivery_interval_seconds integer not null default 30 check(delivery_interval_seconds between 30 and 3600)
+);
+insert into private.system_health_policy(environment) values ('test'),('production'),('training'),('recovery') on conflict do nothing;
+alter table private.system_health_policy enable row level security;
+revoke all on private.system_health_policy from public,anon,authenticated,service_role;
 alter table private.system_health_current enable row level security;
 alter table private.system_health_incidents enable row level security;
 alter table private.system_health_delivery enable row level security;
 revoke all on private.system_health_current,private.system_health_incidents,private.system_health_delivery from public,anon,authenticated,service_role;
+
+-- Called under the component lock. Keep every incident; coalesce only repeated notices
+-- for the same component/code/phase. A continuing failure is retried on later collection.
+create or replace function private.notify_system_health(p_environment text,p_component text)
+returns void language plpgsql security definer set search_path='' as $$
+declare
+ current_code text;
+ candidate record;
+ last_notice timestamptz;
+ window_seconds integer;
+ notice_time timestamptz:=clock_timestamp();
+begin
+ select code into current_code from private.system_health_current where environment=p_environment and component=p_component;
+ if current_code not in ('OK','UNAVAILABLE','TIMEOUT','FAILED','STALE') then return; end if;
+ select notification_window_seconds into window_seconds from private.system_health_policy where environment=p_environment;
+ select d.id,d.phase,i.code,i.id incident_id into candidate
+ from private.system_health_delivery d join private.system_health_incidents i on i.id=d.incident_id
+ where i.environment=p_environment and i.component=p_component
+   and ((current_code='OK' and d.phase='recovered') or
+        (current_code<>'OK' and d.phase='opened' and i.code=current_code and i.recovered_at is null))
+ order by i.first_at desc,i.id desc limit 1;
+ if not found or exists(select 1 from private.system_health_delivery where id=candidate.id and notified_at is not null) then return; end if;
+ select max(d.notified_at) into last_notice
+ from private.system_health_delivery d join private.system_health_incidents i on i.id=d.incident_id
+ where i.environment=p_environment and i.component=p_component and i.code=candidate.code and d.phase=candidate.phase;
+ if last_notice is not null and last_notice+make_interval(secs=>coalesce(window_seconds,300))>notice_time then return; end if;
+ insert into public.notifications(recipient_user_id,type,title,body,entity_type,entity_id)
+ select p.id,'system',case when candidate.phase='recovered' then 'Работа компонента восстановлена' else 'Системе требуется внимание' end,
+   p_component||' · '||case when candidate.phase='recovered' then 'OK' else candidate.code end,'system_health',candidate.incident_id
+ from public.profiles p where private.user_has_permission(p.id,'system.health.view');
+ update private.system_health_delivery set notified_at=notice_time where id=candidate.id;
+end $$;
+revoke all on function private.notify_system_health(text,text) from public,anon,authenticated,service_role;
 
 create or replace function public.system_health_ping() returns boolean
 language sql stable security definer set search_path='' as $$select true$$;
@@ -94,9 +136,6 @@ begin
      where environment=p_environment and component=p_component and recovered_at is null returning *
    loop
      insert into private.system_health_delivery(incident_id,phase) values(recovered.id,'recovered') on conflict do nothing;
-     insert into public.notifications(recipient_user_id,type,title,body,entity_type,entity_id)
-     select p.id,'system','Работа компонента восстановлена',p_component||' · OK','system_health',recovered.id
-     from public.profiles p where private.user_has_permission(p.id,'system.health.view');
    end loop;
  end if;
  is_failure:=p_code in ('UNAVAILABLE','TIMEOUT','FAILED','STALE');
@@ -109,11 +148,9 @@ begin
      insert into private.system_health_incidents(environment,component,code,correlation,first_at,last_at)
      values(p_environment,p_component,p_code,p_correlation,p_observed_at,p_observed_at) returning * into incident;
      insert into private.system_health_delivery(incident_id,phase) values(incident.id,'opened');
-     insert into public.notifications(recipient_user_id,type,title,body,entity_type,entity_id)
-     select p.id,'system','Системе требуется внимание',p_component||' · '||p_code,'system_health',incident.id
-     from public.profiles p where private.user_has_permission(p.id,'system.health.view');
    end if;
  end if;
+ perform private.notify_system_health(p_environment,p_component);
  return jsonb_build_object('accepted',true,'incident',incident.id);
 end $$;
 
@@ -165,7 +202,7 @@ declare d private.system_health_delivery%rowtype; i private.system_health_incide
 begin
  if p_environment is null or p_environment not in ('test','production','training','recovery') then raise exception 'Некорректная среда' using errcode='22023'; end if;
  perform pg_advisory_xact_lock(hashtextextended('system-health-delivery:'||p_environment,0));
- -- One outstanding lease and at most one start each 30 seconds per environment, including retries.
+ -- One outstanding lease and a configurable minimum gap per environment, including retries.
  if exists(select 1 from private.system_health_delivery q join private.system_health_incidents x on x.id=q.incident_id
    where x.environment=p_environment and q.lease_until>now()) then return null; end if;
  update private.system_health_delivery q set state='failed'
@@ -174,7 +211,8 @@ begin
    where x.environment=p_environment and q.state in ('queued','sending') and q.available_at<=now() and coalesce(q.lease_until,'-infinity')<=now() and q.attempts<5
    order by q.available_at,q.id limit 1 for update of q skip locked;
  if not found then return null; end if;
- update private.system_health_delivery set state='sending',attempts=attempts+1,claim=gen_random_uuid(),lease_until=now()+interval '60 seconds'
+ update private.system_health_delivery set state='sending',attempts=attempts+1,claim=gen_random_uuid(),
+   lease_until=now()+make_interval(secs=>greatest(60,coalesce((select delivery_interval_seconds from private.system_health_policy where environment=p_environment),30)))
  where id=d.id returning * into d;
  select * into i from private.system_health_incidents where id=d.incident_id;
  return jsonb_build_object('id',d.id,'claim',d.claim,'component',i.component,'code',case when d.phase='recovered' then 'OK' else i.code end,'observedAt',case when d.phase='recovered' then i.recovered_at else i.first_at end,'correlation',i.correlation);
@@ -186,7 +224,9 @@ declare n integer;
 begin
  if p_success is null then raise exception 'Некорректный результат' using errcode='22023'; end if;
  update private.system_health_delivery set state=case when p_success then 'sent' when attempts>=5 then 'failed' else 'queued' end,
-   available_at=now()+make_interval(secs=>least(3600,30*power(2,attempts)::integer)),lease_until=now()+interval '30 seconds'
+   available_at=now()+make_interval(secs=>least(3600,30*power(2,attempts)::integer)),
+   lease_until=now()+make_interval(secs=>coalesce((select p.delivery_interval_seconds from private.system_health_policy p
+     join private.system_health_incidents i on i.environment=p.environment where i.id=incident_id),30))
  where id=p_id and claim=p_claim and state='sending' and lease_until>now();
  get diagnostics n=row_count;
  return n=1;

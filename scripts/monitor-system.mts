@@ -33,10 +33,10 @@ async function main(){
    await appendSafeLog(dir,event);
    const statePath=join(dir,"observer-state.json");let previous=null;
    try{if((await stat(statePath)).size<8192)previous=readObserverState(JSON.parse(await readFile(statePath,"utf8")));}catch{}
-   const state=transition(previous,event);
+   const state=transition(previous,event,Date.now(),policy.notificationWindowSeconds);
    if(state.pending&&state.attempts<5&&state.nextAt<=Date.now()&&process.env.MONITORING_EXTERNAL_ENABLED==="true"){
     const delivered=await deliverTechnical(process.env.MONITORING_EXTERNAL_ENDPOINT,process.env.MONITORING_EXTERNAL_TOKEN,env,state.pending);
-    state.attempts++;state.nextAt=Date.now()+Math.min(3600000,30000*2**state.attempts);if(delivered)state.pending=null;
+    state.lastDeliveryAt=Date.now();state.attempts++;state.nextAt=state.lastDeliveryAt+Math.max(policy.notificationWindowSeconds*1000,Math.min(3600000,30000*2**state.attempts));if(delivered)state.pending=null;
    }
    await writeFile(statePath,JSON.stringify(state),{mode:0o600});
    console.log(JSON.stringify({component:"app",code:event.code,deliveryPending:!!state.pending,attempts:state.attempts}));

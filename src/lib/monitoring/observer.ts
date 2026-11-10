@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { failures, safeObservation, type Code, type Observation, type Environment } from "./policy.ts";
 
-export type WindowPolicy = { timeZone: string; weekdays: number[]; startHour: number; endHour: number; maintenanceUntil: string | null; reason: string };
+export type WindowPolicy = { timeZone: string; weekdays: number[]; startHour: number; endHour: number; maintenanceUntil: string | null; reason: string; notificationWindowSeconds: number };
 export function windowPolicy(value: unknown): WindowPolicy | null {
   if (!value || typeof value !== "object") return null;
   const p = value as WindowPolicy;
@@ -10,7 +10,9 @@ export function windowPolicy(value: unknown): WindowPolicy | null {
   if (!Number.isInteger(p.startHour) || !Number.isInteger(p.endHour) || p.startHour<0 || p.endHour>24 || p.startHour>=p.endHour) return null;
   if (typeof p.reason!=="string" || !p.reason.trim() || p.reason.length>500) return null;
   if (p.maintenanceUntil!==null && (typeof p.maintenanceUntil!=="string" || !Number.isFinite(Date.parse(p.maintenanceUntil)))) return null;
-  return { timeZone:p.timeZone,weekdays:p.weekdays,startHour:p.startHour,endHour:p.endHour,maintenanceUntil:p.maintenanceUntil,reason:p.reason };
+  const notificationWindowSeconds=p.notificationWindowSeconds??300;
+  if(!Number.isInteger(notificationWindowSeconds)||notificationWindowSeconds<30||notificationWindowSeconds>3600)return null;
+  return { timeZone:p.timeZone,weekdays:p.weekdays,startHour:p.startHour,endHour:p.endHour,maintenanceUntil:p.maintenanceUntil,reason:p.reason,notificationWindowSeconds };
 }
 export function expectedOnline(policy: WindowPolicy, now = new Date()): boolean {
   if (policy.maintenanceUntil && Date.parse(policy.maintenanceUntil)>now.getTime()) return false;
@@ -36,13 +38,15 @@ export async function observeApplication(origin: string, request: typeof fetch=f
   } catch { /* Fixed vocabulary only. */ } finally { clearTimeout(timer);controller.abort(); }
   return {component:"app",code,observedAt:new Date().toISOString(),correlation:randomUUID()};
 }
-export type ObserverState = { lastCode: Code; pending: Observation | null; attempts: number; nextAt: number };
-export function transition(previous: ObserverState | null, observation: Observation, now=Date.now()): ObserverState {
+export type ObserverState = { lastCode: Code; pending: Observation | null; attempts: number; nextAt: number; lastDeliveryAt: number };
+export function transition(previous: ObserverState | null, observation: Observation, now=Date.now(),windowSeconds=300): ObserverState {
   const changed = !previous || previous.lastCode!==observation.code;
+  const interval=Number.isInteger(windowSeconds)&&windowSeconds>=30&&windowSeconds<=3600?windowSeconds:300;
+  const lastDeliveryAt=previous?.lastDeliveryAt??0;
   // First healthy check does not announce recovery. Failed delivery is retained for bounded retry.
   if (changed && (failures.has(observation.code) || observation.code==="OK" && previous && failures.has(previous.lastCode)))
-    return {lastCode:observation.code,pending:observation,attempts:0,nextAt:now};
-  return previous ? {...previous,lastCode:observation.code} : {lastCode:observation.code,pending:null,attempts:0,nextAt:now};
+    return {lastCode:observation.code,pending:observation,attempts:0,nextAt:lastDeliveryAt?Math.max(now,lastDeliveryAt+interval*1000):now,lastDeliveryAt};
+  return previous ? {...previous,lastCode:observation.code} : {lastCode:observation.code,pending:null,attempts:0,nextAt:now,lastDeliveryAt};
 }
 export function readObserverState(input: unknown): ObserverState | null {
   if(!input||typeof input!=="object")return null;
@@ -50,7 +54,9 @@ export function readObserverState(input: unknown): ObserverState | null {
   if(!["OK","UNAVAILABLE","TIMEOUT"].includes(p.lastCode)||!Number.isInteger(p.attempts)||p.attempts<0||p.attempts>5||!Number.isFinite(p.nextAt))return null;
   const pending=p.pending===null?null:safeObservation(p.pending);
   if(p.pending!==null&&!pending)return null;
-  return {lastCode:p.lastCode,pending,attempts:p.attempts,nextAt:p.nextAt};
+  const lastDeliveryAt=p.lastDeliveryAt??0;
+  if(!Number.isFinite(lastDeliveryAt)||lastDeliveryAt<0)return null;
+  return {lastCode:p.lastCode,pending,attempts:p.attempts,nextAt:p.nextAt,lastDeliveryAt};
 }
 // Explicit opt-in endpoint owned by the deployment operator; never a document/user supplied URL.
 // The receiver deduplicates Idempotency-Key. No Telegram/chat/business identifiers are sent.
