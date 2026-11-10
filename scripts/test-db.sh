@@ -237,6 +237,7 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611080200_calculator_protected_product_fields.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611080300_kz_replenishment.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100100_admin_order_date_correction.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100300_carrier_directory.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -368,3 +369,5 @@ node "$ROOT/scripts/test-calculator-schema-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-calculator-fields-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-replenishment-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-order-date-concurrency.mjs" "${PSQL[@]}"
+
+node "$ROOT/scripts/test-freight-concurrency.mjs" "${PSQL[@]}"

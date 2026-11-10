@@ -29,6 +29,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Логистика", items: [
     { label: "Логист", href: "/logist", key: "logist" },
+    { label: "Перевозчики и рейсы", href: "/freight", key: "freight" },
     { label: "Календарь перевозок", href: "/calendar", key: "calendar" },
     { label: "Маршруты", href: "/routes", key: "routes" },
   ] },

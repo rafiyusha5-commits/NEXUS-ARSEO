@@ -40,6 +40,9 @@ $$;
 create table tests.sec_exec_allow (role_name text, fn text, primary key (role_name, fn));
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
+  'public.save_freight_directory','public.freight_directory','public.freight_directory_detail',
+  'public.freight_operation_choices','public.preview_freight_trip','public.save_freight_trip','public.freight_trips',
+  'public.freight_source_preview','public.freight_source_choices',
   'public.replenishment_create_profile', 'public.replenishment_set_purpose', 'public.replenishment_workspace', 'public.replenishment_capture', 'public.replenishment_prepare_draft',
   'public.exact_expense_allocation_context', 'public.save_exact_expense_allocation',
   'public.historical_sale_receipt_preview', 'public.record_historical_sale_receipt',
