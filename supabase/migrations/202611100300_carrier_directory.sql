@@ -348,6 +348,14 @@ returns boolean language sql stable security definer set search_path='' as $$
 $$;
 revoke all on function private.freight_trip_allowed(uuid,boolean) from public,anon,authenticated,service_role;
 
+create or replace function private.freight_snapshot_allowed(p_snapshot jsonb)
+returns boolean language sql stable security definer set search_path='' as $$
+ select jsonb_array_length(p_snapshot->'operations')>0 and not exists(
+  select 1 from jsonb_array_elements(p_snapshot->'operations') op
+  where not private.freight_operation_allowed(p_snapshot->>'mode',(op->>'id')::uuid))
+$$;
+revoke all on function private.freight_snapshot_allowed(jsonb) from public,anon,authenticated,service_role;
+
 create or replace function public.freight_operation_choices(p_mode text,p_after uuid default null)
 returns jsonb language plpgsql stable security definer set search_path='' as $$
 declare result jsonb;
@@ -436,6 +444,9 @@ declare entity uuid:=coalesce(p_id,gen_random_uuid());prev private.freight_trips
 begin
  if not private.freight_directory_allowed() or not private.has_permission('freight.context.manage') then raise exception 'Недостаточно прав' using errcode='42501';end if;
  if p_request is null or p_reason is null or length(btrim(p_reason)) not between 3 and 1000 then raise exception 'Укажите причину';end if;
+ if p_mode is null or p_mode not in('purchase','sale','transfer') or coalesce(cardinality(p_operations),0) not between 1 and 30
+  or jsonb_typeof(p_values) is distinct from 'object' then raise exception 'Выберите вид и операции рейса';end if;
+ if exists(select 1 from unnest(p_operations) x where x is null) or (select count(distinct x) from unnest(p_operations) x)<>cardinality(p_operations) then raise exception 'Повтор операции в рейсе';end if;
  digest:=encode(sha256(convert_to(jsonb_build_object('id',p_id,'version',p_version,'mode',p_mode,'operations',p_operations,'values',p_values,'preview',p_preview_digest,'reason',p_reason)::text,'UTF8')),'hex');
  perform pg_advisory_xact_lock(hashtextextended('freight-request:'||p_request,0));
  select * into req from private.freight_directory_requests where id=p_request;
@@ -449,7 +460,8 @@ begin
  if (p_id is not null and prev.id is null) or coalesce(prev.version,0) is distinct from p_version then raise exception 'Рейс изменился. Повторите предпросмотр';end if;
  if p_id is not null and (prev.mode<>p_mode or not private.freight_trip_allowed(entity,true)) then raise exception 'Рейс недоступен для изменения' using errcode='42501';end if;
  -- Stable lock order: operations, carrier, driver, vehicles, warehouses. The same rows are read again below.
- for op in select x from unnest(p_operations) x order by x loop
+ for op in select x from unnest(p_operations) x union select coalesce(transport_id,sale_id,transfer_id) from private.freight_trip_links where trip_id=entity order by 1 loop
+  if not private.freight_operation_allowed(p_mode,op,true) then raise exception 'Операция недоступна или уже проведена' using errcode='42501';end if;
   if p_mode='purchase' then
    perform 1 from public.shipments s where s.id=(select shipment_id from public.shipment_transports where id=op) for share;
    perform 1 from public.shipment_transports where id=op for share;
@@ -486,7 +498,9 @@ begin
  if not private.is_employee() or not private.has_permission('freight.context.read') then raise exception 'Нет доступа к рейсам' using errcode='42501';end if;
  if p_id is not null then
   if not private.freight_trip_allowed(p_id) then raise exception 'Рейс недоступен' using errcode='42501';end if;
-  select to_jsonb(t)||jsonb_build_object('history',(select coalesce(jsonb_agg(to_jsonb(v) order by version desc),'[]') from private.freight_trip_versions v where trip_id=p_id)) into result from private.freight_trips t where id=p_id;
+  select to_jsonb(t)||jsonb_build_object(
+   'history',(select coalesce(jsonb_agg(to_jsonb(v) order by version desc),'[]') from private.freight_trip_versions v where trip_id=p_id and private.freight_snapshot_allowed(v.snapshot)),
+   'history_hidden',exists(select 1 from private.freight_trip_versions v where trip_id=p_id and not private.freight_snapshot_allowed(v.snapshot))) into result from private.freight_trips t where id=p_id;
  else
   select coalesce(jsonb_agg(to_jsonb(r) order by id),'[]') into result from (
    select id,mode,version,snapshot,updated_at from private.freight_trips where (p_after is null or id>p_after) and private.freight_trip_allowed(id) order by id limit 51
