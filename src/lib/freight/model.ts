@@ -4,6 +4,15 @@ export type Option = { id: string; label: string; inactive?: boolean };
 export type Field = { key: string; label: string; required?: boolean; type?: "text" | "list" | "boolean" | "select"; options?: Option[]; max?: number };
 export const kinds: Record<Kind, string> = { carrier: "Перевозчики", driver: "Водители", vehicle: "Машины и прицепы", driver_documents: "Документы водителя" };
 export const modes = { purchase: "Импорт", sale: "Продажа", transfer: "Перемещение" };
+export function sourceFields(kind: Kind, source: Row | undefined): Row {
+  if(!source)return {};
+  const values:Row={};
+  const copy=(key:string)=>{if(typeof source[key]==="string"&&String(source[key]).trim())values[key]=source[key];};
+  if(kind==="driver"){copy("full_name");if(typeof source.phone==="string"&&source.phone.trim())values.phones=[source.phone];}
+  if(kind==="vehicle"){copy("plate_number");copy("make");}
+  // Names from a document never choose a legal entity, country or protected identity.
+  return values;
+}
 export function fieldValue(kind: Kind, record: Row | null | undefined, key: string): unknown {
   return kind === "carrier" && key === "active" ? record?.directory_active ?? record?.active : record?.[key];
 }

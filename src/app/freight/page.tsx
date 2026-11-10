@@ -6,7 +6,7 @@ import {loadDocumentActions} from "@/lib/documents/load-actions";
 import {requireUser} from "@/lib/auth/access";
 import {loadPermissions} from "@/lib/permissions";
 import {ruleViolationMessage} from "@/lib/errors/public-message";
-import {display,fieldValue,fields,kinds,modes,type Kind,type Row,type Option} from "@/lib/freight/model";
+import {display,fieldValue,fields,kinds,modes,sourceFields,type Kind,type Row,type Option} from "@/lib/freight/model";
 import {DirectoryForm,Snapshot,TripForm} from "./forms";
 import "./style.css";
 
@@ -19,6 +19,7 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
   const canManage=permission.has("carriers.directory.manage"),canTrip=permission.has("freight.context.manage");
   let error="",rows:Row[]=[],detail:Row|null=null,source:Row|null=null,companies:Option[]=[],carriers:Option[]=[],drivers:Option[]=[],vehicles:Option[]=[],warehouses:Option[]=[],operations:Option[]=[];
   const documentOptions:Option[]=[];
+  const sourceTargets:Partial<Record<Kind,Option[]>>={};
   async function rpc(name:string,args:Row):Promise<unknown>{const result=await supabase.rpc(name,args);if(result.error)throw new Error(ruleViolationMessage(result.error,"Раздел недоступен. Проверьте права и состояние базы."));return result.data;}
   async function allRpc(name:string,args:Row):Promise<Row[]>{const result:Row[]=[];let after:string|null=null;for(;;){const page=await rpc(name,{...args,p_after:after}) as Row[];result.push(...page.slice(0,50));if(page.length<=50)return result;after=String(page[49].id);}}
   async function options(table:"counterparties"|"warehouses"):Promise<Option[]>{const out:Option[]=[];for(let from=0;;from+=1000){const q=table==="counterparties"?supabase.from(table).select("id,legal_name,status").contains("roles",["carrier"]).order("id").range(from,from+999):supabase.from(table).select("id,name,status").order("id").range(from,from+999);const r=await q;if(r.error)throw new Error("Не удалось загрузить справочник выбора");for(const row of r.data??[]){const x=row as unknown as Row;out.push({id:String(x.id),label:String(x.legal_name??(x.name as Row)?.ru),inactive:x.status!=="active"});}if((r.data??[]).length<1000)return out;}}
@@ -30,6 +31,9 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
       const type=params.source_type==="extraction"?"extraction":"transport";
       rows=await rpc("freight_source_choices",{p_type:type,p_after:params.after??null}) as Row[];
       if(params.source_id)source=await rpc("freight_source_preview",{p_type:type,p_id:params.source_id}) as Row;
+      if(source&&canManage)for(const target of ["carrier","driver","vehicle"] as Kind[]){
+        sourceTargets[target]=(await allRpc("freight_directory",{p_kind:target,p_query:""})).map(x=>({id:String(x.id),label:display(x.name??x.full_name??x.plate_number)+(x.registration_country?" · "+String(x.registration_country):"")}));
+      }
     }else if(kind in kinds){
       if(kind!=="driver_documents")rows=await rpc("freight_directory",{p_kind:kind,p_query:params.q??"",p_after:params.after??null}) as Row[];
       if(params.edit)detail=await rpc("freight_directory_detail",{p_kind:kind,p_id:params.edit}) as Row;
@@ -60,7 +64,7 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
   const documents=await loadDocumentActions(supabase,[typeof record?.framework_contract_id==="string"?record.framework_contract_id:null,typeof (source?.source as Row)?.document_id==="string"?(source!.source as Row).document_id as string:null]);
   const showRows=rows.slice(0,50),sourceRef=source?{type:(source.source as Row).type,id:(source.source as Row).id,stamp:source.stamp}:undefined;
   const proposed=source?.suggested as Row|undefined;
-  const initial=record??(kind==="driver_documents"&&params.edit?{driver_id:params.edit,version:0}:proposed?(kind==="driver"?{full_name:proposed.full_name,phones:proposed.phone?[proposed.phone]:[]}:kind==="vehicle"?{plate_number:proposed.plate_number,make:proposed.make}:null):null);
+  const initial=record??(kind==="driver_documents"&&params.edit?{driver_id:params.edit,version:0}:null);
   const formKey=[kind,params.edit,params.source_id,record?.directory_version].join(":");
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="freight"/><section className="workspace admin-workspace freight-workspace">
     <header className="topbar"><div><p className="eyebrow">Логистика</p><h1>Перевозчики и рейсы</h1></div></header>
@@ -74,7 +78,7 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
       </section>
       {(params.edit||params.new==="1"||source)&&<section className="panel admin-section"><h2>{params.edit?"Реквизиты и история":"Новая запись"}</h2>
         {source&&<p>Источник: {display((source.source as Row).label)}. Поля подставлены как предложение; выберите правильные связи и проверьте каждое значение.</p>}
-        {canManage?<DirectoryForm key={formKey} kind={kind as Kind} record={initial} companies={companies} carriers={carriers} documents={documentOptions} request={randomUUID()} source={sourceRef}/>:<dl>{fields(kind as Kind,companies,carriers,documentOptions).map(f=><div key={f.key}><dt>{f.label}</dt><dd>{display(fieldValue(kind as Kind,record,f.key))}</dd></div>)}</dl>}
+        {canManage?<DirectoryForm key={formKey} kind={kind as Kind} record={initial} companies={companies} carriers={carriers} documents={documentOptions} request={randomUUID()} source={sourceRef} proposal={sourceFields(kind as Kind,proposed)}/>:<dl>{fields(kind as Kind,companies,carriers,documentOptions).map(f=><div key={f.key}><dt>{f.label}</dt><dd>{display(fieldValue(kind as Kind,record,f.key))}</dd></div>)}</dl>}
         {kind==="driver"&&params.edit&&permission.has("drivers.documents.view")&&<p><Link href={`/freight?kind=driver_documents&edit=${params.edit}`}>Документы водителя — ограниченный доступ</Link></p>}
         {kind==="carrier"&&typeof record?.counterparty_id==="string"&&<p><Link href={`/counterparties/${record.counterparty_id}?tab=contacts`}>Контакты перевозчика</Link>{" · "}<Link href={`/counterparties/${record.counterparty_id}?tab=details`}>Реквизиты юридического лица</Link></p>}
         {typeof record?.framework_contract_id==="string"&&<DocumentActions document={documents[record.framework_contract_id]}/>}
@@ -96,6 +100,10 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
       {source&&<><h3>{display((source.source as Row).label)}</h3><dl>{Object.entries({"Перевозчик":proposed?.carrier_name,"Водитель":proposed?.full_name,"Телефон":proposed?.phone,"Госномер":proposed?.plate_number,"Марка":proposed?.make,"Прицеп":proposed?.trailer_plate}).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{display(value)}</dd></div>)}</dl>
         {typeof (source.source as Row).document_id==="string"&&<DocumentActions document={documents[String((source.source as Row).document_id)]}/>}
         {(["carrier","driver","vehicle"] as Kind[]).map(k=><p key={k}><Link href={`/freight?kind=${k}&source_type=${(source.source as Row).type}&source_id=${(source.source as Row).id}${(source.existing as Row)[k]?"&edit="+(source.existing as Row)[k]:""}`}>{(source.existing as Row)[k]?"Открыть перенесённую запись":"Подготовить запись"}: {kinds[k]}</Link></p>)}
+        {canManage&&(["carrier","driver","vehicle"] as Kind[]).filter(k=>!(source.existing as Row)[k]&&sourceTargets[k]?.length).map(k=><form key={k} className="freight-search" aria-label={`Сопоставить: ${kinds[k]}`}>
+          <input type="hidden" name="kind" value={k}/><input type="hidden" name="source_type" value={String((source.source as Row).type)}/><input type="hidden" name="source_id" value={String((source.source as Row).id)}/>
+          <label htmlFor={`source-existing-${k}`}>Уже есть в Nexus: {kinds[k]}</label><select id={`source-existing-${k}`} name="edit" required defaultValue=""><option value="">Выберите существующую запись</option>{sourceTargets[k]!.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select><button>Сравнить с существующей записью</button>
+        </form>)}
       </>}
     </section>}
     {rows.length>50&&<Link href={`/freight?${new URLSearchParams({...Object.fromEntries(Object.entries(params).filter((x):x is [string,string]=>x[1]!==undefined)),after:String(rows[49].id)})}`}>Следующие 50</Link>}

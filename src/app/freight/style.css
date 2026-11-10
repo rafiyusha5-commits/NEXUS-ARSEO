@@ -7,7 +7,7 @@
 .freight-form[hidden] { display:none; }
 .freight-choice { display:grid; gap:.4rem; }
 .freight-form label,.freight-search label { display:grid; gap:.4rem; font-weight:500; }
-.freight-form input:not([type=checkbox]),.freight-form select,.freight-form textarea,.freight-search input { width:100%; min-width:0; padding:.7rem; border:1px solid #aaa; border-radius:10px; background:#fff; color:#171717; }
+.freight-form input:not([type=checkbox]),.freight-form select,.freight-form textarea,.freight-search input,.freight-search select { width:100%; min-width:0; max-width:100%; padding:.7rem; border:1px solid #aaa; border-radius:10px; background:#fff; color:#171717; }
 .freight-form textarea { min-height:5rem; }
 .freight-form fieldset { border:1px solid #ccc; border-radius:12px; padding:1rem; min-width:0; display:grid; gap:.8rem; }
 .freight-form .freight-checkbox { display:flex; align-items:center; gap:.6rem; }

@@ -1,7 +1,13 @@
 import {describe,it} from 'node:test';
 import assert from 'node:assert/strict';
-import {directoryValues,tripValues,fields,fieldValue} from '../../src/lib/freight/model.ts';
+import {directoryValues,tripValues,fields,fieldValue,sourceFields} from '../../src/lib/freight/model.ts';
 describe('freight form payloads',()=>{
+ it('proposes only reviewed source fields without guessing identity or clearing absent values',()=>{
+  const source={full_name:'Источник',phone:'+7000',carrier_id:'untrusted',registration_country:'PL',iin:'private',plate_number:'ABC',make:''};
+  assert.deepEqual(sourceFields('driver',source),{full_name:'Источник',phones:['+7000']});
+  assert.deepEqual(sourceFields('vehicle',source),{plate_number:'ABC'});
+  assert.deepEqual(sourceFields('carrier',source),{});assert.deepEqual(sourceFields('driver',undefined),{});
+ });
  it('does not reactivate an inactive carrier when reopening its form',()=>{
   assert.equal(fieldValue('carrier',{directory_active:false},'active'),false);
   assert.equal(fieldValue('driver',{active:false},'active'),false);

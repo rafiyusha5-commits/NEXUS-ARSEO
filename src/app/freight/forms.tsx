@@ -7,18 +7,19 @@ function Choice({name,label,options,required=false,value}: {name:string;label:st
   const id=useId();
   return <div className="freight-choice"><label htmlFor={id}>{label}</label><select id={id} name={name} defaultValue={value??""} required={required}><option value="">Не выбрано</option>{options.map(o=><option key={o.id} value={o.id} disabled={o.inactive&&o.id!==value}>{o.label}{o.inactive?" · неактивен":""}</option>)}</select></div>;
 }
-export function DirectoryForm({kind,record,companies,carriers,documents,request,source}: {kind:Kind;record:Row|null;companies:Option[];carriers:Option[];documents:Option[];request:string;source?:Row}) {
+export function DirectoryForm({kind,record,companies,carriers,documents,request,source,proposal}: {kind:Kind;record:Row|null;companies:Option[];carriers:Option[];documents:Option[];request:string;source?:Row;proposal?:Row}) {
   const [review,setReview]=useState<{values:Row;reason:string}|null>(null),[error,setError]=useState(""),[saved,setSaved]=useState<string|null>(null),[pending,start]=useTransition();
   const definitions=fields(kind,companies,carriers,documents);
+  const inputs={...record,...proposal};
   const id=typeof record?.id==="string"?record.id:typeof record?.driver_id==="string"?record.driver_id:null;
   if(saved)return <div role="status" className="login-success">Сохранено с историей. <a href={`/freight?kind=${kind}&edit=${saved}`}>Открыть запись</a></div>;
   const show=(key:string,value:unknown)=>definitions.find(f=>f.key===key)?.options?.find(o=>o.id===value)?.label??display(value);
   return <div>{error&&<p role="alert" className="login-error">{error}</p>}
     <form className="freight-form" hidden={!!review} onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);const values=directoryValues(kind,form);if(source)values.source=source;setReview({values,reason:String(form.get("reason")??"")});setError("");}}>
-      {definitions.map(f=><div key={f.key}>{f.type==="select"?<Choice name={f.key} label={f.label} options={f.options??[]} required={f.required} value={typeof record?.[f.key]==="string"?record[f.key] as string:undefined}/>:
-        f.type==="boolean"?<label className="freight-checkbox"><input name={f.key} type="checkbox" defaultChecked={fieldValue(kind,record,f.key)!==false}/>{f.label}</label>:
-        <label>{f.label}{f.type==="list"?<textarea name={f.key} defaultValue={Array.isArray(record?.[f.key])?(record[f.key] as string[]).join("\n"):""} maxLength={4000}/>:
-        <input name={f.key} defaultValue={record?.[f.key]==null?"":String(record[f.key])} required={f.required} maxLength={f.max??100} autoComplete="off"/>}</label>}</div>)}
+      {definitions.map(f=><div key={f.key}>{f.type==="select"?<Choice name={f.key} label={f.label} options={f.options??[]} required={f.required} value={typeof inputs[f.key]==="string"?inputs[f.key] as string:undefined}/>:
+        f.type==="boolean"?<label className="freight-checkbox"><input name={f.key} type="checkbox" defaultChecked={fieldValue(kind,inputs,f.key)!==false}/>{f.label}</label>:
+        <label>{f.label}{f.type==="list"?<textarea name={f.key} defaultValue={Array.isArray(inputs[f.key])?(inputs[f.key] as string[]).join("\n"):""} maxLength={4000}/>:
+        <input name={f.key} defaultValue={inputs[f.key]==null?"":String(inputs[f.key])} required={f.required} maxLength={f.max??100} autoComplete="off"/>}</label>}</div>)}
       <label>Причина изменения<input name="reason" required minLength={3} maxLength={1000}/></label>
       <button type="submit">Проверить изменения</button>
     </form>{review&&<section aria-label="Предпросмотр изменений"><h3>Проверьте перед сохранением</h3><div className="freight-table"><table><thead><tr><th>Поле</th><th>Сейчас</th><th>После сохранения</th></tr></thead><tbody>{definitions.map(f=><tr key={f.key}><th>{f.label}</th><td>{show(f.key,fieldValue(kind,record,f.key))}</td><td>{show(f.key,review.values[f.key])}</td></tr>)}</tbody></table></div>

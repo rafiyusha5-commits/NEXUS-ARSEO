@@ -29,6 +29,17 @@ export async function runFreightForms({chromium,base,email,password,restrictedEm
   await page.goto(base+'/freight?kind=driver&new=1');await page.getByLabel('ФИО',{exact:true}).fill('Водитель браузерного теста');await page.getByLabel('Телефоны (каждый с новой строки)').fill('+70000000000');await page.getByLabel('Перевозчик',{exact:true}).selectOption(carrier);await page.getByLabel('Причина изменения',{exact:true}).fill('Браузерная проверка');
   await page.getByRole('button',{name:'Проверить изменения',exact:true}).click();await page.getByRole('button',{name:'Вернуться к полям',exact:true}).click();assert.equal(await page.getByLabel('ФИО',{exact:true}).inputValue(),'Водитель браузерного теста');await saveDirectory();
   const driver=sql("select id from public.freight_drivers where full_name='Водитель браузерного теста'").trim();
+  const driverSource=JSON.parse(sql("select json_build_object('id',id,'name',driver_name) from public.shipment_transports where nullif(btrim(driver_name),'') is not null order by id limit 1"));
+  const driverCount=sql('select count(*) from public.freight_drivers').trim();
+  await page.goto(base+`/freight?kind=sources&source_type=transport&source_id=${driverSource.id}`);
+  const match=page.getByRole('form',{name:'Сопоставить: Водители',exact:true});
+  await match.getByLabel('Уже есть в Nexus: Водители',{exact:true}).selectOption(driver);
+  await match.getByRole('button',{name:'Сравнить с существующей записью',exact:true}).click();
+  await page.waitForURL(url=>url.searchParams.get('edit')===driver);
+  assert.equal(await page.getByLabel('ФИО',{exact:true}).inputValue(),driverSource.name);
+  await page.getByLabel('Причина изменения',{exact:true}).fill('Сопоставлено с уже созданным водителем');await saveDirectory();
+  assert.equal(sql('select count(*) from public.freight_drivers').trim(),driverCount);
+  assert.equal(sql(`select entity_id from private.freight_source_bindings where source_type='transport' and source_id='${driverSource.id}' and kind='driver'`).trim(),driver);
   await page.goto(base+`/freight?kind=driver_documents&edit=${driver}`);await page.getByLabel('ИИН',{exact:true}).fill('123456789012');await page.getByLabel('Реквизиты документа водителя',{exact:true}).fill('FREIGHT-SECRET-SENTINEL');await page.getByLabel('Причина изменения',{exact:true}).fill('Защищённая запись');await saveDirectory();
   await page.goto(base+'/freight?kind=vehicle&new=1');await page.getByLabel('Перевозчик',{exact:true}).selectOption(carrier);await page.getByLabel('Госномер',{exact:true}).fill('TEST-012');await page.getByLabel('Страна регистрации (KZ, PL, RU…)').fill('KZ');await page.getByLabel('Тип транспорта',{exact:true}).selectOption('truck');await page.getByLabel('Статус',{exact:true}).selectOption('active');await page.getByLabel('Причина изменения',{exact:true}).fill('Браузерная проверка');await saveDirectory();
   const vehicle=sql("select id from public.vehicles where plate_number='TEST-012'").trim();
@@ -42,7 +53,7 @@ export async function runFreightForms({chromium,base,email,password,restrictedEm
   assert.equal(sql(`select count(*) from private.freight_trip_links where sale_id='${sale}'`).trim(),'1');assert.equal(business(),before);
   // A permitted ordinary employee sees driver name, never protected record or private-table API.
   sql(`insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select u.id,p.id,'allow','Synthetic freight restricted view','${refs.user}' from public.profiles u cross join public.permissions p where u.id=(select id from auth.users where email='${restrictedEmail}') and p.code in('carriers.directory.read','freight.context.read');`);
-  await context.clearCookies();await login(restrictedEmail);await page.goto(base+`/freight?kind=driver&edit=${driver}`);assert.match(await page.locator('body').innerText(),/Водитель браузерного теста/);assert.ok(!(await page.locator('body').innerText()).includes('123456789012'));
+  await context.clearCookies();await login(restrictedEmail);await page.goto(base+`/freight?kind=driver&edit=${driver}`);assert.ok((await page.locator('body').innerText()).includes(driverSource.name));assert.ok(!(await page.locator('body').innerText()).includes('123456789012'));
   const access=await token(restrictedEmail);const headers={apikey:keys.ANON_KEY,Authorization:`Bearer ${access}`,'Content-Type':'application/json'};
   const denied=await fetch(new URL('/rest/v1/rpc/freight_directory_detail',api),{method:'POST',headers,body:JSON.stringify({p_kind:'driver_documents',p_id:driver})});assert.equal(denied.status,403);assert.ok(!(await denied.text()).includes('FREIGHT-SECRET-SENTINEL'));
   const hidden=await fetch(new URL('/rest/v1/freight_driver_documents?select=*',api),{headers});assert.ok(!hidden.ok);
