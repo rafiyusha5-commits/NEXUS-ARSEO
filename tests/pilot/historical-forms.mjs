@@ -402,6 +402,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
       await page.getByRole('button',{name:'2. Источники значений',exact:true}).click();
+      await page.getByRole('link',{name:'Источник строки',exact:true}).first().waitFor({state:'visible'});
       assert.ok(await page.getByRole('link',{name:'Источник строки',exact:true}).count()>0,'Existing parsed invoice/packing rows must be visible');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       await page.screenshot({path:join(output,`preparation-${width}.png`),fullPage:true});

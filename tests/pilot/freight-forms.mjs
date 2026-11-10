@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
+import {writeFileSync} from 'node:fs';
 export async function runFreightForms({chromium,base,email,password,restrictedEmail,refs,sql,output,api,keys}) {
  assert.equal(base,'http://127.0.0.1:3100');assert.equal(api.origin,'http://127.0.0.1:54321');
  const company=randomUUID(),sale=randomUUID();
@@ -52,5 +53,10 @@ export async function runFreightForms({chromium,base,email,password,restrictedEm
   sql(`update public.user_permission_overrides set effect='deny' where user_id='${refs.user}' and permission_id=(select id from public.permissions where code='carriers.directory.read');`);
   await context.clearCookies();await login(email);await page.goto(base+'/freight');assert.match(await page.locator('body').innerText(),/Недостаточно прав/);assert.equal(await page.getByRole('link',{name:'Добавить запись'}).count(),0);
   assert.equal(business(),before);console.log('PASS freight browser: real Auth, carrier/driver/vehicle forms, preview/back, sale trip, privacy/direct RPC/denial, 1440/390 keyboard, no business effects');
+ }catch(error){
+  // This runner accepts only the disposable local fixture; no owner documents or credentials.
+  await page.screenshot({path:join(output,'freight-failure.png'),fullPage:true}).catch(()=>{});
+  writeFileSync(join(output,'freight-failure.txt'),await page.locator('body').innerText().catch(()=>''));
+  throw error;
  }finally{await browser.close();sql(`update public.profiles set user_type='employee',counterparty_id=null where id=(select id from auth.users where email='${restrictedEmail}');delete from public.user_permission_overrides where user_id='${refs.user}' and permission_id in(select id from public.permissions where code in('carriers.directory.read','carriers.directory.manage','freight.context.read','freight.context.manage','drivers.documents.view'));`);}
 }

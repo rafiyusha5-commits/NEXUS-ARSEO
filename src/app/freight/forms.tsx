@@ -1,10 +1,11 @@
 "use client";
-import {useState,useTransition} from "react";
+import {useId,useState,useTransition} from "react";
 import {saveDirectory,previewTrip,saveTrip} from "./actions";
 import {directoryValues,display,fieldValue,fields,modes,tripValues,type Kind,type Option,type Row} from "@/lib/freight/model";
 
 function Choice({name,label,options,required=false,value}: {name:string;label:string;options:Option[];required?:boolean;value?:string}) {
-  return <label>{label}<select name={name} defaultValue={value??""} required={required}><option value="">Не выбрано</option>{options.map(o=><option key={o.id} value={o.id} disabled={o.inactive&&o.id!==value}>{o.label}{o.inactive?" · неактивен":""}</option>)}</select></label>;
+  const id=useId();
+  return <div className="freight-choice"><label htmlFor={id}>{label}</label><select id={id} name={name} defaultValue={value??""} required={required}><option value="">Не выбрано</option>{options.map(o=><option key={o.id} value={o.id} disabled={o.inactive&&o.id!==value}>{o.label}{o.inactive?" · неактивен":""}</option>)}</select></div>;
 }
 export function DirectoryForm({kind,record,companies,carriers,documents,request,source}: {kind:Kind;record:Row|null;companies:Option[];carriers:Option[];documents:Option[];request:string;source?:Row}) {
   const [review,setReview]=useState<{values:Row;reason:string}|null>(null),[error,setError]=useState(""),[saved,setSaved]=useState<string|null>(null),[pending,start]=useTransition();
