@@ -58,6 +58,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Аналитика", href: "/analytics", key: "analytics" },
   ] },
   { label: "Администрирование", items: [
+    { label: "Состояние системы", href: "/admin/health", key: "health" },
     { label: "Сотрудники", href: "/admin/users", key: "users", managerOnly: true },
     { label: "Доступ клиентов", href: "/admin/client-access", key: "client-access", managerOnly: true },
     { label: "Роли и права", href: "/admin/roles", key: "roles", managerOnly: true },

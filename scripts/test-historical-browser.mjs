@@ -14,6 +14,7 @@ import {runRecoveryDrill, assertLocalDocker} from '../tests/recovery/drill.mjs';
 import {startFaultHttp} from '../tests/pilot/fault-http.mjs';
 import {runDocumentFaults} from '../tests/pilot/document-faults.mjs';
 import {runReplenishmentForms} from '../tests/pilot/replenishment-forms.mjs';
+import {runMonitoringForms} from '../tests/pilot/monitoring-forms.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const recovery=process.argv.length===3&&process.argv[2]==='--recovery';
@@ -111,6 +112,9 @@ try{
     'https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap':"@font-face {font-family: 'Golos Text'; src: local('Arial'); font-weight: 400 700;}",
   }));
   const env={...hostEnv,NODE_ENV:'production',NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:api.origin,
+    MONITORING_ENVIRONMENT:'test',MONITORING_SERVICE_KEY:keys.SERVICE_ROLE_KEY,
+    MONITORING_STORAGE_BUCKET:'monitoring-canary',MONITORING_STORAGE_OBJECT:'canary.txt',MONITORING_STORAGE_SHA256:createHash('sha256').update('nexus-canary').digest('hex'),
+    MONITORING_DRIVE_MODE:'manual',MONITORING_OCR_MODE:'manual',MONITORING_TELEGRAM_MODE:'disabled',
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:keys.ANON_KEY,APP_ORIGIN:'http://127.0.0.1:3100',
     DRIVE_CATALOG_GATEWAY_SECRET:gateway,GOOGLE_SERVICE_ACCOUNT_EMAIL:'synthetic@pilot.iam.gserviceaccount.com',
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}}).privateKey,
@@ -142,6 +146,7 @@ try{
   writeFileSync(join(output,'browser-result.json'),JSON.stringify({...evidence,backend:`Local Supabase, PostgreSQL ${version}`,externalRequests:requests.length},null,2));
   console.log('PASS full authenticated browser scenario',JSON.stringify(evidence));
   if(!recovery)await runReplenishmentForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output});
+  if(!recovery)await runMonitoringForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output,api,keys,http:faultHttp,stopApp,startApp,root,work,hostEnv});
   if(faultHttp){
     await runDocumentFaults({chromium,base:'http://127.0.0.1:3100',email,password,refs,sql,output,fixtures,http:faultHttp,
       async restart(){
