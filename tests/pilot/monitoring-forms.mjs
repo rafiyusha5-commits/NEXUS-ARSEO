@@ -19,6 +19,13 @@ export async function runMonitoringForms({chromium,base,email,password,restricte
   const ready=await fetch(base+'/api/health/ready');assert.equal(ready.status,200);assert.deepEqual(await ready.json(),{status:'ok'});
   await login(email);await page.goto(base+'/admin/health');await page.getByRole('heading',{name:'Состояние системы',exact:true}).waitFor();
   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});assert.match(await page.locator('body').innerText(),/Не подтверждено: нет проверенного отчёта/);assert.ok(await page.getByRole('link',{name:'Обновить состояние'}).isVisible());await page.getByRole('link',{name:'Обновить состояние'}).focus();assert.equal(await page.getByRole('link',{name:'Обновить состояние'}).evaluate(el=>el===document.activeElement),true);await page.screenshot({path:join(output,`monitoring-${width}.png`),fullPage:true});}
+  sql(`update public.profiles set user_type='external',counterparty_id='${refs.customer}' where id='${refs.user}';`);
+  await page.reload();await page.waitForURL(url=>url.pathname.startsWith('/portal'));
+  const signedIn=await fetch(new URL('/auth/v1/token?grant_type=password',api),{method:'POST',headers:{apikey:keys.ANON_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.ok(signedIn.ok);
+  const session=await signedIn.json();
+  const portalRead=await fetch(new URL('/rest/v1/rpc/system_health_jobs',api),{method:'POST',headers:{apikey:keys.ANON_KEY,Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:'{}'});assert.equal(portalRead.status,403);
+  sql(`update public.profiles set user_type='employee',counterparty_id=null where id='${refs.user}';`);
+  await page.goto(base+'/admin/health');
   sql(`update public.user_permission_overrides set effect='deny' where user_id='${refs.user}' and permission_id=(select id from public.permissions where code='system.health.view');`);
   await page.reload();assert.match(await page.locator('body').innerText(),/Нет доступа к диагностике/);assert.equal(await page.getByRole('heading',{name:'Инциденты',exact:true}).count(),0);
   await context.clearCookies();await login(restrictedEmail);await page.goto(base+'/admin/health');assert.match(await page.locator('body').innerText(),/Нет доступа к диагностике/);
@@ -40,5 +47,5 @@ export async function runMonitoringForms({chromium,base,email,password,restricte
   assert.match(readFileSync(join(logdir,'observer-state.json'),'utf8'),/"code":"OK"/);
   assert.equal(business(),before,'Monitoring must not change stock, finance, sales or shipments');
   console.log('PASS monitoring: real Auth/Storage, permissions, faults <5s, app stop/recovery, 1440/390 keyboard, no business changes');
- }finally{await browser.close();sql(`delete from public.user_permission_overrides where user_id='${refs.user}' and permission_id=(select id from public.permissions where code='system.health.view');`);}
+ }finally{await browser.close();sql(`update public.profiles set user_type='employee',counterparty_id=null where id='${refs.user}';delete from public.user_permission_overrides where user_id='${refs.user}' and permission_id=(select id from public.permissions where code='system.health.view');`);}
 }

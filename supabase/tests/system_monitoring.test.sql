@@ -97,6 +97,15 @@ update public.profiles set is_active=false where id='ae020000-0000-4000-8000-000
 set local role authenticated;
 select pg_temp.health_reject($q$select public.system_health_jobs()$q$);
 reset role;
+-- A portal profile cannot read diagnostics even if an allow override remains.
+insert into public.counterparties(id,roles,legal_name,country) values
+ ('ae020000-0000-4000-8000-000000000009',array['customer'],'Synthetic monitoring portal','KZ');
+update public.profiles set is_active=true,user_type='external',counterparty_id='ae020000-0000-4000-8000-000000000009'
+ where id='ae020000-0000-4000-8000-000000000001';
+set local role authenticated;
+select pg_temp.health_reject($q$select public.system_health_snapshot('test')$q$);
+select pg_temp.health_reject($q$select public.system_health_jobs()$q$);
+reset role;
 do $$declare b record;begin
  select * into b from health_business_before;
  assert b.shipments=(select md5(coalesce(jsonb_agg(to_jsonb(s) order by id)::text,'')) from public.shipments s);

@@ -25,6 +25,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
       evidence.ocrIndicator=true;
     }
     const response=await responsePromise;
+    await response.finished(); // Headers alone do not mean the Next action/navigation has settled.
     console.log('FORM:',label??'submit',response.status(),response.headers()['x-action-redirect']??'(no redirect)');
     const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
     if(redirect)await page.waitForURL(new URL(redirect,base).href);
@@ -399,6 +400,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     assert.equal(await page.locator('.historical-card select').first().inputValue(),'procurement');
     await submit(buttonForm('Сохранить черновик'),'Сохранить черновик');
     assert.equal(q(`select to_jsonb(revision) from public.historical_shipment_drafts where id='${draft}';`),saved.revision);
+    await go(`/shipments/prepare?shipment=${shipment}&draft=${draft}`);
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
       await page.getByRole('button',{name:'2. Источники значений',exact:true}).click();
