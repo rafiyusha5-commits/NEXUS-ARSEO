@@ -1,4 +1,5 @@
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { AdminOrderDateCorrection } from "@/components/sales/admin-order-date-correction";
 import { WorkflowHelp } from "@/components/workflow-help";
 import { linkedDocuments, LinkedDocuments } from "@/components/documents/linked-documents";
 import Link from "next/link";
@@ -65,6 +66,7 @@ export default async function SalePage({
     .maybeSingle();
   if (!sale) notFound();
   const { data: canBackdate } = await supabase.rpc("can_record_historical_sale");
+  const { data: canCorrectDate } = await supabase.rpc("can_correct_customer_order_date");
   const canMutate = !sale.historical_shipment_date || canBackdate === true;
   const receiptPreview = sale.historical_shipment_date ? await supabase.rpc("historical_sale_receipt_preview", { p_sale_id: id }) : { data: null, error: null };
   const receiptHistory = sale.historical_shipment_date ? await selectAll((from, to) => supabase.from("historical_sale_receipts")
@@ -76,7 +78,7 @@ export default async function SalePage({
   const canFulfill = canMutate && ["sales.manage", "inventory.move"].every(code => (fulfillmentPermissions ?? []).includes(code));
   // What the shipment would stop at, all at once (customer_order_shipping_blockers); only a confirmed order has it.
   const { data: blockers, error: blockersError } = sale.status === "confirmed" ? await supabase.rpc("customer_order_shipping_blockers", { p_sale_id: id }) : { data: [], error: null };
-  const { data: dateChanges } = await supabase.from("sale_shipment_date_changes").select("id,previous_date,new_date,reason,changed_at").eq("sale_id", id).order("changed_at", { ascending: false });
+  const { data: dateChanges } = await supabase.from("sale_shipment_date_changes").select("id,previous_date,new_date,reason,changed_at,change_kind,changed_by,actor:profiles(full_name)").eq("sale_id", id).order("changed_at", { ascending: false });
   const canReschedule = !sale.historical_shipment_date && ["draft", "reserved", "confirmed"].includes(sale.status) && ["sales.view", "sales.manage"].every(code => (fulfillmentPermissions ?? []).includes(code));
   const businessToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty" }).format(new Date());
 
@@ -121,7 +123,7 @@ export default async function SalePage({
       return { at: event.created_at as string, title: "Заменены зарезервированные партии", detail: `${event.reason}. Было: ${describe(old)}. Стало: ${describe(next)}. Сотрудник: ${one(event.actor)?.full_name ?? event.created_by}` };
     }),
     ...(preparationReturns ?? []).map(event => ({ at: event.created_at as string, title: "Заказ возвращён к подготовке", detail: event.reason as string })),
-    ...(dateChanges ?? []).map(event => ({ at: event.changed_at as string, title: `Отгрузка перенесена: ${formatDate(event.previous_date)} → ${formatDate(event.new_date)}`, detail: event.reason as string })),
+    ...(dateChanges ?? []).map(event => ({ at: event.changed_at as string, title: `${event.change_kind === "admin_correction" ? "Дата исправлена администратором" : "Отгрузка перенесена"}: ${formatDate(event.previous_date)} → ${formatDate(event.new_date)}`, detail: `${event.reason}. Сотрудник: ${one(event.actor)?.full_name ?? event.changed_by ?? "—"}` })),
     { at: sale.created_at as string, title: sale.historical_shipment_date ? "Внесена историческая продажа" : "Заказ создан", detail: sale.historical_shipment_date ? `${sale.sale_number} · отгрузка ${formatDate(sale.historical_shipment_date)} · ${sale.historical_reference} · ${sale.historical_reason}` : sale.sale_number as string },
     ...(sale.confirmed_at ? [{ at: sale.confirmed_at as string, title: "Заказ подтверждён", detail: "Резервы проверены" }] : []),
     ...(sale.shipped_at ? [{ at: (sale.shipped_recorded_at ?? sale.shipped_at) as string, title: sale.historical_shipment_date ? "Проведена историческая продажа" : "Заказ отгружен", detail: sale.historical_shipment_date ? `Фактическая дата: ${formatDate(sale.historical_shipment_date)}. Зарезервированные партии списаны; время записи сохранено отдельно.` : "Зарезервированные партии списаны, движения записаны" }] : []),
@@ -174,6 +176,7 @@ export default async function SalePage({
         {sale.status === "confirmed" && canReturnToPreparation && <form action={returnCustomerOrderToPreparation} className="inline-action"><input type="hidden" name="sale_id" value={id}/><p className="form-help">Если партия заблокирована, просрочена или ОСГ снизился, верните заказ к подготовке. Номер, товары и резервы сохранятся. Действующие гарантийные письма будут отменены с сохранением истории; после проверки потребуется новое подтверждение заказа.</p><input name="reason" required maxLength={500} aria-label="Причина возврата к подготовке" placeholder="Причина возврата к подготовке"/><PendingSubmitButton pendingText="Выполняем…" className="secondary" type="submit">Вернуть к подготовке</PendingSubmitButton></form>}
         {sale.status === "confirmed" && canReplace && <ReservationReplacement saleId={id}/>}
         {sale.status === "confirmed" && canFulfill && <form action={fulfillCustomerOrder}><input type="hidden" name="sale_id" value={id}/><p className="form-help">Будут списаны все зарезервированные партии заказа. Требуются права управления продажами и складского движения.</p><PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Отгрузить заказ полностью</PendingSubmitButton></form>}
+        {canCorrectDate === true && sale.status === "draft" && !sale.historical_shipment_date && !activeReservations.length && <AdminOrderDateCorrection saleId={id} currentDate={sale.planned_shipment_date} orderDate={sale.sale_date} today={businessToday} requestId={crypto.randomUUID()}/>}
         {sale.status === "shipped" && <p className="form-help">Отгрузка выполнена {sale.historical_shipment_date ? formatDate(sale.historical_shipment_date) : formatDateTime(sale.shipped_at)}. <Link href="/inventory/movements">Журнал складских движений</Link></p>}
         {sale.status === "shipped" && (items ?? []).flatMap(item => (item.reservations ?? [])
           .filter((r: { status: string }) => r.status === "fulfilled")
