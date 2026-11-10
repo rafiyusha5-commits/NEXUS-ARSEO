@@ -25,7 +25,6 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
       evidence.ocrIndicator=true;
     }
     const response=await responsePromise;
-    await response.finished(); // Headers alone do not mean the Next action/navigation has settled.
     console.log('FORM:',label??'submit',response.status(),response.headers()['x-action-redirect']??'(no redirect)');
     const redirect=response.headers()['x-action-redirect']?.split(';')[0]??response.headers().location;
     if(redirect)await page.waitForURL(new URL(redirect,base).href);
