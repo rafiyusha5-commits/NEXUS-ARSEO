@@ -1,0 +1,26 @@
+.freight-workspace { min-width: 0; }
+.freight-tabs,.freight-buttons,.freight-search { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; }
+.freight-tabs { margin-block:1.25rem; }
+.freight-tabs a { color:var(--accent,#D62424); text-decoration:underline; text-underline-offset:3px; }
+.freight-tabs a[aria-current=page] { font-weight:700; }
+.freight-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.freight-form[hidden] { display:none; }
+.freight-choice { display:grid; gap:.4rem; }
+.freight-form label,.freight-search label { display:grid; gap:.4rem; font-weight:500; }
+.freight-form input:not([type=checkbox]),.freight-form select,.freight-form textarea,.freight-search input,.freight-search select { width:100%; min-width:0; max-width:100%; padding:.7rem; border:1px solid #aaa; border-radius:10px; background:#fff; color:#171717; }
+.freight-form textarea { min-height:5rem; }
+.freight-form fieldset { border:1px solid #ccc; border-radius:12px; padding:1rem; min-width:0; display:grid; gap:.8rem; }
+.freight-form .freight-checkbox { display:flex; align-items:center; gap:.6rem; }
+.freight-checkbox input { flex:none; }
+.freight-wide { grid-column:1/-1; max-height:20rem; overflow:auto; }
+.freight-row { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; border-bottom:1px solid #ddd; padding:1rem 0; }
+.freight-row strong { flex:1 1 16rem; }
+.freight-table { overflow-x:auto; max-width:100%; }
+.freight-table table { width:100%; border-collapse:collapse; }
+.freight-table td,.freight-table th { padding:.7rem; border-bottom:1px solid #ddd; text-align:left; overflow-wrap:anywhere; }
+.freight-snapshot { display:grid; grid-template-columns:minmax(9rem,1fr) 2fr; gap:.6rem 1rem; }
+.freight-snapshot dt { font-weight:600; }
+.freight-snapshot dd { margin:0; overflow-wrap:anywhere; }
+.freight-workspace details { padding-block:.7rem; }
+.freight-workspace :focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+@media(max-width:700px){.freight-form,.freight-snapshot{grid-template-columns:1fr}.freight-snapshot dd{margin-bottom:.8rem}.freight-buttons button{width:100%}.freight-row{align-items:flex-start}.freight-workspace .panel{padding:1rem}}

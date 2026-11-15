@@ -41,6 +41,9 @@ create table tests.sec_exec_allow (role_name text, fn text, primary key (role_na
 insert into tests.sec_exec_allow
 select 'authenticated', unnest(array[
   'public.system_health_snapshot', 'public.system_health_jobs',
+  'public.save_freight_directory','public.freight_directory','public.freight_directory_detail',
+  'public.freight_operation_choices','public.preview_freight_trip','public.save_freight_trip','public.freight_trips',
+  'public.freight_source_preview','public.freight_source_choices',
   'public.replenishment_create_profile', 'public.replenishment_set_purpose', 'public.replenishment_workspace', 'public.replenishment_capture', 'public.replenishment_prepare_draft',
   'public.exact_expense_allocation_context', 'public.save_exact_expense_allocation',
   'public.historical_sale_receipt_preview', 'public.record_historical_sale_receipt',
@@ -107,7 +110,7 @@ select 'service_role', unnest(array['public.generate_deadline_notifications', 'p
   'public.system_health_ping', 'public.record_system_health', 'public.system_health_jobs', 'public.claim_system_health_delivery', 'public.finish_system_health_delivery',
   'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
   'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress',
-  'public.run_document_checks', 'public.run_shelf_life_control']);
+  'public.run_document_checks', 'public.run_shelf_life_control', 'public.purge_expired_driver_documents']);
 
 do $$
 declare

@@ -237,6 +237,11 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611080200_calculator_protected_product_fields.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611080300_kz_replenishment.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100100_admin_order_date_correction.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100300_carrier_directory.sql" >/dev/null
+# 202611100300 recreates the history trigger with the plain guard; the retention migration replaces it
+# with the guard that allows only the IIN removal, and the administrator grant must survive the re-apply.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611150100_freight_administrator_permissions.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611150200_driver_documents_retention.sql" >/dev/null
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100200_system_monitoring.sql" >/dev/null
 
@@ -371,3 +376,5 @@ node "$ROOT/scripts/test-calculator-fields-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-replenishment-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-order-date-concurrency.mjs" "${PSQL[@]}"
 node "$ROOT/scripts/test-monitoring-concurrency.mjs" "${PSQL[@]}"
+
+node "$ROOT/scripts/test-freight-concurrency.mjs" "${PSQL[@]}"

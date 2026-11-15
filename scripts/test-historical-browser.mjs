@@ -15,6 +15,7 @@ import {startFaultHttp} from '../tests/pilot/fault-http.mjs';
 import {runDocumentFaults} from '../tests/pilot/document-faults.mjs';
 import {runReplenishmentForms} from '../tests/pilot/replenishment-forms.mjs';
 import {runMonitoringForms} from '../tests/pilot/monitoring-forms.mjs';
+import {runFreightForms} from '../tests/pilot/freight-forms.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const recovery=process.argv.length===3&&process.argv[2]==='--recovery';
@@ -147,6 +148,7 @@ try{
   console.log('PASS full authenticated browser scenario',JSON.stringify(evidence));
   if(!recovery)await runReplenishmentForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output});
   if(!recovery)await runMonitoringForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output,api,keys,http:faultHttp,stopApp,startApp,root,work,hostEnv});
+  if(!recovery)await runFreightForms({chromium,base:'http://127.0.0.1:3100',email,password,restrictedEmail,refs,sql,output,api,keys});
   if(faultHttp){
     await runDocumentFaults({chromium,base:'http://127.0.0.1:3100',email,password,refs,sql,output,fixtures,http:faultHttp,
       async restart(){
