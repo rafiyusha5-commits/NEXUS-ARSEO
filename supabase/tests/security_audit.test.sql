@@ -110,7 +110,7 @@ select 'service_role', unnest(array['public.generate_deadline_notifications', 'p
   'public.system_health_ping', 'public.record_system_health', 'public.system_health_jobs', 'public.claim_system_health_delivery', 'public.finish_system_health_delivery',
   'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
   'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress',
-  'public.run_document_checks', 'public.run_shelf_life_control']);
+  'public.run_document_checks', 'public.run_shelf_life_control', 'public.purge_expired_driver_documents']);
 
 do $$
 declare
