@@ -44,6 +44,7 @@ select 'authenticated', unnest(array[
   'public.exact_expense_allocation_context', 'public.save_exact_expense_allocation',
   'public.historical_sale_receipt_preview', 'public.record_historical_sale_receipt',
   'public.can_record_historical_sale', 'public.create_historical_customer_order',
+  'public.can_correct_customer_order_date', 'public.correct_customer_order_date',
   'public.list_operational_archives', 'public.read_operational_archive',
   'public.prepare_assistant_operation', 'public.review_assistant_operation', 'public.confirm_assistant_operation',
   'public.preview_customer_order_reservation_replacement', 'public.replace_customer_order_reservations',

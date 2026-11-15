@@ -53,3 +53,19 @@ state.authDenied=true;await assert.rejects(recordHistoricalSaleReceipt(receipt),
 state.authDenied=false;state.error={code:'42501',message:'SECRET_SQL'};
 await assert.rejects(recordHistoricalSaleReceipt(receipt),e=>e.message.includes('error=')&&!e.message.includes('SECRET_SQL'));assert.equal(state.paths.length,0);
 console.log('historical receipt action passed');
+
+// The date-only correction must never call reservation/fulfillment or use a privileged client.
+const {correctCustomerOrderDate} = await import('../../src/app/sales/actions.ts');
+const correction=new FormData();
+for(const [key,value] of Object.entries({sale_id:id,request_id:id,expected_date:'2026-11-09',planned_shipment_date:'2026-11-05',reason:' Исправление по документу INV-TEST '})) correction.set(key,value);
+state.calls=[];state.paths=[];state.error=null;
+await assert.rejects(correctCustomerOrderDate(correction),/REDIRECT:.*success=/);
+assert.deepEqual(state.calls,[{name:'correct_customer_order_date',args:{p_sale_id:id,p_request_id:id,p_expected_date:'2026-11-09',p_date:'2026-11-05',p_reason:'Исправление по документу INV-TEST'}}]);
+assert.deepEqual(state.paths,[`/sales/${id}`,'/sales']);
+state.calls=[];state.paths=[];state.error={code:'42501',message:'PRIVATE_SQL'};
+await assert.rejects(correctCustomerOrderDate(correction),e=>e.message.includes('error=')&&!e.message.includes('PRIVATE_SQL'));
+assert.equal(state.calls.length,1);assert.equal(state.paths.length,0);
+state.calls=[];state.authDenied=true;
+await assert.rejects(correctCustomerOrderDate(correction),/AUTH_DENIED/);
+assert.equal(state.calls.length,0);
+console.log('administrative date action passed');
