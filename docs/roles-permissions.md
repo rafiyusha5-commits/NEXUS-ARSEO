@@ -100,6 +100,7 @@
 | 14 | Себестоимость | `costing` | — |
 | 15 | Дебиторская задолженность | `receivables` | `receivables.view`, `receivables.manage` (миграция 202609277600, см. `docs/receivables.md`) |
 | 16 | Отчёты | `reports` | — |
+| — | Перевозка: справочники и рейсы | `carriers`, `freight`, `drivers` | `carriers.directory.read/manage`, `freight.context.read/manage`, `drivers.documents.view` (миграции 202611100300 и 202611150100: только роль «Администратор», передача другим — через «Роли и права»; см. `docs/freight-management.md`) |
 | 17 | Прогнозы | `forecasts` | — |
 | 18 | Интеграции | `integrations` | — |
 | 19 | Журнал действий | `audit` | `audit.view` |

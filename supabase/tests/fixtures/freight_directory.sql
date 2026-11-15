@@ -12,6 +12,11 @@ insert into public.user_permission_overrides(user_id,permission_id,effect,reason
  where u.id in('fc000000-0000-4000-8000-000000000001','fc000000-0000-4000-8000-000000000002')
  and p.code in('carriers.directory.read','carriers.directory.manage','freight.context.read','freight.context.manage','drivers.documents.view')
  and (u.id='fc000000-0000-4000-8000-000000000001' or p.code<>'drivers.documents.view');
+-- Administrators hold drivers.documents.view through their role (202611150100). The second
+-- administrator stands for an employee without that right, so a personal deny removes it.
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
+ select 'fc000000-0000-4000-8000-000000000002',id,'deny','Synthetic employee without driver documents','fc000000-0000-4000-8000-000000000001'
+ from public.permissions where code='drivers.documents.view';
 insert into public.counterparties(id,roles,legal_name,country) values
  ('fc100000-0000-4000-8000-000000000001',array['carrier'],'Тестовый перевозчик А','KZ'),
  ('fc100000-0000-4000-8000-000000000002',array['carrier'],'Тестовый перевозчик Б','KZ'),
