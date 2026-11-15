@@ -2,6 +2,7 @@ begin;
 insert into auth.users(id,email,raw_user_meta_data) values('baf00000-0000-4000-8000-000000000001','archive-test@example.invalid','{"full_name":"Archive test"}');
 insert into public.user_roles(user_id,role_id) select 'baf00000-0000-4000-8000-000000000001',id from public.app_roles where code='administrator';
 insert into private.operational_archives values ('baf00000-0000-4000-8000-000000000010','Test','Archive regression',now(),repeat('a',40),'{"rows":1}','{"shipments":[{"id":"old","quantity":100}],"documents":[{"id":"baf00000-0000-4000-8000-000000000030"}],"document_generations":[{"document_id":"baf00000-0000-4000-8000-000000000030","contains_prices":true}]}');
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select 'baf00000-0000-4000-8000-000000000001',id,'allow','Synthetic archive reader: explicit new sensitive right','baf00000-0000-4000-8000-000000000001' from public.permissions where code='drivers.documents.view';
 select set_config('request.jwt.claim.sub','baf00000-0000-4000-8000-000000000001',true);
 set local role authenticated;
 do $$begin
