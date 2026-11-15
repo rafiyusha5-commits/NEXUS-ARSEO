@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {execFileSync,spawn} from 'node:child_process';
+const [psql,...args]=process.argv.slice(2);
+if(!psql||!args.includes('ON_ERROR_STOP=1'))throw Error('Use disposable SQL test runner');
+const run=sql=>execFileSync(psql,[...args,'-tA'],{input:sql,encoding:'utf8',windowsHide:true}).trim();
+const call=sql=>new Promise((resolve,reject)=>{const p=spawn(psql,[...args,'-tA'],{windowsHide:true});let output='';p.stdout.on('data',d=>output+=d);p.stderr.on('data',d=>output+=d);p.on('error',reject);p.on('close',code=>resolve({ok:code===0,output}));p.stdin.end(sql);});
+run(`insert into auth.users(id,email,raw_user_meta_data) values('ae030000-0000-4000-8000-000000000001','health-race@example.invalid','{"full_name":"Health concurrency"}');
+insert into public.user_roles(user_id,role_id) select 'ae030000-0000-4000-8000-000000000001',id from public.app_roles where code='administrator';
+insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by) select 'ae030000-0000-4000-8000-000000000001',id,'allow','Synthetic concurrency','ae030000-0000-4000-8000-000000000001' from public.permissions where code='system.health.view';`);
+const stamp=run('select clock_timestamp();');
+const results=await Promise.all(Array.from({length:100},()=>call(`set role service_role;select public.record_system_health('test','storage','UNAVAILABLE','${stamp}','ae030000-0000-4000-8000-000000000002');`)));
+assert.ok(results.every(r=>r.ok),JSON.stringify(results.filter(r=>!r.ok)));
+assert.equal(run("select count(*) from private.system_health_incidents where environment='test' and component='storage';"),'1');
+assert.equal(run("select count(*) from public.notifications where entity_type='system_health' and recipient_user_id='ae030000-0000-4000-8000-000000000001';"),'1');
+assert.equal(run("select occurrences from private.system_health_incidents where environment='test' and component='storage';"),'1');
+const claims=await Promise.all(Array.from({length:10},()=>call("set role service_role;select coalesce(public.claim_system_health_delivery('test')::text,'EMPTY');")));
+assert.ok(claims.every(r=>r.ok));assert.equal(claims.filter(r=>r.output.includes('"claim"')).length,1);
+console.log('PASS monitoring: 100 simultaneous repeated events, one incident/notification; ten delivery workers, one claim');

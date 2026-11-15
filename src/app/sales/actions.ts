@@ -137,3 +137,17 @@ export async function rescheduleCustomerOrder(data: FormData) {
   revalidatePath("/sales");
   redirect(orderUrl(saleId, "Дата отгрузки перенесена", "success", "shipping"));
 }
+
+export async function correctCustomerOrderDate(data: FormData) {
+  const { supabase } = await requireUser();
+  const saleId = uuid(data, "sale_id")!;
+  const { error } = await supabase.rpc("correct_customer_order_date", {
+    p_sale_id: saleId, p_request_id: uuid(data, "request_id"),
+    p_expected_date: text(data, "expected_date") || null,
+    p_date: text(data, "planned_shipment_date") || null, p_reason: text(data, "reason"),
+  });
+  if (error) redirect(orderUrl(saleId, ruleViolationMessage(error, "Не удалось исправить дату."), "error", "shipping"));
+  revalidatePath(`/sales/${saleId}`);
+  revalidatePath("/sales");
+  redirect(orderUrl(saleId, "Дата исправлена с записью в историю. Резервирование и отгрузка не выполнялись.", "success", "shipping"));
+}
