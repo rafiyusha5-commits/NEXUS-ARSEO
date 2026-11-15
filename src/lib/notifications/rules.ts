@@ -29,6 +29,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Link to the task, stage, shipment or approved object. Only ids go into the URL, so a
 // notification can never point outside the application.
 export function notificationLink(target: NotificationTarget): NotificationLink | null {
+  if (target.entity_type === "system_health") return { href: "/admin/health", label: "Открыть состояние системы" };
   const entity = target.entity_id && UUID.test(target.entity_id) ? target.entity_id : null;
   const shipment = target.shipment_id && UUID.test(target.shipment_id) ? target.shipment_id : null;
   if (entity) {

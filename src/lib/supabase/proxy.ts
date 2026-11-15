@@ -12,6 +12,8 @@ function copySessionState(source: NextResponse, target: NextResponse) {
 }
 
 export async function updateSession(request: NextRequest) {
+  // Public responses contain only ok/unavailable. Liveness must not depend on Auth/DB.
+  if (["/api/health/live", "/api/health/ready"].includes(request.nextUrl.pathname)) return NextResponse.next({ request });
   // Exact internal worker route authenticates with its own server secret, never employee cookies.
   if (request.nextUrl.pathname === "/api/telegram/process") return NextResponse.next({ request });
   if (!hasSupabaseEnv()) return NextResponse.next({ request });
