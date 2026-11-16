@@ -1396,13 +1396,16 @@ export const SYSTEM_SECTIONS: readonly SystemSection[] = [
     "columns": [
       "batch_id",
       "unit_landed_cost",
+      "cost_uom",
       "cost_currency_id",
-      "cost_calculation_id"
+      "cost_currency_code",
+      "cost_calculation_id",
+      "cost_basis"
     ],
     "search": [],
     "parent": "product_id",
     "path": "/inventory",
-    "rpc": "my_inventory_batch_costs",
+    "rpc": "my_batch_landed_costs",
     "idColumn": "batch_id",
     "date": "",
     "anyPermissions": []

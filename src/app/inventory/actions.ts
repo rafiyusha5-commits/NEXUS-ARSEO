@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
-import { publicErrorMessage } from "@/lib/errors/public-message";
+import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function text(data:FormData,key:string){const value=data.get(key);return typeof value==="string"?value.trim():"";}
@@ -63,4 +63,20 @@ export async function setBatchStatus(data:FormData){
   revalidatePath("/inventory");revalidatePath(`/inventory/${batchId}`);
   const label=status==="available"?"разблокирована":status==="quarantine"?"отправлена в карантин":"заблокирована";
   redirect(`${target}&success=${encodeURIComponent(`Партия ${label}`)}`);
+}
+
+// Administrator recalculation of one batch by its receipts (finding Н6): the database checks the right,
+// the reason and that nothing changed since the preview shown on the batch card.
+export async function recalculateBatchCost(data:FormData){
+  const {supabase}=await requireUser();
+  const batchId=uuid(data,"batch_id");
+  const target=`/inventory/${batchId}?tab=main`;
+  const {error}=await supabase.rpc("recalculate_batch_cost",{
+    p_batch_id:batchId,
+    p_stamp:text(data,"stamp"),
+    p_reason:text(data,"reason"),
+  });
+  if(error)redirect(`${target}&error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось пересчитать себестоимость партии."))}`);
+  revalidatePath("/inventory");revalidatePath(`/inventory/${batchId}`);
+  redirect(`${target}&success=${encodeURIComponent("Себестоимость партии пересчитана по приходам. Изменение записано в журнал.")}`);
 }
