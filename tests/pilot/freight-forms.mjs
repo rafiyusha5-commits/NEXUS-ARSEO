@@ -20,7 +20,11 @@ export async function runFreightForms({chromium,base,email,password,restrictedEm
  await context.route('**/*',r=>new URL(r.request().url()).origin===base?r.continue():r.abort());
  const page=await context.newPage();page.setDefaultTimeout(30000);
  async function login(address){await page.goto(base+'/login');await page.locator('[name=email]').fill(address);await page.locator('[name=password]').fill(password);await page.getByRole('button',{name:'Войти',exact:true}).click();await page.waitForURL(url=>url.pathname!=='/login');}
- async function saveDirectory(){await page.getByRole('button',{name:'Проверить изменения',exact:true}).click();await page.getByRole('button',{name:'Подтвердить изменения',exact:true}).click();await page.getByRole('status').filter({hasText:'Сохранено с историей'}).waitFor();}
+ async function saveDirectory(){await page.getByRole('button',{name:'Проверить изменения',exact:true}).click();await page.getByRole('button',{name:'Подтвердить изменения',exact:true}).click();
+  // The confirmation is shown by the page after it opens the saved record; a refusal is shown at once as an alert.
+  const saved=page.getByRole('status').filter({hasText:'Сохранено с историей'}),refused=page.locator('p.login-error[role=alert]');
+  await saved.or(refused).first().waitFor();
+  if(!await saved.isVisible())throw new Error('Directory save refused: '+await refused.first().innerText());}
  const token=async address=>{const r=await fetch(new URL('/auth/v1/token?grant_type=password',api),{method:'POST',headers:{apikey:keys.ANON_KEY,'Content-Type':'application/json'},body:JSON.stringify({email:address,password})});assert.ok(r.ok);return (await r.json()).access_token;};
  try{
   await login(email);await page.goto(base+'/freight?kind=carrier&new=1');
