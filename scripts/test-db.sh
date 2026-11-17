@@ -252,6 +252,8 @@ echo "re-applying document migrations (idempotency check)"
 # Order prices from the price list replace add_customer_order_item (202609272500), create_sale_from_commercial_program
 # (202609273200) and the assistant draft preview/handler (202610230300) re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170200_order_price_substitution.sql" >/dev/null
+# Batch margins re-define the notification types of 202609279000 re-applied above and grant their RPCs. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170300_batch_price_margins.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
