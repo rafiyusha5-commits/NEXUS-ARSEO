@@ -101,6 +101,7 @@ select 'authenticated', unnest(array[
   'public.set_vat_rate', 'public.vat_rate_history', 'public.set_customer_price_terms', 'public.set_customer_brand_markup',
   'public.set_customer_fixed_price', 'public.customer_price_conditions',
   'public.price_list_batch_margins', 'public.customer_margin_overview', 'public.set_customer_margin_threshold',
+  'public.record_expense_payment', 'public.set_expense_due_date', 'public.payables_summary', 'public.payables_payee',
   'public.cancel_expense', 'public.reverse_expense',
   'public.shipment_document_check', 'public.run_shipment_document_check', 'public.reopen_shipment',
   'public.shelf_life_risks',
