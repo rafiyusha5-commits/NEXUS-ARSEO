@@ -35,8 +35,10 @@ export async function appendSafeLog(directory: string | undefined, input: unknow
         if (info.isFile() && Date.now() - info.mtimeMs > 7 * 86400000) await unlink(path);
         else if (info.isFile()) entries.push({ path, time: info.mtimeMs });
       }
-      // Bound total retention across restarts too: <=12 segments (~768 KiB).
-      for (const entry of entries.sort((a,b) => b.time-a.time).slice(12)) await unlink(entry.path);
+      // Bound total retention across restarts too: <=12 segments (~768 KiB). The file just written is always kept:
+      // with equal modification times it could otherwise be pruned and the event lost.
+      const others = entries.filter(entry => entry.path !== file).sort((a,b) => b.time-a.time);
+      for (const entry of others.slice(11)) await unlink(entry.path);
       written = true;
     } catch { /* A full/unwritable disk must not throw into business code. */ }
   }).finally(() => { waiting--; });
