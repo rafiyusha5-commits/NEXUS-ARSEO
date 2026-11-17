@@ -22,7 +22,7 @@ export function timedFetch(ms: number, deadline?: AbortSignal): typeof fetch {
   };
 }
 
-function serverClient(): SupabaseClient | null {
+export function serverClient(): SupabaseClient | null {
   const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) return null;
   const { url } = getSupabaseEnv();

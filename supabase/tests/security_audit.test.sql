@@ -103,6 +103,7 @@ select 'authenticated', unnest(array[
   'public.price_list_batch_margins', 'public.customer_margin_overview', 'public.set_customer_margin_threshold',
   'public.record_expense_payment', 'public.set_expense_due_date', 'public.payables_summary', 'public.payables_payee',
   'public.profitability_report', 'public.profitability_lines',
+  'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.cancel_expense', 'public.reverse_expense',
   'public.shipment_document_check', 'public.run_shipment_document_check', 'public.reopen_shipment',
   'public.shelf_life_risks',
@@ -117,7 +118,7 @@ union all
 select 'service_role', unnest(array['public.generate_deadline_notifications', 'public.start_synchronization_run', 'public.finish_synchronization_run', 'private.barcode_key',
   'public.system_health_ping', 'public.record_system_health', 'public.system_health_jobs', 'public.claim_system_health_delivery', 'public.finish_system_health_delivery',
   'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
-  'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress',
+  'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress', 'public.telegram_notification_batch', 'public.telegram_notification_result',
   'public.run_document_checks', 'public.run_shelf_life_control', 'public.purge_expired_driver_documents']);
 
 do $$

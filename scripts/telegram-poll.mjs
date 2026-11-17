@@ -21,7 +21,21 @@ const webhook = await bot.call("getWebhookInfo");
 if (webhook?.url) throw new Error("TELEGRAM_WEBHOOK_PRESENT");
 console.log("Telegram local worker started");
 let offset = 0;
+// Notifications: the same worker asks Nexus to send due notifications at most every 30 seconds (202611170600).
+let notifiedAt = 0;
+async function sendNotifications() {
+  if (Date.now() - notifiedAt < 30000) return;
+  notifiedAt = Date.now();
+  try {
+    const response = await fetch("http://127.0.0.1:3000/api/telegram/notifications", {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(65000),
+      headers: { "x-nexus-telegram-worker": vars.TELEGRAM_WORKER_SECRET },
+    });
+    if (!response.ok) console.error("NEXUS_NOTIFICATIONS_UNAVAILABLE");
+  } catch { console.error("NEXUS_NOTIFICATIONS_UNAVAILABLE"); }
+}
 while (!stopping) {
+  await sendNotifications();
   try {
     const updates = await bot.call("getUpdates", { offset, timeout: 25, limit: 10, allowed_updates: ["message"] });
     if (!Array.isArray(updates)) throw new Error("TELEGRAM_INVALID_UPDATES");

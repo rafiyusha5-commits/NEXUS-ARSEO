@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { telegramConfig } from "@/lib/telegram/config.ts";
 import { confirmTelegramLink, unlinkTelegram } from "./actions";
+import { TelegramNotifications, type TelegramNotificationSettings } from "@/components/assistant/telegram-notifications";
 
 export const dynamic = "force-dynamic";
 export default async function TelegramPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
@@ -26,12 +27,14 @@ export default async function TelegramPage({ searchParams }: { searchParams: Pro
   const runIds = updates.map((row) => row.run_id).filter((id): id is string => !!id);
   const runsResult = runIds.length ? await supabase.from("agent_runs").select("id,status,cost_status,request_refunded,actual_usd_micros").in("id", runIds) : null;
   const now = loadedAt();
+  const { data: notificationSettings } = can["agent.use"] ? await supabase.rpc("my_telegram_notifications") : { data: null };
   const waiting = link?.pending_chat_id && link.pending_until;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="assistant" /><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Ассистент</p><h1>Telegram</h1></div><Link href="/assistant" className="ghost button-link">Вернуться к ассистенту</Link></header>
     <WorkflowHelp section="integrations"/>
-    {query.error && <p className="login-error">Не удалось изменить привязку. Обновите страницу или создайте новую ссылку.</p>}
-    {query.success && <p className="setup-notice">{query.success === "confirmed" ? "Telegram подключён. Теперь можно задавать вопросы боту." : "Telegram отключён."}</p>}
+    {query.error === "notifications" && <p className="login-error">Не удалось сохранить настройки уведомлений: сначала подключите личный чат.</p>}
+    {query.error && query.error !== "notifications" && <p className="login-error">Не удалось изменить привязку. Обновите страницу или создайте новую ссылку.</p>}
+    {query.success && <p className="setup-notice">{query.success === "notifications" ? "Настройки уведомлений сохранены." : query.success === "confirmed" ? "Telegram подключён. Теперь можно задавать вопросы боту." : "Telegram отключён."}</p>}
     {!can["agent.use"] ? <p className="login-error">Нет права пользоваться ассистентом.</p> : !config ? <p className="setup-notice">Telegram ещё не настроен на сервере Nexus.</p> : result?.error ? <p className="setup-notice">Примените миграцию 202609275300_agent_telegram.sql.</p> : <>
       <section className="panel admin-section"><h2>{link?.chat_id ? "Telegram подключён" : "Подключить личный чат"}</h2>
         <p>Бот: @{config.username}. Ответы только по вашим правам. Лимит вопросов и бюджет общие с веб-чатом. Финансовые ответы доступны только с соответствующими правами. Номера удостоверений, паспортные данные и секреты не передаются. Контекст последних четырёх вопросов действует 30 минут; /new начинает новую беседу.</p>
@@ -39,6 +42,7 @@ export default async function TelegramPage({ searchParams }: { searchParams: Pro
         {link?.chat_id && <><p>Подключён чат: {link.display_name || "без имени"} · ID {link.chat_id}</p><form action={unlinkTelegram}><PendingSubmitButton pendingText="Выполняем…" className="ghost" type="submit">Отключить Telegram</PendingSubmitButton></form></>}
         <TelegramLink />
       </section>
+      {notificationSettings && <TelegramNotifications settings={notificationSettings as TelegramNotificationSettings}/>}
       <section className="panel admin-section"><h2>Последние сообщения</h2>
         <p className="form-help">Состояние обработки без текста вопросов и ответов. Прерванные и неподтверждённые сообщения автоматически не повторяются: так не будет дубля ответа и повторного расхода. При необходимости задайте вопрос снова.</p>
         {updatesResult?.error ? <p className="setup-notice">Примените миграцию 202609275400_telegram_reliability.sql.</p>

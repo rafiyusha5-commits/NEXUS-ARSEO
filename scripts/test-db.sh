@@ -258,6 +258,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170400_payables.sql" >/dev/null
 # Profitability grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170500_profitability.sql" >/dev/null
+# Telegram delivery grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170600_telegram_notifications.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -266,6 +268,8 @@ done
 
 echo "test: confirmed-order reservation replacement under concurrency"
 node "$ROOT/scripts/test-reservation-replacement-concurrency.mjs" "${PSQL[@]}"
+echo "test: Telegram delivery under concurrency"
+node "$ROOT/scripts/test-telegram-notifications-concurrency.mjs" "${PSQL[@]}"
 echo "test: partial payments under concurrency"
 node "$ROOT/scripts/test-payables-concurrency.mjs" "${PSQL[@]}"
 echo "test: cost calculation and approval under concurrent source edits"
