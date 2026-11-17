@@ -1,5 +1,6 @@
 "use client";
 import {useId,useState,useTransition} from "react";
+import {useRouter} from "next/navigation";
 import {saveDirectory,previewTrip,saveTrip} from "./actions";
 import {directoryValues,display,fieldValue,fields,modes,tripValues,type Kind,type Option,type Row} from "@/lib/freight/model";
 
@@ -9,10 +10,13 @@ function Choice({name,label,options,required=false,value}: {name:string;label:st
 }
 export function DirectoryForm({kind,record,companies,carriers,documents,request,source,proposal}: {kind:Kind;record:Row|null;companies:Option[];carriers:Option[];documents:Option[];request:string;source?:Row;proposal?:Row}) {
   const [review,setReview]=useState<{values:Row;reason:string}|null>(null),[error,setError]=useState(""),[saved,setSaved]=useState<string|null>(null),[pending,start]=useTransition();
+  const router=useRouter();
   const definitions=fields(kind,companies,carriers,documents);
   const inputs={...record,...proposal};
   const id=typeof record?.id==="string"?record.id:typeof record?.driver_id==="string"?record.driver_id:null;
-  if(saved)return <div role="status" className="login-success">Сохранено с историей. <a href={`/freight?kind=${kind}&edit=${saved}`}>Открыть запись</a></div>;
+  // The confirmation lives in the URL (the page renders it), not in this component: saving bumps the record version,
+  // the page refresh after the action remounts the form (its key holds the version) and local state would be lost.
+  if(saved)return <p className="form-help">Сохраняем и открываем запись…</p>;
   const show=(key:string,value:unknown)=>definitions.find(f=>f.key===key)?.options?.find(o=>o.id===value)?.label??display(value);
   return <div>{error&&<p role="alert" className="login-error">{error}</p>}
     <form className="freight-form" hidden={!!review} onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);const values=directoryValues(kind,form);if(source)values.source=source;setReview({values,reason:String(form.get("reason")??"")});setError("");}}>
@@ -24,7 +28,7 @@ export function DirectoryForm({kind,record,companies,carriers,documents,request,
       <button type="submit">Проверить изменения</button>
     </form>{review&&<section aria-label="Предпросмотр изменений"><h3>Проверьте перед сохранением</h3><div className="freight-table"><table><thead><tr><th>Поле</th><th>Сейчас</th><th>После сохранения</th></tr></thead><tbody>{definitions.map(f=><tr key={f.key}><th>{f.label}</th><td>{show(f.key,fieldValue(kind,record,f.key))}</td><td>{show(f.key,review.values[f.key])}</td></tr>)}</tbody></table></div>
       <p>Причина: {review.reason}</p><p>Совпадение телефона не доказывает, что это один водитель. Прежние рейсы сохранят свои реквизиты.</p>
-      <div className="freight-buttons"><button disabled={pending} onClick={()=>start(async()=>{const result=await saveDirectory({kind,request,id,version:Number(record?.directory_version??record?.version??0),...review});if(result.error)setError(result.error);else setSaved(result.id!);})}>{pending?"Сохраняем…":"Подтвердить изменения"}</button><button className="ghost" disabled={pending} onClick={()=>setReview(null)}>Вернуться к полям</button></div>
+      <div className="freight-buttons"><button disabled={pending} onClick={()=>start(async()=>{const result=await saveDirectory({kind,request,id,version:Number(record?.directory_version??record?.version??0),...review});if(result.error)setError(result.error);else{setSaved(result.id!);router.replace(`/freight?kind=${kind}&edit=${result.id}&saved=1`);}})}>{pending?"Сохраняем…":"Подтвердить изменения"}</button><button className="ghost" disabled={pending} onClick={()=>setReview(null)}>Вернуться к полям</button></div>
     </section>}
   </div>;
 }
