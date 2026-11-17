@@ -254,6 +254,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170200_order_price_substitution.sql" >/dev/null
 # Batch margins re-define the notification types of 202609279000 re-applied above and grant their RPCs. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170300_batch_price_margins.sql" >/dev/null
+# Payables replace mark_expense_paid, cancel_expense, reverse_expense and the assistant payment preview re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170400_payables.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -262,6 +264,8 @@ done
 
 echo "test: confirmed-order reservation replacement under concurrency"
 node "$ROOT/scripts/test-reservation-replacement-concurrency.mjs" "${PSQL[@]}"
+echo "test: partial payments under concurrency"
+node "$ROOT/scripts/test-payables-concurrency.mjs" "${PSQL[@]}"
 echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 
