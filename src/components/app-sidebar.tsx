@@ -58,6 +58,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Планирование", items: [
     { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
     { label: "Аналитика", href: "/analytics", key: "analytics" },
+    { label: "Прибыльность", href: "/analytics/profitability", key: "profitability" },
   ] },
   { label: "Администрирование", items: [
     { label: "Состояние системы", href: "/admin/health", key: "health" },

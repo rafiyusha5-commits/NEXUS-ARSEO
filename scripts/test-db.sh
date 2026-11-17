@@ -254,6 +254,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170200_order_price_substitution.sql" >/dev/null
 # Batch margins re-define the notification types of 202609279000 re-applied above and grant their RPCs. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170300_batch_price_margins.sql" >/dev/null
+# Profitability grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170500_profitability.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
