@@ -38,3 +38,11 @@ export async function unlinkTelegram() {
   revalidatePath("/assistant/telegram");
   redirect(result.error ? "/assistant/telegram?error=unlink" : "/assistant/telegram?success=unlinked");
 }
+
+export async function saveTelegramNotifications(form: FormData) {
+  const { supabase } = await requireUser();
+  const types = form.getAll("types").filter((value): value is string => typeof value === "string").slice(0, 10);
+  const result = await supabase.rpc("set_my_telegram_notifications", { p_enabled: form.get("enabled") === "on", p_types: types });
+  revalidatePath("/assistant/telegram");
+  redirect(result.error ? "/assistant/telegram?error=notifications" : "/assistant/telegram?success=notifications");
+}
