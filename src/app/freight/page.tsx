@@ -77,6 +77,7 @@ export default async function FreightPage({searchParams}: {searchParams:Promise<
         {!showRows.length&&kind!=="driver_documents"&&<p>Записей по этому запросу нет.</p>}
       </section>
       {(params.edit||params.new==="1"||source)&&<section className="panel admin-section"><h2>{params.edit?"Реквизиты и история":"Новая запись"}</h2>
+        {params.saved==="1"&&params.edit&&<div role="status" className="login-success">Сохранено с историей. Прежние значения остались в истории записи.</div>}
         {source&&<p>Источник: {display((source.source as Row).label)}. Поля подставлены как предложение; выберите правильные связи и проверьте каждое значение.</p>}
         {canManage?<DirectoryForm key={formKey} kind={kind as Kind} record={initial} companies={companies} carriers={carriers} documents={documentOptions} request={randomUUID()} source={sourceRef} proposal={sourceFields(kind as Kind,proposed)}/>:<dl>{fields(kind as Kind,companies,carriers,documentOptions).map(f=><div key={f.key}><dt>{f.label}</dt><dd>{display(fieldValue(kind as Kind,record,f.key))}</dd></div>)}</dl>}
         {kind==="driver"&&params.edit&&permission.has("drivers.documents.view")&&<p><Link href={`/freight?kind=driver_documents&edit=${params.edit}`}>Документы водителя — ограниченный доступ</Link></p>}
