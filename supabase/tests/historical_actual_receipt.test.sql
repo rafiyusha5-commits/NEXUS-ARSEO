@@ -7,7 +7,7 @@ grant all on tests.receipt_context to authenticated;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','af010000-0000-4000-8000-000000000001',true);
 insert into tests.historical_context values ('sale',pg_temp.historical_create(),null);
-insert into tests.historical_context select 'item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',10,'piece',10,80),null from tests.historical_context where k='sale';
+insert into tests.historical_context select 'item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',10,'piece',10,80,'Синтетическая цена теста'),null from tests.historical_context where k='sale';
 select public.reserve_customer_order_item_override(id,'af510000-0000-4000-8000-000000000001','Фактически отгруженная партия') from tests.historical_context where k='item';
 insert into tests.receipt_context(token) select public.historical_sale_receipt_preview(id)->>'token' from tests.historical_context where k='sale';
 select pg_temp.historical_reject('select public.confirm_customer_order((select id from tests.historical_context where k=''sale''))','ОСГ');

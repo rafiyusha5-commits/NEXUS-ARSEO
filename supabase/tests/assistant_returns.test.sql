@@ -44,7 +44,7 @@ insert into public.inventory_balances(id,batch_id,warehouse_id,uom,quantity_on_h
 set role authenticated;
 select set_config('request.jwt.claim.sub','ac250000-0000-4000-8000-000000000001',false);
 insert into rt select 'sale',public.create_customer_order('ac251000-0000-4000-8000-000000000002',null,pg_temp.id('warehouse'),current_date+5,(select id from public.currencies where code='KZT'),null);
-insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ac252000-0000-4000-8000-000000000001',100,'piece',250,null);
+insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ac252000-0000-4000-8000-000000000001',100,'piece',250,null,'Синтетическая цена теста');
 select public.reserve_customer_order_item_fefo(pg_temp.id('item'));
 select public.confirm_customer_order(pg_temp.id('sale'));
 select pg_temp.fails($$select public.create_customer_return(pg_temp.id('sale'),'[{"sale_item_id":"x","batch_id":"y","quantity":1}]')$$,'отгруженному');

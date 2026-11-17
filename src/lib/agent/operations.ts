@@ -33,7 +33,6 @@ const draftHeader: Record<string, ParamSchema> = {
 };
 const draftItem: Record<string, ParamSchema> = {
   product_id: transfer.product_id, quantity: transfer.quantity, uom: transfer.uom,
-  unit_price: { type: "string", maxLength: 15, pattern: /^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$/, description: "Явная цена за выбранную единицу, до 0,0001; отсутствие цены не равно нулю" },
 };
 export function parseOperationIntent(input: unknown): OperationIntent | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
@@ -123,7 +122,7 @@ export const OPERATION_INTENT_SCHEMA = { anyOf: [expensePaymentSchema, expenseRe
       customer_id: { type: "string" }, warehouse_id: { type: "string" }, currency_id: { type: "string" }, planned_shipment_date: { type: "string" },
       contract_id: { type: ["string", "null"] },
       items: { type: "array", minItems: 1, maxItems: 25, items: { type: "object", additionalProperties: false, required: Object.keys(draftItem), properties: {
-        product_id: { type: "string" }, quantity: { type: "string" }, unit_price: { type: "string" }, uom: { type: "string", enum: ["piece", "box", "layer", "pallet", "truck"] },
+        product_id: { type: "string" }, quantity: { type: "string" }, uom: { type: "string", enum: ["piece", "box", "layer", "pallet", "truck"] },
       } } },
     } },
   },

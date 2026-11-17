@@ -10,7 +10,9 @@ select public.prepare_assistant_operation('ad000000-8a22-4000-8000-000000000051'
 update tests.assistant_draft_context set review=public.review_assistant_operation('ad000000-8a22-4000-8000-000000000051');
 do $$begin
  assert not exists(select 1 from public.sales where customer_id='ad000000-8a22-4000-8000-000000000011'),'no business draft before confirmation';
- assert (select review#>>'{preview,total}'='201.25' from tests.assistant_draft_context),'exact decimal total, same 2-place rounding as sale_amount';
+ assert (select review#>>'{preview,total}'='200.99' from tests.assistant_draft_context),'price list: box of 2 * 50 = 100.00 * 2 + 0.33 * 3 = 200.99';
+ assert (select review#>>'{preview,items,0,unit_price}'='100.00' and review#>>'{preview,items,0,price_source}'='price_list'
+   and review#>>'{preview,items,0,price_note}'='brand_condition_missing' from tests.assistant_draft_context),'the review shows where the price came from';
  assert (select jsonb_array_length(review#>'{preview,items}')=2 from tests.assistant_draft_context);
  assert (select review::text !~ 'PRIVATE-SYNTHETIC|state_stamp|registration_number|tax_id' from tests.assistant_draft_context);
  assert not has_function_privilege('service_role','public.confirm_assistant_operation(uuid,uuid)','execute');
@@ -43,6 +45,13 @@ update public.counterparties set min_remaining_shelf_life_pct=80 where id='ad000
 set local role authenticated;
 select pg_temp.draft_fails('ASSISTANT_OPERATION_STALE');
 rollback to changed;
+savepoint price_changed;
+insert into public.price_list_entries(price_type_id,product_id,price,valid_from,origin,reason,created_by)
+ select id,'ad000000-8a22-4000-8000-000000000022',0.5,private.business_today(),'manual','Новая цена','ad000000-8a22-4000-8000-000000000001'
+ from public.price_types where code='kz_prepayment';
+set local role authenticated;
+select pg_temp.draft_fails('ASSISTANT_OPERATION_STALE');
+rollback to price_changed;
 savepoint contract_closed;
 update public.contracts set status='terminated' where id='ad000000-8a22-4000-8000-000000000041';
 set local role authenticated;
@@ -62,6 +71,7 @@ do $$declare payload jsonb; patch jsonb;begin
   jsonb_set(payload,'{items,0,uom}','"kg"'),jsonb_set(payload,'{items,0,unit_price}','"1e3"'),
   jsonb_set(payload,'{items,0,quantity}','"0.0001"'),jsonb_set(payload,'{planned_shipment_date}','"2020-01-01"'),
   jsonb_set(payload,'{items}',jsonb_build_array(payload#>'{items,0}',payload#>'{items,0}')),
+  jsonb_set(payload,'{items,0,unit_price}','"100.1250"'),
   payload-'contract_id',payload||'{"confirm":true}'::jsonb)) loop
   begin perform public.prepare_assistant_operation(gen_random_uuid(),'customer_order_create',patch);raise exception 'Bad input accepted';
   exception when others then assert sqlerrm='ASSISTANT_OPERATION_DRAFT_INVALID',sqlerrm;end;
@@ -95,10 +105,11 @@ do $$declare sale uuid;begin
  assert (select count(*)=1 from public.sales where customer_id='ad000000-8a22-4000-8000-000000000011');
  assert (select status='draft' and confirmed_at is null and shipped_at is null and created_by='ad000000-8a22-4000-8000-000000000001' from public.sales where id=sale);
  assert (select count(*)=2 and bool_and(required_shelf_life_pct=70) from public.sale_items where sale_id=sale);
- assert (select amount=201.25 and unpriced_lines=0 from private.sale_amount(sale));
+ assert (select amount=200.99 and unpriced_lines=0 from private.sale_amount(sale));
+ assert (select bool_and(price_source='price_list' and price_snapshot->>'price_type'='kz_prepayment') from public.sale_items where sale_id=sale),'lines keep the price-list snapshot';
  assert (select movements=(select count(*) from public.inventory_movements) and reservations=(select count(*) from public.inventory_reservations)
   and stock=(select coalesce(sum(quantity_on_hand),0) from public.inventory_balances) from draft_unchanged),'no stock side effects';
  assert not exists(select 1 from private.customer_ledger('ad000000-8a22-4000-8000-000000000011')),'no new debt/payment';
 end $$;
 rollback;
-\echo assistant_order_creation: atomic draft, exact prices, permissions, stale sources, no stock/finance and replay passed
+\echo assistant_order_creation: atomic draft, price-list prices, permissions, stale sources, no stock/finance and replay passed

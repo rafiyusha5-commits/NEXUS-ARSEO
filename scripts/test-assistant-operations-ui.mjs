@@ -54,9 +54,9 @@ try{
      lines:[{balance_id:'a',batch:'SYNTH-FIRST',expiry:'2099-01-01',quantity:6,uom:'piece'},{balance_id:'b',batch:'SYNTH-SECOND',expiry:'2099-02-01',quantity:18,uom:'piece'}],
     }};
    result.kind=confirmation?'customer_order_confirm':reserve?'customer_order_reserve':draft?'customer_order_create':order?'customer_order_fulfillment':'inventory_transfer';
-   if(draft&&!completed)result.preview={customer:'Синтетический покупатель',warehouse:'AKT · Актобе',contract:null,currency:'KZT',planned_date:'2099-01-20',document_date:'2099-01-01',total:'201.25',lines:[],items:[
-    {id:'a',product:'Синтетическое печенье',quantity:'2',uom:'box',unit_price:'100.1250',line_amount:'200.2500',required_shelf_life_pct:70},
-    {id:'b',product:'Синтетический сок',quantity:'3',uom:'piece',unit_price:'0.3333',line_amount:'0.9999',required_shelf_life_pct:null}]};
+   if(draft&&!completed)result.preview={customer:'Синтетический покупатель',warehouse:'AKT · Актобе',contract:null,currency:'KZT',planned_date:'2099-01-20',document_date:'2099-01-01',total:'200.25',unpriced_lines:1,lines:[],items:[
+    {id:'a',product:'Синтетическое печенье',quantity:'2',uom:'box',unit_price:'100.1250',line_amount:'200.2500',required_shelf_life_pct:70,price_source:'price_list',price_type:'Казахстан, предоплата',brand:'Синтетический бренд',percent:'-10',vat_included:true,rate_path:'same'},
+    {id:'b',product:'Синтетический сок',quantity:'3',uom:'piece',unit_price:null,line_amount:null,required_shelf_life_pct:null,price_reason:'no_price'}]};
    if((order||reserve||confirmation)&&!completed)result.preview={order_number:'SYNTH-ORDER-77',customer:'Синтетический покупатель',warehouse:'AKT · Актобе',planned_date:'2099-01-01',document_date:'2099-01-01',
     items:[{id:'item-a',product:'Синтетическое печенье',quantity:2,uom:'box'}],lines:[
      {id:'r-a',product:'Синтетическое печенье',batch:'SYNTH-FIRST',expiry:'2099-02-01',quantity:6,uom:'piece',sale_quantity:0.5,sale_uom:'box'},
@@ -86,7 +86,7 @@ try{
   if(confirmation)assert.match(await page.locator('body').innerText(),/Резервы|резервы и платежи не меняются/);
   if(order)assert.match(await page.locator('body').innerText(),/Физический остаток уменьшится[\s\S]*Оплата не создаётся/);
   assert.equal(await confirm.isDisabled(),true);
-  if(draft){assert.match(await page.locator('body').innerText(),/100.1250 KZT[\s\S]*0.3333 KZT[\s\S]*не задано[\s\S]*201.25 KZT/);assert.match(await page.locator('body').innerText(),/Остатки, платежи и задолженность не меняются/);}
+  if(draft){assert.match(await page.locator('body').innerText(),/100.1250 KZT[\s\S]*Синтетический бренд -10 %[\s\S]*Цены нет: в прайсе нет цены[\s\S]*не задано[\s\S]*200.25 KZT[\s\S]*Без цены позиций: 1/);assert.match(await page.locator('body').innerText(),/Остатки, платежи и задолженность не меняются/);}
   else if(expensePayment){const text=await page.locator("body").innerText();assert.match(text,/Распределён → Оплачен/);assert.match(text,/1250.50 KZT/);assert.match(text,/Кнопка не переводит деньги/);assert.match(text,/Частичная оплата здесь не поддерживается/);assert.match(text,/обычная отмена недоступна/);}
   else if(expenseReverse){const text=await page.locator('body').innerText();assert.match(text,/Оплачен → Сторнирован/);assert.match(text,/Финансист/);assert.match(text,/2099-01-02/);assert.match(text,/1250.50 KZT/);assert.match(text,/Сторнирование не означает, что деньги возвращены/);}
   else if(expenseCancel){const text=await page.locator('body').innerText();assert.match(text,/1250.50 KZT/);assert.match(text,/Дублирующий счёт/);assert.match(text,/Возврат денег, оплата, сторнирование и складские движения не выполняются/);if(kind.endsWith('allocated'))assert.match(text,/истории: 2/);if(kind.endsWith('goods'))assert.match(text,/не простое вычитание/);}

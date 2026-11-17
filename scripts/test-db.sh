@@ -249,6 +249,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611160100_batch_cost_by_receipt.sql" >/dev/null
 # The price list grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170100_sales_price_list.sql" >/dev/null
+# Order prices from the price list replace add_customer_order_item (202609272500), create_sale_from_commercial_program
+# (202609273200) and the assistant draft preview/handler (202610230300) re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170200_order_price_substitution.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

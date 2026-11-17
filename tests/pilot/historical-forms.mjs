@@ -234,7 +234,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     const sale=new URL(page.url()).pathname.split('/').at(-1);assert.match(sale,/^[0-9a-f-]{36}$/);
     await go(`/sales/${sale}?tab=items`);
     f=buttonForm('Добавить');
-    await fill(f,{product_id:refs.a,quantity:7,uom:'box',unit_price:50,required_shelf_life_pct:60});await submit(f,'Добавить');
+    await fill(f,{product_id:refs.a,quantity:7,uom:'box',unit_price:50,price_reason:'Синтетическая цена браузерной проверки',required_shelf_life_pct:60});await submit(f,'Добавить');
     await go(`/sales/${sale}?tab=shipping`);
     await submit(buttonForm('Резервировать по FEFO'),'Резервировать по FEFO');
     await go(`/sales/${sale}?tab=shipping`);

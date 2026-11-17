@@ -36,24 +36,24 @@ test("reservation proposal cannot waive a hard blocker or approve a letter", () 
 
 const draft = { kind: "customer_order_create", params: {
  customer_id: command.params.product_id, warehouse_id: command.params.from_warehouse_id, currency_id: command.params.to_warehouse_id,
- contract_id: null, planned_shipment_date: "2099-01-20", items: [{ product_id: command.params.product_id, quantity: "2", uom: "box", unit_price: "100.1250" }],
+ contract_id: null, planned_shipment_date: "2099-01-20", items: [{ product_id: command.params.product_id, quantity: "2", uom: "box" }],
 } };
-test("draft requires explicit currency, date, contract decision and exact prices", () => {
+test("draft requires explicit currency, date and contract decision; prices come only from the price list", () => {
  assert.deepEqual(parseOperationIntent(draft), draft);
  for (const patch of [{ currency_id: null }, { contract_id: undefined }, { planned_shipment_date: "2099-02-30" }, { warehouse_id: "Астана" }, { confirm: true }])
   assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, ...patch } }), null);
  const noContract: Record<string, unknown> = { ...draft.params }; delete noContract.contract_id;
  assert.equal(parseOperationIntent({ ...draft, params: noContract }), null);
- for (const unit_price of [null, undefined, "", "-1", "1e3", "0.00001", 15, "10000000000"])
+ // The assistant never sets a price: any price in a line is refused, even a "valid" one.
+ for (const unit_price of ["100.1250", "0", null])
   assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, items: [{ ...draft.params.items[0], unit_price }] } }), null);
- assert.ok(parseOperationIntent({ ...draft, params: { ...draft.params, items: [{ ...draft.params.items[0], unit_price: "0" }] } })); // explicit zero is not missing
 });
 test("draft lines cannot be silently aggregated or smuggle a reserve/action", () => {
  for (const items of [[], Array(26).fill(draft.params.items[0]), [...draft.params.items, ...draft.params.items], [{ ...draft.params.items[0], reserve: true }]])
   assert.equal(parseOperationIntent({ ...draft, params: { ...draft.params, items } }), null);
  assert.ok(parseOperationIntent({ ...draft, params: { ...draft.params, items: [...draft.params.items, { ...draft.params.items[0], uom: "piece" }] } }));
  assert.ok(JSON.stringify({ action: "prepare", id: command.params.product_id, intent: { ...draft, params: { ...draft.params,
-  items: Array.from({ length: 25 }, (_, i) => ({ ...draft.params.items[0], product_id: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`, quantity: "999999999.999", unit_price: "9999999999.9999" })) } } }).length < 8192);
+  items: Array.from({ length: 25 }, (_, i) => ({ ...draft.params.items[0], product_id: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`, quantity: "999999999.999" })) } } }).length < 8192);
 });
 test("ambiguous identities and unknown units fail closed", () => {
  for (const patch of [{ product_id: "Merba" }, { uom: "kg" }, { to_warehouse_id: command.params.from_warehouse_id }])
