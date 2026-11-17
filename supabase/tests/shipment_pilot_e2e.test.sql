@@ -187,7 +187,7 @@ end$$;
 -- Fixed dates, FEFO across two batches, low shelf-life guarantee, repeated reservation.
 select pg_temp.pilot_checkpoint('received');
 insert into pilot_ids values ('sale',public.create_customer_order('ee100000-0000-4000-8000-000000000001',null,pg_temp.pilot_id('warehouse'),'2099-01-20',(select id from public.currencies where code='EUR'),'Synthetic pilot'));
-insert into pilot_ids values ('sale-item',public.add_customer_order_item(pg_temp.pilot_id('sale'),pg_temp.pilot_id('a'),7,'box',50,60));
+insert into pilot_ids values ('sale-item',public.add_customer_order_item(pg_temp.pilot_id('sale'),pg_temp.pilot_id('a'),7,'box',50,60,'Синтетическая цена теста'));
 select public.reserve_customer_order_item_fefo(pg_temp.pilot_id('sale-item'));
 select public.reserve_customer_order_item_fefo(pg_temp.pilot_id('sale-item'));
 do $$begin

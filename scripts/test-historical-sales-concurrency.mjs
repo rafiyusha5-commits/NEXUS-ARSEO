@@ -35,7 +35,7 @@ const conflicts=await Promise.all([2,3,4].map(n=>run(create(`af610000-0000-4000-
 for(const r of conflicts){assert.notEqual(r.code,0);assert.match(r.err,/уже существует/);}
 await run(`${who}
  insert into tests.historical_context values('sale','${sale}',null);
- insert into tests.historical_context values('item',public.add_customer_order_item('${sale}','af310000-0000-4000-8000-000000000001',10,'piece',10,80),null);
+ insert into tests.historical_context values('item',public.add_customer_order_item('${sale}','af310000-0000-4000-8000-000000000001',10,'piece',10,80,'Синтетическая цена теста'),null);
  select public.reserve_customer_order_item_fefo(id) from tests.historical_context where k='item';`);
 await run("update public.inventory_batches set manufacture_date=private.business_today()-200 where id='af410000-0000-4000-8000-000000000001'");
 const token=(await run(`${who}select public.historical_sale_receipt_preview('${sale}')->>'token';`)).out;

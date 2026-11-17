@@ -44,8 +44,11 @@ export async function createHistoricalCustomerOrder(data: FormData) {
 export async function addCustomerOrderItem(data:FormData){
   const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
   const quantity=number(data,"quantity",true);const required=number(data,"required_shelf_life_pct");const price=number(data,"unit_price");
-  const {error}=await supabase.rpc("add_customer_order_item",{p_sale_id:saleId,p_product_id:uuid(data,"product_id"),p_quantity:quantity,p_uom:text(data,"uom"),p_unit_price:price,p_required_shelf_life_pct:required});
-  if(error)redirect(orderUrl(saleId,publicErrorMessage(error,"Не удалось добавить позицию."),"error","items"));revalidatePath(`/sales/${saleId}`);redirect(orderUrl(saleId,"Позиция добавлена","success","items"));
+  // No price: the database takes it from the price list. A price typed by hand needs a reason.
+  const reason=text(data,"price_reason")||null;
+  if(price!=null&&!reason)redirect(orderUrl(saleId,"Укажите причину ручной цены или оставьте цену пустой, чтобы взять её из прайса.","error","items"));
+  const {error}=await supabase.rpc("add_customer_order_item",{p_sale_id:saleId,p_product_id:uuid(data,"product_id"),p_quantity:quantity,p_uom:text(data,"uom"),p_unit_price:price,p_required_shelf_life_pct:required,p_price_reason:price==null?null:reason});
+  if(error)redirect(orderUrl(saleId,ruleViolationMessage(error,"Не удалось добавить позицию."),"error","items"));revalidatePath(`/sales/${saleId}`);redirect(orderUrl(saleId,"Позиция добавлена","success","items"));
 }
 
 export async function reserveOrderItemFefo(data:FormData){

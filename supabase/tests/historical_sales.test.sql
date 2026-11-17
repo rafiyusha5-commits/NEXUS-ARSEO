@@ -20,7 +20,7 @@ insert into tests.historical_context values ('sale',pg_temp.historical_create(),
 do $$begin assert pg_temp.historical_create()=(select id from tests.historical_context where k='sale'),'Retry must return same order';end$$;
 select pg_temp.historical_reject($q$select pg_temp.historical_create(reason=>'Другой запрос')$q$,'другие данные');
 select pg_temp.historical_reject($q$select pg_temp.historical_create('af610000-0000-4000-8000-000000000002',' inv-hist-01 ')$q$,'уже существует');
-insert into tests.historical_context select 'item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',10,'piece',10,80),null from tests.historical_context where k='sale';
+insert into tests.historical_context select 'item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',10,'piece',10,80,'Синтетическая цена теста'),null from tests.historical_context where k='sale';
 select public.reserve_customer_order_item_fefo(id) from tests.historical_context where k='item';
 do $$begin
  assert (select count(*)=1 and min(batch_id::text)='af410000-0000-4000-8000-000000000001' and min(remaining_shelf_life_pct)=82.5 from public.inventory_reservations where sale_item_id=(select id from tests.historical_context where k='item') and status='active'),'FEFO uses historical date and skips later receipts';
@@ -138,7 +138,7 @@ insert into public.counterparties(id,roles,legal_name,country,tax_id,min_remaini
  ('af110000-0000-4000-8000-000000000003',array['customer'],'Ordinary synthetic buyer','KZ','ORDINARY-BUYER',0);
 set local role authenticated;
 insert into tests.historical_context values('ordinary',public.create_customer_order('af110000-0000-4000-8000-000000000003',null,'af210000-0000-4000-8000-000000000001',(select d from tests.historical_context where k='ordinary-day'),(select id from tests.historical_context where k='currency'),null),null);
-insert into tests.historical_context select 'ordinary-item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',1,'piece',10,0),null from tests.historical_context where k='ordinary';
+insert into tests.historical_context select 'ordinary-item',public.add_customer_order_item(id,'af310000-0000-4000-8000-000000000001',1,'piece',10,0,'Синтетическая цена теста'),null from tests.historical_context where k='ordinary';
 select public.reserve_customer_order_item_override(id,'af510000-0000-4000-8000-000000000001','Synthetic ordinary dispatch') from tests.historical_context where k='ordinary-item';
 select public.confirm_customer_order(id) from tests.historical_context where k='ordinary';
 reset role;

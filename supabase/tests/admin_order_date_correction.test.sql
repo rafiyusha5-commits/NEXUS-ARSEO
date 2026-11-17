@@ -11,7 +11,7 @@ insert into tests.historical_context select 'sale',public.create_customer_order(
  'af110000-0000-4000-8000-000000000002',null,'af210000-0000-4000-8000-000000000001',
  current_date+1,(select id from tests.historical_context where k='currency'),null),null;
 insert into tests.historical_context select 'item',public.add_customer_order_item(id,
- 'af310000-0000-4000-8000-000000000001',10,'piece',10,0),null from tests.historical_context where k='sale';
+ 'af310000-0000-4000-8000-000000000001',10,'piece',10,0,'Синтетическая цена теста'),null from tests.historical_context where k='sale';
 reset role;
 -- A pre-existing ordinary draft, created five days ago, with a mistaken planned date.
 update public.sales set sale_date=private.business_today()-5,planned_shipment_date=private.business_today()-1

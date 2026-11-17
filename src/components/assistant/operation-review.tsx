@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import type { OperationIntent } from "@/lib/agent/operations";
+import { NO_PRICE_REASONS, describePriceList } from "@/components/sales/order-line-price";
 import { ReceivingPreview, type ReceivingData } from "./receiving-preview";
 import { ReturnPreview, type ReturnData } from "./return-preview";
 import { ReturnDecisionPreview, type ReturnDecisionData } from "./return-decision-preview";
@@ -20,8 +21,8 @@ import { ExpensePreview, type ExpenseData } from "./expense-preview";
 type Review = { id: string; kind?: OperationIntent["kind"]; status: "awaiting_confirmation" | "completed"; review_token?: string; result_id?: string; shipment_id?: string; expires_at?: string;
  preview?: Partial<Omit<ReceivingData, "lines">> & { product?: string; from?: string; to?: string; quantity?: number; uom?: string; document_date: string;
   low_shelf_life?: boolean; order_number?: string; customer?: string; warehouse?: string; planned_date?: string;
-  contract?: string | null; contract_currency?: string | null; contract_valid_from?: string | null; contract_valid_to?: string | null; currency?: string; total?: string;
-  items?: { id: string; product: string; quantity: number | string; uom: string; unit_price?: string; line_amount?: string; required_shelf_life_pct?: number | null }[];
+  contract?: string | null; contract_currency?: string | null; contract_valid_from?: string | null; contract_valid_to?: string | null; currency?: string; total?: string; unpriced_lines?: number;
+  items?: { id: string; product: string; quantity: number | string; uom: string; unit_price?: string | null; line_amount?: string | null; required_shelf_life_pct?: number | null; price_reason?: string | null; price_note?: string | null; price_type?: string | null; brand?: string | null; percent?: string | null; vat_included?: boolean | null; rate?: string | null; rate_date?: string | null; rate_path?: string | null; price_source?: string | null }[];
   lines: { remaining_shelf_life_pct?: number | null; required_shelf_life_pct?: number | null; balance_id?: string; id?: string; product?: string; batch: string; expiry: string | null; quantity: number; uom: string; sale_quantity?: number; sale_uom?: string }[] } };
 const units: Record<string, string> = { piece: "шт.", box: "кор.", layer: "слой", pallet: "пал.", truck: "фура" };
 
@@ -155,8 +156,8 @@ export function OperationReview({ intent }: { intent?: OperationIntent }) {
     {isDraft && <><dl className="assistant-values"><div><dt>Договор</dt><dd>{review.preview.contract ?? "Без договора — проверьте выбор"}</dd></div><div><dt>Валюта заказа</dt><dd>{review.preview.currency}</dd></div></dl>
      {review.preview.contract && <p className="form-help">Договор: с {review.preview.contract_valid_from ?? "дата не задана"} по {review.preview.contract_valid_to ?? "дата не задана"}; валюта договора: {review.preview.contract_currency ?? "не задана"}. Проверьте соответствие выбранным условиям.</p>}</>}
     <h4>{isConfirm || isReserve ? "Позиции заказа" : isDraft ? "Предлагаемые позиции и цены" : "Весь подтверждённый заказ"}</h4><ul>{review.preview.items?.map(item => <li key={item.id}>{item.product} — {item.quantity} {units[item.uom] ?? item.uom}
-     {isDraft && <><br />Цена за {units[item.uom] ?? item.uom}: {item.unit_price} {review.preview?.currency}; сумма строки: {item.line_amount} {review.preview?.currency}.<br />ОСГ покупателя: {item.required_shelf_life_pct == null ? "не задано" : `${item.required_shelf_life_pct}%`}</>}</li>)}</ul>
-    {isDraft && <p><strong>Итого: {review.preview.total} {review.preview.currency}</strong><br /><span className="form-help">Итог округлён до 2 знаков, как в существующем расчёте заказа Nexus. Дополнительный налог или скидка автоматически не добавляются.</span></p>}
+     {isDraft && <><br />{item.unit_price == null ? <>Цены нет: {NO_PRICE_REASONS[item.price_reason ?? ""] ?? item.price_reason}. Позиция будет создана без цены.</> : <>Цена за {units[item.uom] ?? item.uom}: {item.unit_price} {review.preview?.currency}; сумма строки: {item.line_amount} {review.preview?.currency}. Из прайса: {describePriceList({ price: item.unit_price, source: item.price_source, price_type_name: item.price_type, brand: item.brand, percent: item.percent, vat_included: item.vat_included, rate: item.rate, rate_date: item.rate_date, rate_path: item.rate_path })}.</>}<br />ОСГ покупателя: {item.required_shelf_life_pct == null ? "не задано" : `${item.required_shelf_life_pct}%`}</>}</li>)}</ul>
+    {isDraft && <p><strong>Итого: {review.preview.total} {review.preview.currency}</strong><br /><span className="form-help">Цены взяты из прайса клиента на дату заказа; ассистент их не задаёт. Итог округлён до 2 знаков, как в существующем расчёте заказа Nexus.{review.preview.unpriced_lines ? ` Без цены позиций: ${review.preview.unpriced_lines}, в итог они не входят.` : ""}</span></p>}
    </> : <><h4>{review.preview.product}</h4>
    <dl className="assistant-values"><div><dt>Откуда</dt><dd>{review.preview.from}</dd></div><div><dt>Куда</dt><dd>{review.preview.to}</dd></div>
     <div><dt>По команде</dt><dd>{review.preview.quantity} {units[review.preview.uom ?? ""] ?? review.preview.uom}</dd></div><div><dt>Дата документа</dt><dd>{review.preview.document_date}</dd></div></dl></>}

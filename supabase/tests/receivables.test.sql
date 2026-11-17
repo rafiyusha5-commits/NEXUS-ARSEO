@@ -122,7 +122,7 @@ end $$;
 -- ---------- warning before confirming an order ----------
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000002',false);
 insert into rt select 'sale',public.create_customer_order('ef100000-0000-4000-8000-000000000002',null,pg_temp.id('warehouse'),current_date+5,(select id from public.currencies where code='KZT'),null);
-insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ef200000-0000-4000-8000-000000000001',10,'piece',100,null);
+insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ef200000-0000-4000-8000-000000000001',10,'piece',100,null,'Синтетическая цена теста');
 select public.reserve_customer_order_item_fefo(pg_temp.id('item'));
 do $$ declare c jsonb := public.customer_credit_check(pg_temp.id('sale')); begin
  assert c->'issues'->0->>'code'='overdue' and (c->'issues'->0->>'amount')::numeric=1100,'the sales manager sees the overdue debt: '||c::text;
@@ -220,7 +220,7 @@ select pg_temp.fails($$select public.set_customer_credit_terms('ef100000-0000-40
 select public.set_customer_credit_terms('ef100000-0000-4000-8000-000000000002',500,'kzt',10);
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000002',false);
 insert into rt select 'sale2',public.create_customer_order('ef100000-0000-4000-8000-000000000002',null,pg_temp.id('warehouse'),current_date+5,(select id from public.currencies where code='KZT'),null);
-insert into rt select 'item2',public.add_customer_order_item(pg_temp.id('sale2'),'ef200000-0000-4000-8000-000000000001',5,'piece',100,null);
+insert into rt select 'item2',public.add_customer_order_item(pg_temp.id('sale2'),'ef200000-0000-4000-8000-000000000001',5,'piece',100,null,'Синтетическая цена теста');
 select public.reserve_customer_order_item_fefo(pg_temp.id('item2'));
 do $$ declare c jsonb := public.customer_credit_check(pg_temp.id('sale2')); begin
  assert jsonb_array_length(c->'issues')=1 and c->'issues'->0->>'code'='limit' and (c->'issues'->0->>'amount')::numeric=1200,'700 + 500 over the limit: '||c::text;

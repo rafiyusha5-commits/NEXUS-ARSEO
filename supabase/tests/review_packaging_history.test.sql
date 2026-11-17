@@ -47,7 +47,7 @@ insert into public.product_packaging(product_id,uom,units_per_parent) values('ee
 set role authenticated;
 select set_config('request.jwt.claim.sub','ee000000-0000-4000-8000-000000000001',false);
 insert into rt select 'sale',public.create_customer_order('ee100000-0000-4000-8000-000000000002',null,pg_temp.id('warehouse'),current_date,(select id from public.currencies where code='KZT'),null);
-insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ee200000-0000-4000-8000-000000000001',2,'box',100,null);
+insert into rt select 'item',public.add_customer_order_item(pg_temp.id('sale'),'ee200000-0000-4000-8000-000000000001',2,'box',100,null,'Синтетическая цена теста');
 select public.reserve_customer_order_item_fefo(pg_temp.id('item'));
 select public.confirm_customer_order(pg_temp.id('sale'));
 select public.fulfill_customer_order(pg_temp.id('sale'));

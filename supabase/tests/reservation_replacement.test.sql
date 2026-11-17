@@ -95,7 +95,7 @@ reset role;
 -- Fixture-only setup of an additional line; recovery deliberately does not allow editing confirmed quantities.
 update public.sales set status='draft' where id=(select id from tests.rr_context where k='sale');
 set local role authenticated;
-insert into tests.rr_context select 'untouched',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',1,'piece',7,60) from tests.rr_context where k='sale';
+insert into tests.rr_context select 'untouched',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',1,'piece',7,60,'Синтетическая цена теста') from tests.rr_context where k='sale';
 -- Setup a third eligible balance for the untouched line, via SQL fixture data only.
 reset role;
 insert into public.inventory_balances(id,batch_id,warehouse_id,uom,quantity_on_hand) values

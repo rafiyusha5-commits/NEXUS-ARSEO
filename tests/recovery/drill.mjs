@@ -50,7 +50,7 @@ export async function runRecoveryDrill(c){
   const order=await rpc('create_customer_order',{p_customer_id:refs.customer,p_contract_id:null,p_warehouse_id:refs.warehouse,
     // Use the same business day as the real order RPC, including after 19:00 UTC.
     p_planned_shipment_date:q('select to_jsonb(private.business_today());'),p_currency_id:refs.eur,p_notes:'Synthetic recovery active reservation'});
-  const item=await rpc('add_customer_order_item',{p_sale_id:order,p_product_id:refs.b,p_quantity:1,p_uom:'piece',p_unit_price:3,p_required_shelf_life_pct:0});
+  const item=await rpc('add_customer_order_item',{p_sale_id:order,p_product_id:refs.b,p_quantity:1,p_uom:'piece',p_unit_price:3,p_required_shelf_life_pct:0,p_price_reason:'Синтетическая цена учения'});
   await rpc('reserve_customer_order_item_fefo',{p_sale_item_id:item});await rpc('confirm_customer_order',{p_sale_id:order});
   // Real Storage uploads, two different byte streams and the normal document version trigger.
   const document=randomUUID(),type=q("select to_jsonb(id) from public.document_types where code='invoice';");
