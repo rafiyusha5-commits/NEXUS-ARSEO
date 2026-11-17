@@ -247,6 +247,8 @@ echo "re-applying document migrations (idempotency check)"
 # The batch cost rule replaces approve_shipment_cost (202609279100) and the assistant cost approval preview and
 # confirmation (202610240900, 202610241000) re-applied above, so it is re-applied after all of them.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611160100_batch_cost_by_receipt.sql" >/dev/null
+# The price list grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170100_sales_price_list.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
