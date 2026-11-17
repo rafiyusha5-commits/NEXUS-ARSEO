@@ -6,6 +6,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { confirmPriceListImport, saveBrand, setPriceListPrice, setVatRate } from "./actions";
+import { BatchMargins, type BatchMarginsData } from "@/components/sales/batch-margins";
 
 type PriceType = { id: string; code: string; name: string; market: string; currency: string; vat_included: boolean; payment_terms: string | null; is_reference: boolean; from_sheet: boolean };
 type Price = { price: string; origin: "calculator" | "manual"; valid_from: string; reason: string | null };
@@ -31,7 +32,9 @@ const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", { dateStyle
 export default async function PriceListPage({ searchParams }: { searchParams: Promise<{ tab?: string; error?: string; success?: string; product?: string; date?: string; import_from?: string }> }) {
   const notices = await searchParams;
   const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["pricing.list.manage"] as const);
+  const permissions = await loadPermissions(supabase, ["pricing.list.manage", "prices.purchase.view", "inventory.view"] as const);
+  // Cost and margin are requested only with purchase-price access; the database refuses everybody else anyway.
+  const canSeeMargin = permissions["prices.purchase.view"] && permissions["inventory.view"];
   const canManage = permissions["pricing.list.manage"];
   const onDate = notices.date && /^\d{4}-\d{2}-\d{2}$/.test(notices.date) ? notices.date : null;
   const importFrom = notices.import_from && /^\d{4}-\d{2}-\d{2}$/.test(notices.import_from) ? notices.import_from : null;
@@ -44,6 +47,7 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
     canManage && notices.tab === "import" ? supabase.rpc("price_list_import_preview", { p_valid_from: importFrom }) : Promise.resolve({ data: null }),
     product ? supabase.rpc("price_list_history", { p_product_id: product }) : Promise.resolve({ data: null }),
   ]);
+  const { data: margins } = product && canSeeMargin ? await supabase.rpc("price_list_batch_margins", { p_product_id: product, p_date: onDate }) : { data: null };
   const priceList = list as PriceList | null;
   const brandData = brands as Brands | null;
   const importPreview = preview.data as ImportPreview | null;
@@ -95,6 +99,7 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
               <td>{entry.reason ?? "—"}</td><td>{entry.author ?? "—"}<br/><small>{dateTime(entry.created_at)}</small></td>
             </tr>)}</tbody></table>
         </section>}
+        {selected && margins && <BatchMargins data={margins as BatchMarginsData} types={types}/>}
       </>
       {canManage && <section className="panel admin-section">
         <div className="panel-heading"><div><p className="eyebrow">Только чтение из снимка калькулятора</p><h2>Загрузка цен из калькулятора</h2></div>

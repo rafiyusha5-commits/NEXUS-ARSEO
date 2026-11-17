@@ -8,6 +8,7 @@ export const notificationTypeLabel: Record<string, string> = {
   overdue: "Просрочка",
   stage_blocked: "Этап заблокирован",
   order_blocked: "Заказ нельзя отгрузить",
+  price_review: "Проверьте цену",
   approval_request: "Запрос согласования",
   approval_decision: "Согласование завершено",
   status_change: "Изменение статуса",
@@ -47,6 +48,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         return { href: `/documents/${entity}`, label: "Открыть документ" };
       case "sale":
         return { href: `/sales/${entity}?tab=shipping`, label: "Открыть заказ" };
+      case "price_review":
+        return { href: `/sales/prices?tab=list&product=${entity}`, label: "Открыть прайс товара" };
     }
   }
   // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.

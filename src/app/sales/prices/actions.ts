@@ -111,3 +111,15 @@ export async function setCustomerFixedPrice(data: FormData) {
   revalidatePath(`/counterparties/${customer}`);
   redirect(customerUrl(customer, "success", "Фиксированная цена сохранена."));
 }
+
+/** Customer margin threshold, %; empty removes it (no check), 0 is a value. History is kept by the database. */
+export async function setCustomerMarginThreshold(data: FormData) {
+  const { supabase } = await requireUser();
+  const customer = uuid(data, "customer_id");
+  const { error } = await supabase.rpc("set_customer_margin_threshold", {
+    p_customer_id: customer, p_threshold_pct: decimal(data, "threshold_pct"), p_reason: text(data, "reason"),
+  });
+  if (error) redirect(customerUrl(customer, "error", ruleViolationMessage(error, "Не удалось сохранить порог маржи.")));
+  revalidatePath(`/counterparties/${customer}`);
+  redirect(customerUrl(customer, "success", "Порог маржи сохранён. Изменение записано в историю."));
+}
