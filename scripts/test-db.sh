@@ -244,6 +244,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611150200_driver_documents_retention.sql" >/dev/null
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611100200_system_monitoring.sql" >/dev/null
+# The batch cost rule replaces approve_shipment_cost (202609279100) and the assistant cost approval preview and
+# confirmation (202610240900, 202610241000) re-applied above, so it is re-applied after all of them.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611160100_batch_cost_by_receipt.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
