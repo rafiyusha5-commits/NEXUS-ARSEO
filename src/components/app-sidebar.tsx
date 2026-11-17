@@ -23,6 +23,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   ] },
   { label: "Продажи", items: [
     { label: "Заказы покупателей", href: "/sales", key: "sales" },
+    { label: "Прайс", href: "/sales/prices", key: "price-list" },
     { label: "Возвраты", href: "/sales/returns", key: "customer-returns" },
     { label: "Промо и спецзаказы", href: "/commercial-programs", key: "commercial-programs" },
     { label: "Карты ввода товаров", href: "/listing-cards", key: "listing-cards" },
