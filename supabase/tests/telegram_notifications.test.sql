@@ -25,10 +25,26 @@ language plpgsql as $$declare v uuid;begin
  returning id into v;return v;end $$;
 create function pg_temp.delivery(p_note uuid) returns public.notification_deliveries language sql stable as $$
  select * from public.notification_deliveries where notification_id=p_note and channel='telegram' $$;
--- 10:00 and 22:00 in Kazakhstan tomorrow (always after the deliveries were queued, whatever the hour of the run).
-create function pg_temp.at(p_hour int) returns timestamptz language sql stable as $$
- select (current_date + 1 + make_time(p_hour,0,0)) at time zone 'Asia/Almaty' $$;
+-- The worker's clock, independent of the hour of the run. day(): a working moment shortly after the deliveries were
+-- queued (now() is fixed for the transaction) and always less than 12 hours later, so nothing is stale by accident:
+-- one minute later when it is 08:00-20:30 in Kazakhstan, otherwise the next 08:05 (at most 11 h 35 min ahead).
+-- quiet(): 22:00 in Kazakhstan tomorrow.
+create function pg_temp.day_after(p_now timestamptz) returns timestamptz language sql immutable as $$
+ select case when (p_now at time zone 'Asia/Almaty')::time >= time '08:00' and (p_now at time zone 'Asia/Almaty')::time < time '20:30'
+   then p_now + interval '1 minute'
+   else ((p_now at time zone 'Asia/Almaty')::date
+         + case when (p_now at time zone 'Asia/Almaty')::time >= time '20:30' then 1 else 0 end + time '08:05') at time zone 'Asia/Almaty' end $$;
+create function pg_temp.day() returns timestamptz language sql stable as $$ select pg_temp.day_after(now()) $$;
+create function pg_temp.quiet() returns timestamptz language sql stable as $$
+ select (current_date + 1 + time '22:00') at time zone 'Asia/Almaty' $$;
 grant execute on all functions in schema pg_temp to authenticated;
+do $$begin
+ assert not exists(select 1 from generate_series(timestamptz '2026-01-01 00:00+05', timestamptz '2026-01-02 00:00+05', interval '5 minutes') t
+   where pg_temp.day_after(t) <= t or pg_temp.day_after(t) + interval '3 minutes' >= t + interval '12 hours'
+      or (pg_temp.day_after(t) at time zone 'Asia/Almaty')::time not between time '08:00' and time '20:40'
+      or ((pg_temp.day_after(t) + interval '3 minutes') at time zone 'Asia/Almaty')::time not between time '08:00' and time '20:40'),
+   'the test clock is a working moment after now and under 12 hours later at any hour of the run';
+end $$;
 
 -- 1. Off by default; turning on needs a linked chat and only the listed action types.
 select set_config('request.jwt.claim.sub','ab700000-0000-4000-8000-000000000001',true);
@@ -71,14 +87,14 @@ end $$;
 
 -- 3. Quiet hours: nothing is claimed at 22:00 Kazakhstan time.
 do $$begin
- assert (public.telegram_notification_batch(50,pg_temp.at(22))->>'quiet')::boolean;
+ assert (public.telegram_notification_batch(50,pg_temp.quiet())->>'quiet')::boolean;
  assert (pg_temp.delivery((select id from d7 where k='task'))).status='queued';
 end $$;
 
--- 4. Claim at 10:00: both for employee one, in one group; a second (parallel) claim gets nothing.
+-- 4. Claim in working hours: both for employee one, in one group; a second (parallel) claim gets nothing.
 create temporary table b(k text primary key,v jsonb);
-insert into b select 'first',public.telegram_notification_batch(50,pg_temp.at(10));
-insert into b select 'second',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'first',public.telegram_notification_batch(50,pg_temp.day());
+insert into b select 'second',public.telegram_notification_batch(50,pg_temp.day());
 do $$
 declare u jsonb;
 begin
@@ -101,7 +117,7 @@ do $$begin
    array[(pg_temp.delivery((select id from d7 where k='task'))).id],'sent',556)=0;
 end $$;
 update public.notification_deliveries set attempts=5,next_attempt_at=now()-interval '1 minute' where notification_id=(select id from d7 where k='order') and channel='telegram';
-insert into b select 'third',public.telegram_notification_batch(50,pg_temp.at(10)+interval '2 hours');
+insert into b select 'third',public.telegram_notification_batch(50,pg_temp.day()+interval '3 minutes');
 select public.telegram_notification_result((select (v->>'token')::uuid from b where k='third'),
  array[(pg_temp.delivery((select id from d7 where k='order'))).id],'retry',null,'TELEGRAM_UNREACHABLE');
 do $$begin
@@ -111,9 +127,9 @@ do $$begin
 end $$;
 -- A worker that crashed while sending: the delivery fails as "outcome unknown", it is never claimed again.
 insert into d7 values('crash',pg_temp.note('ab700000-0000-4000-8000-000000000001','task_assigned','task',gen_random_uuid()));
-insert into b select 'crash',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'crash',public.telegram_notification_batch(50,pg_temp.day());
 update public.notification_deliveries set claimed_until=now()-interval '1 second' where notification_id=(select id from d7 where k='crash') and channel='telegram';
-insert into b select 'after_crash',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'after_crash',public.telegram_notification_batch(50,pg_temp.day());
 do $$begin
  assert (pg_temp.delivery((select id from d7 where k='crash'))).status='failed' and (pg_temp.delivery((select id from d7 where k='crash'))).error_message='outcome_unknown';
  assert jsonb_array_length((select v->'users' from b where k='after_crash'))=0;
@@ -124,14 +140,14 @@ insert into d7 values('lost',pg_temp.note('ab700000-0000-4000-8000-000000000001'
 insert into public.user_permission_overrides(user_id,permission_id,effect,reason,granted_by)
  select 'ab700000-0000-4000-8000-000000000001',id,'deny','Lost access','ab700000-0000-4000-8000-000000000002' from public.permissions where code='sales.view';
 insert into d7 values('unlinked',pg_temp.note('ab700000-0000-4000-8000-000000000001','task_assigned','task',gen_random_uuid()));
-insert into b select 'recheck',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'recheck',public.telegram_notification_batch(50,pg_temp.day());
 do $$begin
  assert (pg_temp.delivery((select id from d7 where k='lost'))).status='skipped' and (pg_temp.delivery((select id from d7 where k='lost'))).error_message='no_access';
  assert (pg_temp.delivery((select id from d7 where k='unlinked'))).status='sending','still allowed';
 end $$;
 update public.telegram_links set chat_id=null where user_id='ab700000-0000-4000-8000-000000000001';
 insert into d7 values('no_chat',pg_temp.note('ab700000-0000-4000-8000-000000000001','task_assigned','task',gen_random_uuid()));
-insert into b select 'no_chat',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'no_chat',public.telegram_notification_batch(50,pg_temp.day());
 do $$begin
  assert (pg_temp.delivery((select id from d7 where k='no_chat'))).error_message='chat_not_linked';
 end $$;
@@ -142,7 +158,7 @@ insert into d7 values('queued_then_off',gen_random_uuid());
 update public.telegram_notification_settings set enabled=true where user_id='ab700000-0000-4000-8000-000000000001';
 update d7 set id=pg_temp.note('ab700000-0000-4000-8000-000000000001','task_assigned','task',gen_random_uuid()) where k='queued_then_off';
 update public.telegram_notification_settings set enabled=false where user_id='ab700000-0000-4000-8000-000000000001';
-insert into b select 'off',public.telegram_notification_batch(50,pg_temp.at(10));
+insert into b select 'off',public.telegram_notification_batch(50,pg_temp.day());
 do $$begin
  assert (pg_temp.delivery((select id from d7 where k='queued_then_off'))).error_message='disabled';
 end $$;
@@ -150,8 +166,8 @@ end $$;
 -- 7. Stale (the bot was off for more than 12 hours): one summary line instead of the old messages.
 update public.telegram_notification_settings set enabled=true where user_id='ab700000-0000-4000-8000-000000000001';
 insert into d7 values('old',pg_temp.note('ab700000-0000-4000-8000-000000000001','task_assigned','task',gen_random_uuid()));
-update public.notification_deliveries set created_at=pg_temp.at(10)-interval '13 hours' where notification_id=(select id from d7 where k='old') and channel='telegram';
-insert into b select 'stale',public.telegram_notification_batch(50,pg_temp.at(10));
+update public.notification_deliveries set created_at=pg_temp.day()-interval '13 hours' where notification_id=(select id from d7 where k='old') and channel='telegram';
+insert into b select 'stale',public.telegram_notification_batch(50,pg_temp.day());
 do $$begin
  assert (select bool_or((i->>'stale')::boolean) from jsonb_array_elements((select v->'users'->0->'items' from b where k='stale')) i);
  assert ((select v->'users'->0->>'unread' from b where k='stale'))::int>=1;
