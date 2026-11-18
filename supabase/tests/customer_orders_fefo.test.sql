@@ -30,7 +30,7 @@ select set_config('request.jwt.claim.sub','f5000000-0000-4000-8000-000000000001'
 update fefo_context set sale_id=public.create_customer_order(
  'f5100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update fefo_context set item_id=public.add_customer_order_item(sale_id,'f5200000-0000-4000-8000-000000000001',150,'piece',null,null);
+update fefo_context set item_id=public.add_customer_order_item(sale_id,'f5200000-0000-4000-8000-000000000001',150,'piece',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item_id) from fefo_context;
 
 do $$ declare c fefo_context%rowtype;

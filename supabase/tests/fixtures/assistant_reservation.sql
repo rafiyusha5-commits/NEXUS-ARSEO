@@ -23,6 +23,6 @@ insert into public.product_packaging(product_id,uom,units_per_parent) values('eb
 set role authenticated;
 select set_config('request.jwt.claim.sub','eb000000-8a23-4000-8000-000000000001',false);
 insert into tests.assistant_reserve_context values ('sale',public.create_customer_order('eb100000-8a23-4000-8000-000000000002',null,'eb200000-8a23-4000-8000-000000000001','2099-01-20',null,'Synthetic order'));
-insert into tests.assistant_reserve_context select 'item',public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',12.5,'box',null,60) from tests.assistant_reserve_context where k='sale';
-insert into tests.assistant_reserve_context select 'second-item',public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',50,'piece',null,60) from tests.assistant_reserve_context where k='sale';
+insert into tests.assistant_reserve_context select 'item',public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',12.5,'box',120,60,'Синтетическая цена') from tests.assistant_reserve_context where k='sale';
+insert into tests.assistant_reserve_context select 'second-item',public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',50,'piece',10,60,'Синтетическая цена') from tests.assistant_reserve_context where k='sale';
 reset role;
