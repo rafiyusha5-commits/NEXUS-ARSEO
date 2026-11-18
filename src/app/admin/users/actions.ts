@@ -13,7 +13,8 @@ function usersRedirect(kind: "success" | "error", message: string): never {
 }
 
 export async function inviteUser(formData: FormData) {
-  const { supabase, user: actor } = await requireAccessManager();
+  // Both rights are checked before the invitation is sent with the server key: it creates the account and assigns a role.
+  const { supabase, user: actor } = await requireAccessManager(["users.manage", "roles.manage"]);
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const fullName = String(formData.get("full_name") ?? "").trim();
   const jobTitle = String(formData.get("job_title") ?? "").trim();
@@ -58,7 +59,7 @@ export async function inviteUser(formData: FormData) {
 }
 
 export async function setUserActive(formData: FormData) {
-  const { supabase, user } = await requireAccessManager();
+  const { supabase, user } = await requireAccessManager(["users.manage"]);
   const userId = String(formData.get("user_id") ?? "");
   const makeActive = String(formData.get("make_active")) === "true";
 
@@ -81,7 +82,7 @@ export async function setUserActive(formData: FormData) {
 }
 
 export async function assignRole(formData: FormData) {
-  const { supabase, user } = await requireAccessManager();
+  const { supabase, user } = await requireAccessManager(["roles.manage"]);
   const userId = String(formData.get("user_id") ?? "");
   const roleId = String(formData.get("role_id") ?? "");
   if (!userId || !roleId) usersRedirect("error", "Выберите роль.");
@@ -97,7 +98,7 @@ export async function assignRole(formData: FormData) {
 }
 
 export async function removeRole(formData: FormData) {
-  const { supabase } = await requireAccessManager();
+  const { supabase } = await requireAccessManager(["roles.manage"]);
   const userId = String(formData.get("user_id") ?? "");
   const roleId = String(formData.get("role_id") ?? "");
   if (!userId || !roleId) usersRedirect("error", "Не удалось определить назначение роли.");

@@ -31,21 +31,6 @@ export const JUSTIFIED: readonly Justification[] = [
       "PizZip и @xmldom/xmldom. Исправление — мажорная 11.x, а exceljs@4.4.0 объявляет ^8.3.0. " +
       "Обоснование и проверки: docs/security-audit.md, раздел «Зависимости».",
   },
-  {
-    advisory: "GHSA-g3hv-75wg-m249",
-    module: "minimatch",
-    versions: ["3.1.5", "5.1.9"],
-    paths: [
-      ".>exceljs>archiver>archiver-utils>glob>minimatch",
-      ".>exceljs>archiver>readdir-glob>minimatch",
-      ".>exceljs>archiver>zip-stream>archiver-utils>glob>minimatch",
-      ".>exceljs>unzipper>fstream>rimraf>glob>minimatch",
-    ],
-    reason: "Первичное сообщение описывает firstPhasePreProcess/secondPhasePreProcess при optimizationLevel >= 2 в 10.2.6. " +
-      "В установленных 3.1.5 и 5.1.9 этих методов и обработки optimizationLevel нет: globParts создаётся одним map без порождения новых альтернатив. " +
-      "Проверены все четыре пути ExcelJS и ограниченный воспроизводящий пример; tests/scripts/minimatch-advisory.test.ts. " +
-      "Исключение относится только к этой находке, версиям 3.1.5/5.1.9 и точному набору путей; другая версия или путь блокируются. См. docs/security-audit.md.",
-  },
 ];
 
 /** Raw result of running the audit command. `status` is null when the process never ran or was killed. */
