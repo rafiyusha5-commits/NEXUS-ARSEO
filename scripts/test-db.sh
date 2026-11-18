@@ -260,6 +260,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170500_profitability.sql" >/dev/null
 # Telegram delivery grants its RPCs explicitly; the hardening re-applied above resets function grants. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170600_telegram_notifications.sql" >/dev/null
+# Advances redefine the payables register and the payment check of 202611170400 re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170700_supplier_advances.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
