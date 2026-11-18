@@ -35,6 +35,8 @@ insert into public.user_roles(user_id,role_id) select '${user}',id from public.a
 insert into public.counterparties(id,roles,legal_name,country,tax_id) values
  ('${customer}',array['customer'],'Payables race customer','KZ','D49-C'),('${payee}',array['carrier'],'Payables race carrier','KZ','D49-P');
 create table tests_payables_race(k text primary key,id uuid);
+-- A helper of this test, read by the racing sessions as authenticated: new tables carry no read access by default.
+grant select on tests_payables_race to authenticated;
 with e as (
  insert into public.expenses(attributed_customer_id,expense_type,payee_counterparty_id,amount,currency_id,incurred_at,is_planned,status,confirmed_by,confirmed_at,created_by,notes)
  values ('${customer}','promo','${payee}',100,(select id from public.currencies where code='EUR'),current_date,false,'confirmed','${user}',now(),'${user}','Race')

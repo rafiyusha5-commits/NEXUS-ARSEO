@@ -43,10 +43,15 @@ grant usage on schema storage to authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated;
 grant select on storage.buckets to authenticated;
 
--- Supabase grants the API roles access to the public schema by default, including
--- every new table and function. Reproduced here so that the explicit REVOKE
+-- Default privileges of the public schema, as in the working Supabase project.
+-- Functions: every new function is executable by the API roles, so the explicit REVOKE
 -- statements in the migrations are actually exercised by the tests.
+-- Tables and sequences: the working project gives the API roles no read or write access by
+-- default; a table is reachable only through the GRANT its migration writes. Verified on
+-- 18.11.2026 against the ACL of a production backup: new tables carry only REFERENCES,
+-- TRIGGER, TRUNCATE (and MAINTAIN on PostgreSQL 17) for anon, authenticated and service_role,
+-- sequences carry nothing. With the former "grant all" a test could pass on a DELETE or a
+-- nextval() that the working database refuses.
 grant usage on schema public to anon, authenticated, service_role;
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant references, trigger, truncate on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
-alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
