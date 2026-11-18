@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash,randomUUID,generateKeyPairSync,sign} from "node:crypto";
-import {mkdtemp,readFile,writeFile,readdir} from "node:fs/promises";
+import {mkdtemp,readFile,writeFile,readdir,utimes} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {safeObservation,jobCode,type JobFacts} from "../../src/lib/monitoring/policy.ts";
@@ -64,6 +64,13 @@ test("logs allowlist fields; rotation, restart bounds and unavailable disk are n
  const file=join(dir,`health-${process.pid}.jsonl`);assert.ok(!(await readFile(file,"utf8")).includes("secret"));
  await writeFile(file,"x".repeat(65536));await appendSafeLog(dir,event());assert.ok((await readdir(dir)).includes(`health-${process.pid}.jsonl.1`));
  for(let i=1;i<15;i++)await writeFile(join(dir,`health-${i}.jsonl`),"safe\n");await appendSafeLog(dir,event());assert.ok((await readdir(dir)).length<=12);
+ assert.ok((await readdir(dir)).includes(`health-${process.pid}.jsonl`),"retention never removes the file just written");
+ // Deterministic: twelve older segments with newer modification times than the file being written.
+ const busy=await mkdtemp(join(tmpdir(),"nexus-health-retention-"));const later=new Date(Date.now()+60000);
+ for(let i=1;i<=13;i++){const other=join(busy,`health-${i}.jsonl`);await writeFile(other,"safe\n");await utimes(other,later,later);}
+ assert.equal(await appendSafeLog(busy,event()),true);
+ assert.ok((await readFile(join(busy,`health-${process.pid}.jsonl`),"utf8")).includes("correlation"),"the event just written is kept");
+ assert.ok((await readdir(busy)).length<=12);
  assert.equal(await appendSafeLog(file,event()),false);assert.equal(await appendSafeLog(join(process.cwd(),"public","bad"),event()),false);
  assert.equal(await appendSafeLog(dir,{...source,code:"query with private values"}),false);
 });
