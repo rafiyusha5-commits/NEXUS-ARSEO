@@ -62,7 +62,7 @@ end$$;`);
 console.log('PASS assistant order: 8 concurrent retries => one fulfillment; two proposals => one winner; exact movements/reserves');
 
 run(actor(orderUser)+`insert into tests.assistant_order_context values('waiting',public.create_customer_order('ed100000-8a21-4000-8000-000000000002',null,'ed200000-8a21-4000-8000-000000000001','2099-01-20',null,'Synthetic waiting order'));
- insert into tests.assistant_order_context select 'waiting-item',public.add_customer_order_item(id,'ed300000-8a21-4000-8000-000000000001',10,'piece',null,60) from tests.assistant_order_context where k='waiting';
+ insert into tests.assistant_order_context select 'waiting-item',public.add_customer_order_item(id,'ed300000-8a21-4000-8000-000000000001',10,'piece',10,60,'Синтетическая цена') from tests.assistant_order_context where k='waiting';
  select public.reserve_customer_order_item_fefo(id) from tests.assistant_order_context where k='waiting-item';
  select public.confirm_customer_order(id) from tests.assistant_order_context where k='waiting';`);
 // A real second PostgreSQL session holds a lock. Wait until the confirmation is actually blocked,
@@ -187,7 +187,7 @@ run(`do $$begin
  assert (select count(*)=${reserveReview.preview.lines.length} from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id where i.sale_id=(select id from tests.assistant_reserve_context where k='sale') and r.status='active');
 end$$;`);
 for(const which of ['a','b','waiting','overlap'])run(actor(reserveUser)+`insert into tests.assistant_reserve_context values('${which}',public.create_customer_order('eb100000-8a23-4000-8000-000000000002',null,'eb200000-8a23-4000-8000-000000000001','2099-01-20',null,null));
-select public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',100,'piece',null,60) from tests.assistant_reserve_context where k='${which}';`);
+select public.add_customer_order_item(id,'eb300000-8a23-4000-8000-000000000001',100,'piece',10,60,'Синтетическая цена') from tests.assistant_reserve_context where k='${which}';`);
 const reserveA='eb000000-8a23-4000-8000-000000000062',reserveB='eb000000-8a23-4000-8000-000000000063';
 const aPreview=reservePrepare(reserveA,'a'),bPreview=reservePrepare(reserveB,'b');
 const reserveRace=await Promise.all([[reserveA,aPreview],[reserveB,bPreview]].map(([key,r])=>parallel(actor(reserveUser)+`select public.confirm_assistant_operation('${key}','${r.review_token}');`)));
@@ -237,7 +237,7 @@ run(`do $$begin
  assert not exists(select 1 from public.inventory_movements where sale_id=(select id from tests.assistant_confirmation_context where k='sale'));
 end$$;`);
 run(actor(confirmUser)+`insert into tests.assistant_confirmation_context values('waiting',public.create_customer_order('ec100000-8a23-4000-8000-000000000002',null,'ec200000-8a23-4000-8000-000000000001','2099-01-20',null,null));
- select public.add_customer_order_item(id,'ec300000-8a23-4000-8000-000000000001',10,'piece',null,60) from tests.assistant_confirmation_context where k='waiting';
+ select public.add_customer_order_item(id,'ec300000-8a23-4000-8000-000000000001',10,'piece',10,60,'Синтетическая цена') from tests.assistant_confirmation_context where k='waiting';
  select public.reserve_customer_order_item_fefo(id) from public.sale_items where sale_id=(select id from tests.assistant_confirmation_context where k='waiting');
  do $$declare letter uuid;begin
   if exists(select 1 from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id

@@ -148,7 +148,9 @@ begin
  assert (q->>'price')::numeric=400 and q->>'note'='brand_condition_missing' and q->'percent'='null'::jsonb,
   'brand without a condition: price list price without percent, noted';
  q:=pg_temp.q('2','3','2026-06-10');
- assert q->'price'='null'::jsonb and q->>'reason'='no_brand','product without a brand: no price';
+ -- 202611180100: no brand in the directory = no condition for the brand (owner decision of 2026-11-18).
+ assert q->'price'<>'null'::jsonb and q->>'source'='price_list' and q->>'note'='brand_missing' and q->'percent'='null'::jsonb
+   and q->'brand'='null'::jsonb,'product without a brand: price list price without percent, noted brand_missing';
  q:=pg_temp.q('2','5','2026-06-10');
  assert q->'price'='null'::jsonb and q->>'reason'='no_price','no price in the price list: no price';
  q:=pg_temp.q('2','1','2026-06-10','box');
@@ -219,7 +221,7 @@ select public.confirm_price_list_import('d1300000-0000-4000-8000-000000000003',(
  jsonb_build_object('kz_prepayment:d1200000-0000-4000-8000-000000000002','keep_manual'));
 do $$begin
  assert (pg_temp.q('2','2','2026-06-12')->>'price')::numeric=1995,'manual 2100 kept: 2100 * 0.95 = 1995.00';
- assert (pg_temp.q('2','3','2026-06-12')->>'reason')='no_brand','the no-brand product still gets no price';
+ assert (pg_temp.q('2','3','2026-06-12')->>'note')='brand_missing','the no-brand product still has no percent';
 end $$;
 reset role;
 do $$begin
