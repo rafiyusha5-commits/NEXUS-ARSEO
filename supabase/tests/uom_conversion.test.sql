@@ -62,7 +62,7 @@ select set_config('request.jwt.claim.sub','f7000000-0000-4000-8000-000000000001'
 --    the remaining half box in its own unit, because half a box is an exact amount.
 update uom_context set sale_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',3,'box',null,null);
+update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',3,'box',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item_id) from uom_context;
 do $$ declare c uom_context%rowtype;
 begin
@@ -87,7 +87,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','f7000000-0000-4000-8000-000000000001',false);
 update uom_context set sale_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',25,'piece',null,null);
+update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',25,'piece',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item_id) from uom_context;
 do $$ declare c uom_context%rowtype;
 begin
@@ -104,7 +104,7 @@ end $$;
 --     boxes from the pallet (0.96 pallet = 48 pieces) and the fifth box from the loose pieces.
 update uom_context set sale2_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item2_id=public.add_customer_order_item(sale2_id,'f7200000-0000-4000-8000-000000000003',5,'box',null,null);
+update uom_context set item2_id=public.add_customer_order_item(sale2_id,'f7200000-0000-4000-8000-000000000003',5,'box',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item2_id) from uom_context;
 do $$ declare c uom_context%rowtype;
 begin
@@ -132,7 +132,7 @@ select public.cancel_customer_order(sale_id,'Тест пересчёта') from 
 
 update uom_context set sale_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',2,'box',null,null);
+update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',2,'box',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_override(item_id,'f7400000-0000-4000-8000-000000000002','Свежая партия по просьбе клиента') from uom_context;
 do $$ declare c uom_context%rowtype;
 begin
@@ -152,7 +152,7 @@ select public.cancel_customer_order(sale_id,'Тест пересчёта') from 
 -- 4. Not enough stock: the whole reservation is rolled back and the shortage is given in the order unit.
 update uom_context set sale_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',14,'box',null,null);
+update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000001',14,'box',10,null,'Синтетическая цена');
 do $$ begin
  begin
   perform public.reserve_customer_order_item_fefo((select item_id from uom_context));
@@ -169,7 +169,7 @@ select public.cancel_customer_order(sale_id,'Тест пересчёта') from 
 -- 5. Missing packaging: the message names the unit to fill in; stock in the same unit still works.
 update uom_context set sale_id=public.create_customer_order('f7100000-0000-4000-8000-000000000002',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000002',2,'box',null,null);
+update uom_context set item_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000002',2,'box',10,null,'Синтетическая цена');
 do $$ begin
  begin
   perform public.reserve_customer_order_item_fefo((select item_id from uom_context));
@@ -178,7 +178,7 @@ do $$ begin
   assert position('не задана упаковка товара: кор.' in sqlerrm)>0,'missing box packaging is named: '||sqlerrm;
  end;
 end $$;
-update uom_context set item2_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000002',40,'piece',null,null);
+update uom_context set item2_id=public.add_customer_order_item(sale_id,'f7200000-0000-4000-8000-000000000002',40,'piece',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item2_id) from uom_context;
 do $$ begin
  assert (select quantity=40 and uom='piece' and sale_quantity=40 from public.inventory_reservations where sale_item_id=(select item2_id from uom_context) and status='active'),'same unit needs no packaging';
@@ -193,7 +193,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub','f7000000-0000-4000-8000-000000000001',false);
 update uom_context set sale2_id=public.create_customer_order('f7100000-0000-4000-8000-000000000003',null,warehouse_id,current_date+10,
  (select id from public.currencies where code='KZT'),null);
-update uom_context set item2_id=public.add_customer_order_item(sale2_id,'f7200000-0000-4000-8000-000000000001',2,'box',null,null);
+update uom_context set item2_id=public.add_customer_order_item(sale2_id,'f7200000-0000-4000-8000-000000000001',2,'box',10,null,'Синтетическая цена');
 select public.reserve_customer_order_item_fefo(item2_id) from uom_context;
 update uom_context set letter_id=public.create_sale_guarantee_letter(sale2_id,'Тест пересчёта');
 do $$ declare c uom_context%rowtype;

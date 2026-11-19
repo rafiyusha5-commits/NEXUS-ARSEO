@@ -22,13 +22,13 @@ insert into public.inventory_balances(id,batch_id,warehouse_id,uom,quantity_on_h
 set role authenticated;
 select set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',false);
 insert into tests.fulfillment_context values ('sale',public.create_customer_order('ef100000-0000-4000-8000-000000000002',null,'ef200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic order'));
-insert into tests.fulfillment_context select 'item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',150,'piece',null,60) from tests.fulfillment_context where k='sale';
+insert into tests.fulfillment_context select 'item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',150,'piece',10,60,'Синтетическая цена') from tests.fulfillment_context where k='sale';
 select public.reserve_customer_order_item_fefo(id) from tests.fulfillment_context where k='item';
 insert into tests.fulfillment_context select 'letter',public.create_sale_guarantee_letter(id,'Synthetic approval') from tests.fulfillment_context where k='sale';
 select public.change_sale_guarantee_status(id,'approved') from tests.fulfillment_context where k='letter';
 select public.confirm_customer_order(id) from tests.fulfillment_context where k='sale';
 insert into tests.fulfillment_context values ('other',public.create_customer_order('ef100000-0000-4000-8000-000000000002',null,'ef200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic other order'));
-insert into tests.fulfillment_context select 'other-item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',50,'piece',null,60) from tests.fulfillment_context where k='other';
+insert into tests.fulfillment_context select 'other-item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',50,'piece',10,60,'Синтетическая цена') from tests.fulfillment_context where k='other';
 select public.reserve_customer_order_item_fefo(id) from tests.fulfillment_context where k='other-item';
 select public.confirm_customer_order(id) from tests.fulfillment_context where k='other';
 reset role;

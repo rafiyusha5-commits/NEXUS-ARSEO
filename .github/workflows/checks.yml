@@ -1,8 +1,8 @@
 # Проверки PR (включая Draft) и итогового main без второго push-прогона рабочей ветки.
-# Все шесть заданий обязательны по политике проекта и запускаются без фильтров путей.
+# Все семь заданий обязательны по политике проекта и запускаются без фильтров путей.
 # Supabase/PostgreSQL/Storage — одноразовые локальные стенды. Drive/OCR в браузерном
 # пилоте подменены синтетическими HTTP-границами; рабочих секретов и deployments нет.
-# Имена app, database, audit, pilot-docker, historical-readiness, recovery-drill
+# Имена app, database, audit, ocr, pilot-docker, historical-readiness, recovery-drill
 # сохранены для будущей защиты main. Наличие workflow само по себе main не защищает.
 # Actions закреплены на тех же коммитах, что исполнялись в успешном прогоне #260.
 # Кеш содержит только store pnpm: не node_modules, .next, .env, БД или тестовые данные.
@@ -185,6 +185,44 @@ jobs:
         # разобранное исключение, перечисленное в scripts/audit-policy.mts; любая новая находка
         # роняет проверку. См. docs/security-audit.md, раздел «Зависимости».
         run: pnpm run audit:ci
+
+  ocr:
+    name: ocr
+    # Сервис распознавания (services/ocr, Python/FastAPI/Tesseract) принимает недоверенные сканы.
+    # Тесты на синтетических изображениях с настоящим Tesseract и аудит зависимостей Python.
+    # Без внешних сервисов OCR, без секретов: токен в тестах синтетический.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/ocr
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Tesseract с языками сервиса (как в Dockerfile) и шрифт синтетических тестов
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus tesseract-ocr-kaz fonts-dejavu-core python3-venv
+
+      - name: Зависимости сервиса из requirements.txt и requirements-dev.txt
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ocr-venv"
+          "$RUNNER_TEMP/ocr-venv/bin/pip" install -q -r requirements.txt -r requirements-dev.txt
+
+      - name: pytest
+        run: '"$RUNNER_TEMP/ocr-venv/bin/python" -m pytest -q -p no:cacheprovider'
+
+      - name: pip-audit
+        # Отдельное окружение: аудит разрешает зависимости requirements-файлов сам и не смешивает их со своими.
+        # Любая находка роняет проверку; оставленная без исправления обосновывается в docs/security-audit.md.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/audit-venv"
+          "$RUNNER_TEMP/audit-venv/bin/pip" install -q pip-audit==2.10.1
+          "$RUNNER_TEMP/audit-venv/bin/pip-audit" -r requirements.txt -r requirements-dev.txt --progress-spinner off
 
   historical-readiness:
     name: historical-readiness

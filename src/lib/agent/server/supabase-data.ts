@@ -92,7 +92,7 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
     async readSystem(input, signal) {
       const section = SYSTEM_BY_KEY.get(input.section);
       if (!section) throw new DataError();
-      const permissions = await supabase.rpc("my_permissions", { p_codes: [...section.permissions, ...section.anyPermissions, "prices.purchase.view"] }).abortSignal(signal);
+      const permissions = await supabase.rpc("my_permissions", { p_codes: [...section.permissions, ...section.anyPermissions, "prices.purchase.view", "pricing.calculated.view"] }).abortSignal(signal);
       if (permissions.error || !Array.isArray(permissions.data) || !sectionAllowed(section, new Set(permissions.data))) throw new DataError();
       const grants = new Set(permissions.data);
       const parentField = input.relatedBy ?? section.parent;
@@ -157,8 +157,12 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
         const sources = ensure(await supabase.rpc("my_product_master_sources", { p_source_keys: keys }).abortSignal(signal)).data as ShipmentRow[];
         const confidential = section.key === "calculator_finance" && grants.has("prices.purchase.view") && (input.parentId || input.recordId)
           ? ensure(await supabase.rpc("my_product_master_confidential_data", { p_product_ids: [input.parentId ?? input.recordId] }).abortSignal(signal)).data as ShipmentRow[] : [];
+        // Calculated prices of the calculator (202611190200): only with pricing.calculated.view, for one product.
+        const calculated = grants.has("pricing.calculated.view") && (input.parentId || input.recordId)
+          ? ensure(await supabase.rpc("my_product_master_calculated_data", { p_product_ids: [input.parentId ?? input.recordId] }).abortSignal(signal)).data as ShipmentRow[] : [];
         rows = rows.map(row => ({ ...row, source_columns: sources.find(source => source.source_key === row.source_key)?.columns,
-          confidential_data: confidential.find(item => item.source_key === row.source_key)?.confidential_data }));
+          confidential_data: confidential.find(item => item.source_key === row.source_key)?.confidential_data,
+          calculated_data: calculated.find(item => item.source_key === row.source_key)?.calculated_data }));
       }
       return { rows: await withCurrencies(rows, signal), total: count };
     },
