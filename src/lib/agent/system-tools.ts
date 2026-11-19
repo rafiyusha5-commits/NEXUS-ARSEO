@@ -64,12 +64,12 @@ function calculatorPurchase(row: ShipmentRow): Record<string,string|number|null>
   const value=scalar(normalized); if(value!==null) lines.push(`${LABELS[key] ?? key}: ${value}`);
  }
  if(sectionKey === "calculator" || sectionKey === "calculator_finance") {
-  const values={...object(row.catalog_data),...object(row.sales_data),...(sectionKey === "calculator_finance" ? object(row.confidential_data) : {})};
+  const values={...object(row.catalog_data),...object(row.sales_data),...object(row.calculated_data),...(sectionKey === "calculator_finance" ? object(row.confidential_data) : {})};
   const columns=Array.isArray(row.source_columns) ? row.source_columns as Record<string,unknown>[] : [];
   for(const column of columns) {
    const key=String(column.key);
    if(selected.length && !selected.includes("catalog_data") && !selected.includes("sales_data") && !selected.includes("confidential_data") && !selected.includes(key)) continue;
-   if(!["catalog","sales","confidential"].includes(String(column.visibility)) || /password|token|secret|passport|driver_document|iin|парол|токен|секрет|паспорт|удостовер|иин/i.test(String(column.field_en??column.field_ru))) continue;
+   if(!["catalog","sales","confidential","calculated"].includes(String(column.visibility)) || /password|token|secret|passport|driver_document|iin|парол|токен|секрет|паспорт|удостовер|иин/i.test(String(column.field_en??column.field_ru))) continue;
    const value=scalar(values[key]); if(value!==null) lines.push(`${maskDataText(String(column.field_ru??column.field_en??key),120)}: ${value}`);
   }
  }
@@ -120,7 +120,7 @@ function conditionalPermissions(section:string,rows:ShipmentRow[]):string[] {
 function systemRow(key:string,source:ShipmentRow,fields?:string):ToolRow {
  const section=SYSTEM_BY_KEY.get(key)!;
  const row:ShipmentRow=Object.fromEntries(section.columns.filter(field=>Object.hasOwn(source,field)).map(field=>[field,source[field]]));
- if(key === "calculator" || key === "calculator_finance") row.source_columns=source.source_columns;
+ if(key === "calculator" || key === "calculator_finance") { row.source_columns=source.source_columns; row.calculated_data=source.calculated_data; }
  if(key === "calculator_finance") row.confidential_data=source.confidential_data;
  if(section.columns.includes("currency_id") || section.columns.includes("cost_currency_id")) row.currency_code=source.currency_code;
  const id=String(row[section.idColumn]??"");

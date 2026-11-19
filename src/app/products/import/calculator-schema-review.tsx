@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { CalculatorSchemaReview, SchemaColumn } from "@/lib/calculator-import/schema-review.ts";
 
-const access = { catalog: "Каталог", sales: "Продажи", confidential: "Только с правом на закупочные цены и себестоимость" };
+const access = { catalog: "Каталог", sales: "Продажи", confidential: "Только с правом на закупочные цены и себестоимость", calculated: "Расчётные цены: с правом «Расчётные цены калькулятора: просмотр»" };
 export function CalculatorSchemaReviewPanel({ review, pending, onConfirm }: {
   review: CalculatorSchemaReview; pending: boolean; onConfirm: () => void;
 }) {

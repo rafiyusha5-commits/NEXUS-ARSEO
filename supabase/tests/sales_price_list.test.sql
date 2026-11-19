@@ -44,15 +44,15 @@ on conflict (source_key) do update set columns=excluded.columns,header_fingerpri
 delete from public.product_master_data where source_key='arseo-master-calculator';
 insert into public.product_master_data(product_id,source_key,source_row,sales_data) values
  ('d1200000-0000-4000-8000-000000000001','arseo-master-calculator',6,jsonb_build_object(
-   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2',1000,
-   'source.установленные_цены.россия_dap_рц_мск_без_ндс_kzt.2','1 200,00',
+   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге',1000,
+   'source.установленные_цены.россия_dap_рц_мск_без_ндс_kzt','1 200,00',
    'source.установленные_цены.кыргызстан_exw_ala_без_ндс_eur',2)),
  ('d1200000-0000-4000-8000-000000000002','arseo-master-calculator',7,jsonb_build_object(
-   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2',2000)),
+   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге',2000)),
  ('d1200000-0000-4000-8000-000000000003','arseo-master-calculator',8,jsonb_build_object(
-   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2',300)),
+   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге',300)),
  ('d1200000-0000-4000-8000-000000000004','arseo-master-calculator',9,jsonb_build_object(
-   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2',400,'source.установленные_цены.цп_лента','не число'));
+   'source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге',400,'source.установленные_цены.цп_лента','не число'));
 
 create temporary table d1(k text primary key,v jsonb);
 grant all on d1 to authenticated;
@@ -203,8 +203,8 @@ select pg_temp.fails($q$select public.set_price_list_price(gen_random_uuid(),pg_
 select public.set_price_list_price('d1300000-0000-4000-8000-000000000002',pg_temp.t('kz_prepayment'),'d1200000-0000-4000-8000-000000000002',2100,'2026-06-10','Согласовано с сетью');
 reset role;
 -- The sheet changes: Trolli 2000 -> 2050 (conflicts with the manual 2100), the no-brand product 300 -> 350 (plain change).
-update public.product_master_data set sales_data=jsonb_set(sales_data,'{source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2}','2050') where product_id='d1200000-0000-4000-8000-000000000002';
-update public.product_master_data set sales_data=jsonb_set(sales_data,'{source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге.2}','350') where product_id='d1200000-0000-4000-8000-000000000003';
+update public.product_master_data set sales_data=jsonb_set(sales_data,'{source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге}','2050') where product_id='d1200000-0000-4000-8000-000000000002';
+update public.product_master_data set sales_data=jsonb_set(sales_data,'{source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге}','350') where product_id='d1200000-0000-4000-8000-000000000003';
 set local role authenticated;
 insert into d1 select 'p2',public.price_list_import_preview('2026-06-11');
 do $$
