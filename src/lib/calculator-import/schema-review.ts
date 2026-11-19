@@ -1,6 +1,6 @@
 export type SchemaColumn = {
   key: string; block: string | null; field_ru: string;
-  visibility: "catalog" | "sales" | "confidential";
+  visibility: "catalog" | "sales" | "confidential" | "calculated";
 };
 export type CalculatorSchemaReview = {
   status: "unchanged" | "approval_required" | "blocked" | "approved";
@@ -14,7 +14,7 @@ function record(value: unknown): value is Record<string, unknown> {
 function column(value: unknown): value is SchemaColumn {
   return record(value) && typeof value.key === "string" && value.key.length > 0
     && typeof value.field_ru === "string" && (value.block === null || typeof value.block === "string")
-    && ["catalog", "sales", "confidential"].includes(String(value.visibility));
+    && ["catalog", "sales", "confidential", "calculated"].includes(String(value.visibility));
 }
 export function parseCalculatorSchemaReview(value: unknown): CalculatorSchemaReview | null {
   if (!record(value) || !["unchanged", "approval_required", "blocked", "approved"].includes(String(value.status))

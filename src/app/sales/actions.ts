@@ -51,6 +51,27 @@ export async function addCustomerOrderItem(data:FormData){
   if(error)redirect(orderUrl(saleId,ruleViolationMessage(error,"Не удалось добавить позицию."),"error","items"));revalidatePath(`/sales/${saleId}`);redirect(orderUrl(saleId,"Позиция добавлена","success","items"));
 }
 
+// A line already in the order: recalculate from the price list, or set by hand with a reason (202611180100).
+export async function repriceCustomerOrderItem(data:FormData){
+  const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
+  const {data:result,error}=await supabase.rpc("reprice_customer_order_item",{p_sale_item_id:uuid(data,"sale_item_id")});
+  if(error)redirect(orderUrl(saleId,ruleViolationMessage(error,"Не удалось пересчитать цену."),"error","items"));
+  const answer=result as {changed?:boolean;quote?:{price?:unknown}}|null;
+  revalidatePath(`/sales/${saleId}`);
+  if(answer?.changed)redirect(orderUrl(saleId,"Цена пересчитана из прайса","success","items"));
+  if(answer?.quote?.price==null)redirect(orderUrl(saleId,"В прайсе по-прежнему нет цены: причина показана в строке заказа. Можно указать цену вручную.","error","items"));
+  redirect(orderUrl(saleId,"Цена из прайса не изменилась","success","items"));
+}
+
+export async function setCustomerOrderItemPrice(data:FormData){
+  const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
+  const price=number(data,"unit_price",true);const reason=text(data,"price_reason");
+  if(!reason)redirect(orderUrl(saleId,"Укажите причину ручной цены.","error","items"));
+  const {error}=await supabase.rpc("set_customer_order_item_price",{p_sale_item_id:uuid(data,"sale_item_id"),p_unit_price:price,p_reason:reason});
+  if(error)redirect(orderUrl(saleId,ruleViolationMessage(error,"Не удалось указать цену."),"error","items"));
+  revalidatePath(`/sales/${saleId}`);redirect(orderUrl(saleId,"Цена указана вручную","success","items"));
+}
+
 export async function reserveOrderItemFefo(data:FormData){
   const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
   const {data:rows,error}=await supabase.rpc("reserve_customer_order_item_fefo",{p_sale_item_id:uuid(data,"sale_item_id")});
@@ -96,7 +117,7 @@ export async function changeGuaranteeStatus(data:FormData){
 export async function confirmCustomerOrder(data:FormData){
   const {supabase}=await requireUser();const saleId=uuid(data,"sale_id")!;
   const {error}=await supabase.rpc("confirm_customer_order",{p_sale_id:saleId});
-  if(error)redirect(orderUrl(saleId,publicErrorMessage(error,"Не удалось подтвердить заказ."),"error"));revalidatePath(`/sales/${saleId}`);revalidatePath("/sales");redirect(orderUrl(saleId,"Заказ подтверждён"));
+  if(error)redirect(orderUrl(saleId,ruleViolationMessage(error,"Не удалось подтвердить заказ."),"error"));revalidatePath(`/sales/${saleId}`);revalidatePath("/sales");redirect(orderUrl(saleId,"Заказ подтверждён"));
 }
 
 export async function cancelCustomerOrder(data:FormData){
