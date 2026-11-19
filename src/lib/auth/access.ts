@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { grantsAll, type AccessPermission } from "@/lib/auth/access-permissions";
+import { profileGate } from "@/lib/auth/signout";
 
 export type AccessRole = {
   id: string;
@@ -27,12 +28,12 @@ async function loadAccessContext() {
 
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: assignments }] = await Promise.all([
+  const [{ data: profile, error: profileError }, { data: assignments }] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, full_name, job_title, locale, is_active, user_type, counterparty_id, phone")
       .eq("id", user.id)
-      .single(),
+      .maybeSingle(),
     supabase
       .from("user_roles")
       .select("app_roles(id, code, name)")
@@ -40,7 +41,7 @@ async function loadAccessContext() {
   ]);
 
   // The sign-out link checks the profile again and ends only a disabled employee's session (src/lib/auth/signout.ts).
-  if (!profile?.is_active) redirect("/auth/signout");
+  if (profileGate(profile, profileError) === "signout") redirect("/auth/signout");
 
   const roles = (assignments ?? []).flatMap(
     (assignment) => assignment.app_roles ?? [],
