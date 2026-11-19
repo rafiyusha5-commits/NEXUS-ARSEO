@@ -241,8 +241,8 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await submit(buttonForm('Резервировать по FEFO'),'Резервировать по FEFO');
     assert.equal(snapshot().reserved,70);
     await go(`/sales/${sale}?tab=main`);
-    // The first batch intentionally needs a shelf-life guarantee.
-    await assert.rejects(()=>submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ'),/error: Не удалось подтвердить заказ/);
+    // The first batch intentionally needs a shelf-life guarantee; since 202611180100 the form shows the actual reason.
+    await assert.rejects(()=>submit(buttonForm('Подтвердить заказ'),'Подтвердить заказ'),/error: ОСГ ниже требования клиента/);
     assert.equal(q(`select to_jsonb(status) from public.sales where id='${sale}';`),'reserved');
     assert.ok(q(`select min(remaining_shelf_life_pct) from public.inventory_reservations r join public.sale_items i on i.id=r.sale_item_id where i.sale_id='${sale}' and r.status='active';`)<60);
     await go(`/sales/${sale}?tab=documents`);

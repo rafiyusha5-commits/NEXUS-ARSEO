@@ -1,4 +1,4 @@
-/** How the price of an order line was obtained (202611170200), from the line's own snapshot. */
+/** How the price of an order line was obtained (202611170200, 202611180100), from the line's own snapshot. */
 export type PriceSnapshot = {
   price?: string | number | null; reason?: string | null; note?: string | null; source?: string | null;
   price_type_name?: string | null; brand?: string | null; percent?: string | number | null; vat_included?: boolean | null;
@@ -18,7 +18,7 @@ export const NO_PRICE_REASONS: Record<string, string> = {
   no_packaging: "у товара нет упаковки для этой единицы",
   fixed_price_currency: "фиксированная цена клиента задана в другой валюте",
   no_price: "в прайсе нет цены этого вида на дату заказа",
-  no_brand: "бренд товара не найден в справочнике брендов",
+  no_brand: "бренд товара не найден в справочнике брендов (до 18.11.2026; теперь — цена прайса без процента)",
   no_rate: "нет официального курса за 7 дней до даты заказа",
   invalid_uom: "неизвестная единица",
   order_currency_missing: "у заказа не указана валюта",
@@ -32,7 +32,8 @@ export function describePriceList(snapshot: PriceSnapshot | null | undefined) {
   if (snapshot.price == null) return `нет цены: ${NO_PRICE_REASONS[snapshot.reason ?? ""] ?? snapshot.reason ?? "причина не указана"}`;
   const parts = [snapshot.source === "fixed" ? "фиксированная цена клиента" : snapshot.price_type_name ?? "прайс"];
   if (snapshot.source !== "fixed") {
-    if (snapshot.brand) parts.push(snapshot.percent == null ? `${snapshot.brand}: условие по бренду не задано` : `${snapshot.brand} ${Number(snapshot.percent) > 0 ? "+" : ""}${number(snapshot.percent)} %`);
+    if (snapshot.note === "brand_missing") parts.push("бренда нет в справочнике брендов — без процента");
+    else if (snapshot.brand) parts.push(snapshot.percent == null ? `${snapshot.brand}: условие по бренду не задано` : `${snapshot.brand} ${Number(snapshot.percent) > 0 ? "+" : ""}${number(snapshot.percent)} %`);
     if (snapshot.rate_path && snapshot.rate_path !== "same") parts.push(`курс ${number(snapshot.rate)} от ${day(snapshot.rate_date)}`);
   }
   parts.push(snapshot.vat_included ? "с НДС" : "без НДС");

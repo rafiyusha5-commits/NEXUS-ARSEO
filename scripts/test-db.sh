@@ -262,6 +262,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170600_telegram_notifications.sql" >/dev/null
 # Advances redefine the payables register and the payment check of 202611170400 re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611170700_supplier_advances.sql" >/dev/null
+# Order line prices redefine the customer price of 202611170100 re-applied above and grant their RPCs. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611180100_order_line_prices.sql" >/dev/null
 # Calculator price blocks patch the calculator import and structure review of 202611080100/0200 and the validation of
 # 202609274300 re-applied above, and grant their RPC. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611190200_calculator_price_blocks.sql" >/dev/null
