@@ -1642,3 +1642,13 @@ Telegram по правилам блока 4.
 
 Остаётся за владельцами: перезапустить Nexus и `scripts/telegram-poll.mjs`, сделать резервную копию,
 удалить временный токен Supabase, когда он больше не нужен.
+
+## 2026-11-19 — индексы внешних ключей на горячих таблицах (К7, начало)
+
+По заданию второго владельца `rafiyusha5-commits` агент добавил миграцию
+`202611190100_hot_table_foreign_key_indexes.sql`. Каталог базы со всеми миграциями показал семь внешних ключей
+горячих таблиц К7 без индекса: `inventory_movements.created_by`, `inventory_reservations.created_by` и
+`override_approved_by`, `shipment_items.currency_id` и `discrepancy_accepted_by`, `document_links.created_by` и
+`removed_by`; у `sale_items` и `notifications` все ключи с индексами. Тест
+`hot_table_foreign_key_indexes.test.sql` сначала падал на этих семи ключах. К рабочей базе не применялось —
+решают владельцы. Остальные внешние ключи без индекса (К7 целиком) не трогались.
