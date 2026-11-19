@@ -78,7 +78,9 @@ select pg_temp.ship('D5-S1','[{"product":"d5200000-0000-4000-8000-000000000001",
  {"product":"d5200000-0000-4000-8000-000000000002","qty":100,"price":20,"batch":"D5-B1","expiry_days":200}]');
 select pg_temp.ship('D5-S2','[{"product":"d5200000-0000-4000-8000-000000000001","qty":100,"price":12,"batch":"D5-A2","expiry_days":300}]');
 -- C1 (Kazakhstan, KZT, price with VAT): A 150 pcs at 8400 KZT -> FEFO 100 from A1, 50 from A2.
--- C2 (export, EUR, no VAT): B 50 pcs at 30 EUR, and A 10 pcs without a price (no price list for C2).
+-- C2 (export, EUR, no VAT): B 50 pcs at 30 EUR, and A 10 pcs without a price (no price list for C2). Since 202611180100
+-- an order is not confirmed with an unpriced line, so the line gets a price for the confirmation and loses it after the
+-- shipment below, as a line of an order confirmed before 202611180100 can be.
 do $$
 declare v_item uuid;
 begin
@@ -90,7 +92,7 @@ begin
  perform public.fulfill_customer_order(pg_temp.id('sale1'));
  insert into d5 values('sale2',public.create_customer_order('d5100000-0000-4000-8000-000000000012',null,pg_temp.wh(),current_date+1,pg_temp.cur('EUR'),null));
  insert into d5 values('item2b',public.add_customer_order_item(pg_temp.id('sale2'),'d5200000-0000-4000-8000-000000000002',50,'piece',30,0,'Экспортная цена'));
- insert into d5 values('item2a',public.add_customer_order_item(pg_temp.id('sale2'),'d5200000-0000-4000-8000-000000000001',10,'piece',null,0));
+ insert into d5 values('item2a',public.add_customer_order_item(pg_temp.id('sale2'),'d5200000-0000-4000-8000-000000000001',10,'piece',1,0,'Временная цена'));
  perform public.reserve_customer_order_item_fefo(pg_temp.id('item2b'));
  perform public.reserve_customer_order_item_fefo(pg_temp.id('item2a'));
  perform public.confirm_customer_order(pg_temp.id('sale2'));
@@ -99,6 +101,10 @@ begin
  perform public.create_customer_return(pg_temp.id('sale1'),jsonb_build_array(jsonb_build_object('sale_item_id',pg_temp.id('item1'),
    'batch_id',pg_temp.batch('D5-A1'),'quantity',20,'reason_code','damaged')));
 end $$;
+reset role;
+update public.sale_items set unit_price=null,price_source='none',price_reason=null,price_set_by=null,
+ price_snapshot='{"price":null,"reason":"no_price_type"}' where id=pg_temp.id('item2a');
+set local role authenticated;
 
 -- Hand calculation (KZT, official rate 500, VAT 12 %):
 --   C1 A1: 100 x 8400/1.12 = 750 000; cost 100 x 10 x 500 = 500 000.   C1 A2: 50 x 7500 = 375 000; cost 50 x 6000 = 300 000.
