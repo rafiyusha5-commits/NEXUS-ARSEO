@@ -105,6 +105,8 @@ select 'authenticated', unnest(array[
   'public.profitability_report', 'public.profitability_lines',
   'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.record_advance_payment', 'public.apply_advance',
+  'public.reprice_customer_order_item', 'public.set_customer_order_item_price',
+  'public.my_product_master_calculated_data',
   'public.cancel_expense', 'public.reverse_expense',
   'public.shipment_document_check', 'public.run_shipment_document_check', 'public.reopen_shipment',
   'public.shelf_life_risks',

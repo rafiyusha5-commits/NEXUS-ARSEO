@@ -15,7 +15,8 @@ export const CALCULATOR_VERSION = 1 as const;
 export const CALCULATOR_SOURCE_KEY = "arseo-master-calculator";
 export const CALCULATOR_SHEET_NAMES = new Set(["расчеты", "расчёты"]);
 
-export type CalculatorVisibility = "catalog" | "sales" | "confidential";
+// "calculated": prices the sheet computes from costs (block «РАСЧЕТНЫЕ ЦЕНЫ»), shown with pricing.calculated.view.
+export type CalculatorVisibility = "catalog" | "sales" | "confidential" | "calculated";
 export type CalculatorColumn = {
   key: string;
   position: number;
@@ -33,6 +34,7 @@ export type CalculatorSourceRow = {
   catalog_data: Record<string, unknown>;
   sales_data: Record<string, unknown>;
   confidential_data: Record<string, unknown>;
+  calculated_data: Record<string, unknown>;
 };
 export type CalculatorImportPackage = {
   format: typeof CALCULATOR_FORMAT;
@@ -146,7 +148,7 @@ function visibility(block: string | null, field: string): CalculatorVisibility {
   if (b === norm("Информация о закупе") && /предыдущая_цена|цена_за_единицу/.test(f)) return "confidential";
   if ([norm("Транспортировка и растаможка"), norm("Подготовка и доставыка товара")].includes(b)) return "confidential";
   if (b === norm("РАСЧЕТНЫЕ ЦЕНЫ")) {
-    return /маржа|себестоимость/.test(f) ? "confidential" : "sales";
+    return /маржа|себестоимость/.test(f) ? "confidential" : "calculated";
   }
   if (b === norm("УСТАНОВЛЕННЫЕ ЦЕНЫ")) return /маржа/.test(f) ? "confidential" : "sales";
   if (/себестоимость|закупочн|предыдущая_цена|маржа/.test(f)) return "confidential";
@@ -170,9 +172,18 @@ function headerColumns(rows: Cell[][], issues: Issue[]): CalculatorColumn[] {
   }
   const width = Math.max(...rows.slice(0, 5).map((row) => row.length));
   const blockByIndex = new Map<number, string>();
+  // A field name may repeat in another block: «ЦП в КЗ сеть с НДС, тенге» is both a calculated and an established
+  // price. A block therefore starts at the first occurrence of its first field that no block found earlier owns
+  // («РАСЧЕТНЫЕ ЦЕНЫ» comes before «УСТАНОВЛЕННЫЕ ЦЕНЫ» in BLOCKS), and ends at its last field after that start.
+  const find = (label: string, from: number, free: boolean) => {
+    for (let index = Math.max(from, 0); index < rows[4].length; index += 1) {
+      if (norm(rows[4][index]) === norm(label) && !(free && blockByIndex.has(index))) return index;
+    }
+    return -1;
+  };
   for (const [block, first, last] of BLOCKS) {
-    const start = rows[4].findIndex((value) => norm(value) === norm(first));
-    const end = rows[4].findIndex((value) => norm(value) === norm(last));
+    const start = find(first, 0, true);
+    const end = find(last, Math.max(start, 0), false);
     if (start < 0 && end < 0) continue;
     if (start < 0 || end < start) {
       issues.push({ source: "Калькулятор", row: 5, message: `Изменена структура блока «${block}»: не найдены его границы` });
@@ -373,12 +384,12 @@ export function buildCalculatorPackage(rows: Cell[][], sourceTitle: string, shee
     }) as ImportProduct;
     referenceRaw.products.push(product);
 
-    const buckets: Record<CalculatorVisibility, Record<string, unknown>> = { catalog: {}, sales: {}, confidential: {} };
+    const buckets: Record<CalculatorVisibility, Record<string, unknown>> = { catalog: {}, sales: {}, confidential: {}, calculated: {} };
     for (const column of columns) {
       const value = row[column.position - 1];
       if (value !== null && value !== undefined && cleanText(value) !== "") buckets[column.visibility][column.key] = value instanceof Date ? value.toISOString() : value;
     }
-    sourceRows.push({ row: rowNumber, internal_sku: sku, category: text(get("product.category")), catalog_data: buckets.catalog, sales_data: buckets.sales, confidential_data: buckets.confidential });
+    sourceRows.push({ row: rowNumber, internal_sku: sku, category: text(get("product.category")), catalog_data: buckets.catalog, sales_data: buckets.sales, confidential_data: buckets.confidential, calculated_data: buckets.calculated });
   });
 
   referenceRaw.counterparties = [...parties.values()];

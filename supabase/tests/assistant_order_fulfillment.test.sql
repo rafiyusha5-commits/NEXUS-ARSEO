@@ -90,7 +90,7 @@ end $$;
 insert into public.product_packaging(product_id,uom,units_per_parent) values('ef300000-0000-4000-8000-000000000001','box',12);
 set local role authenticated;
 insert into tests.fulfillment_context values('box-sale',public.create_customer_order('ef100000-0000-4000-8000-000000000002',null,'ef200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic box order'));
-insert into tests.fulfillment_context select 'box-item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',2,'box',null,60) from tests.fulfillment_context where k='box-sale';
+insert into tests.fulfillment_context select 'box-item',public.add_customer_order_item(id,'ef300000-0000-4000-8000-000000000001',2,'box',120,60,'Синтетическая цена') from tests.fulfillment_context where k='box-sale';
 select public.reserve_customer_order_item_fefo(id) from tests.fulfillment_context where k='box-item';
 select public.confirm_customer_order(id) from tests.fulfillment_context where k='box-sale';
 select public.prepare_assistant_operation('ee000000-0000-4000-8000-000000000002','customer_order_fulfillment',jsonb_build_object('sale_id',id)) from tests.fulfillment_context where k='box-sale';

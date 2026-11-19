@@ -138,3 +138,50 @@ describe("master calculator import", () => {
   });
 });
 
+
+describe("calculated and established prices (202611190200)", () => {
+  // The calculated block repeats field names of the established block («ЦП в КЗ сеть с НДС, тенге»). Until 2026-11-19
+  // the established block started at the first of them, inside the calculated block.
+  function priced() {
+    const rows = sheet();
+    const extra: Array<[Cell, Cell]> = [
+      ["РАСЧЕТНЫЕ ЦЕНЫ", "Маржа в KZ"], [null, "ЦП в КЗ сеть с НДС, тенге"], [null, "РРЦ, тенге"],
+      [null, "EXW Almaty/Aktobe, KAZAKHSTAN\n БЕЗ НДС\nEUR"],
+      ["УСТАНОВЛЕННЫЕ ЦЕНЫ", "ЦП в КЗ сеть с НДС, тенге"], [null, "Маржа в RU факт"], [null, "Маржа в RU факт"],
+      [null, "КЫРГЫЗСТАН\nEXW ALA\n БЕЗ НДС\nEUR"],
+    ];
+    const start = rows[4].length;
+    extra.forEach(([block, ru], offset) => {
+      for (const row of rows) row[start + offset] = null;
+      rows[2][start + offset] = block;
+      rows[4][start + offset] = ru;
+      rows[5][start + offset] = 100 + offset;
+    });
+    return { rows, start };
+  }
+
+  it("keeps each price in its own block, with its own key and access level", () => {
+    const { rows, start } = priced();
+    const { pkg, issues } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+    assert.deepEqual(issues, []);
+    const at = (offset: number) => pkg.source.columns.find((column) => column.position === start + offset + 1)!;
+    assert.deepEqual([0, 1, 2, 3].map((offset) => [at(offset).block, at(offset).visibility]), [
+      ["РАСЧЕТНЫЕ ЦЕНЫ", "confidential"], ["РАСЧЕТНЫЕ ЦЕНЫ", "calculated"], ["РАСЧЕТНЫЕ ЦЕНЫ", "calculated"], ["РАСЧЕТНЫЕ ЦЕНЫ", "calculated"]]);
+    assert.deepEqual([4, 5, 6, 7].map((offset) => [at(offset).block, at(offset).visibility]), [
+      ["УСТАНОВЛЕННЫЕ ЦЕНЫ", "sales"], ["УСТАНОВЛЕННЫЕ ЦЕНЫ", "confidential"], ["УСТАНОВЛЕННЫЕ ЦЕНЫ", "confidential"], ["УСТАНОВЛЕННЫЕ ЦЕНЫ", "sales"]]);
+    assert.equal(at(1).key, "source.расчетные_цены.цп_в_кз_сеть_с_ндс_тенге");
+    assert.equal(at(4).key, "source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге", "the established price has no .2 suffix any more");
+    assert.equal(at(6).key, "source.установленные_цены.маржа_в_ru_факт.2", "a field repeated inside one block still gets .2");
+  });
+
+  it("puts calculated prices in their own bucket, not in the sales data", () => {
+    const { rows, start } = priced();
+    const { pkg } = buildCalculatorPackage(rows, "calculator.xlsx", "расчеты");
+    const row = pkg.source.rows[0];
+    assert.equal(row.calculated_data["source.расчетные_цены.цп_в_кз_сеть_с_ндс_тенге"], 101);
+    assert.equal(row.sales_data["source.установленные_цены.цп_в_кз_сеть_с_ндс_тенге"], 104);
+    assert.ok(!Object.keys(row.sales_data).some((key) => key.startsWith("source.расчетные_цены.")), "no calculated price among sales data");
+    assert.equal(row.confidential_data["source.расчетные_цены.маржа_в_kz"], 100);
+    assert.equal(start > 0, true);
+  });
+});

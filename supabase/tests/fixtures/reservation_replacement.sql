@@ -27,11 +27,11 @@ insert into public.inventory_balances(id,batch_id,warehouse_id,uom,quantity_on_h
 set role authenticated;
 select set_config('request.jwt.claim.sub','ee000000-0000-4000-8000-000000000001',false);
 insert into tests.rr_context values ('sale',public.create_customer_order('ee100000-0000-4000-8000-000000000002',null,'ee200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic replacement'));
-insert into tests.rr_context select 'item',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',2,'box',null,60) from tests.rr_context where k='sale';
+insert into tests.rr_context select 'item',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',2,'box',120,60,'Синтетическая цена') from tests.rr_context where k='sale';
 select public.reserve_customer_order_item_override(id,'ee500000-0000-4000-8000-000000000001','Synthetic setup') from tests.rr_context where k='item';
 select public.confirm_customer_order(id) from tests.rr_context where k='sale';
 insert into tests.rr_context values ('other',public.create_customer_order('ee100000-0000-4000-8000-000000000002',null,'ee200000-0000-4000-8000-000000000001','2099-01-20',null,'Synthetic other'));
-insert into tests.rr_context select 'other-item',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',2,'box',null,60) from tests.rr_context where k='other';
+insert into tests.rr_context select 'other-item',public.add_customer_order_item(id,'ee300000-0000-4000-8000-000000000001',2,'box',120,60,'Синтетическая цена') from tests.rr_context where k='other';
 select public.reserve_customer_order_item_override(id,'ee500000-0000-4000-8000-000000000001','Synthetic setup') from tests.rr_context where k='other-item';
 select public.confirm_customer_order(id) from tests.rr_context where k='other';
 select public.set_inventory_batch_status('ee400000-0000-4000-8000-000000000001','blocked','Synthetic blocked old batch');
