@@ -177,7 +177,7 @@ Backup приложения включает БД, файлы Storage, Auth и �
 [матрице отказов](document-fault-verification.md) и [CI](ci.md).
 Не запускать разрушающую тренировку на чужом локальном стенде.
 
-В CI шесть jobs: `app`, `database`, `audit`, `pilot-docker`,
+В CI семь jobs: `app`, `database`, `audit`, `ocr`, `pilot-docker`,
 `historical-readiness`, `recovery-drill`. PostgreSQL браузерного Supabase
 не заменяет отдельный SQL-набор PostgreSQL 16. Источник состава проверок —
 [workflow](../.github/workflows/checks.yml), а не старое описание PR.

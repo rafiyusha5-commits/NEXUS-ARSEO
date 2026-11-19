@@ -129,3 +129,5 @@ docker run --rm --user root -v "$PWD/services/ocr:/app" nexus-ocr:local   sh -c 
 ```
 
 `tests/make_fixtures.py` создаёт синтетические документы для проверок в `tests/fixtures/ocr` репозитория (в контейнере с шрифтами DejaVu, выходная папка `/out`).
+
+В CI тесты и `pip-audit` выполняет задание `ocr` (`.github/workflows/checks.yml`): Tesseract из пакетов Ubuntu с теми же языками, что в `Dockerfile`, Python 3.12, без сети к внешним OCR и без секретов.
