@@ -1,5 +1,6 @@
-fastapi==0.116.1
-pillow==11.3.0
+fastapi==0.162.0
+starlette==1.8.0
+pillow==13.0.0
 pydantic==2.11.7
 pypdfium2==4.30.0
 pytesseract==0.3.13
