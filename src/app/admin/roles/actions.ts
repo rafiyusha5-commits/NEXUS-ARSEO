@@ -10,7 +10,7 @@ function rolesRedirect(kind: "success" | "error", message: string): never {
 }
 
 export async function setRoleEnabled(formData: FormData) {
-  const { supabase } = await requireAccessManager();
+  const { supabase } = await requireAccessManager(["roles.manage"]);
   const roleId = String(formData.get("role_id") ?? "");
   const roleCode = String(formData.get("role_code") ?? "");
   const enabled = String(formData.get("enabled")) === "true";
@@ -26,7 +26,7 @@ export async function setRoleEnabled(formData: FormData) {
 }
 
 export async function setRolePermission(formData: FormData) {
-  const { supabase } = await requireAccessManager();
+  const { supabase } = await requireAccessManager(["roles.manage"]);
   const roleId = String(formData.get("role_id") ?? "");
   const permissionId = String(formData.get("permission_id") ?? "");
   const grant = String(formData.get("grant")) === "true";

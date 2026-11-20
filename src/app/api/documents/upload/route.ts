@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Файл превышает допустимый размер" }, { status: 413 });
   }
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) return Response.json({ ok: false, error: "Недопустимый источник запроса" }, { status: 403 });
+  if (!origin || origin !== new URL(request.url).origin) return Response.json({ ok: false, error: "Недопустимый источник запроса" }, { status: 403 });
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ ok: false, error: "Сессия истекла. Войдите снова" }, { status: 401 });

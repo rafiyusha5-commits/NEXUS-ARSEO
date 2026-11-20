@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   if (!UUID.test(id)) return Response.json({ ok: false, error: "Некорректная поставка" }, { status: 400 });
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) return Response.json({ ok: false, error: "Недопустимый источник запроса" }, { status: 403 });
+  if (!origin || origin !== new URL(request.url).origin) return Response.json({ ok: false, error: "Недопустимый источник запроса" }, { status: 403 });
   const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "documents.view", "shipments.view"] as const);
   if (!permissions["source_documents.extract"] || !permissions["documents.view"] || !permissions["shipments.view"]) {
