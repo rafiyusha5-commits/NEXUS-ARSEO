@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { grantsAll, type AccessPermission } from "@/lib/auth/access-permissions";
+import { profileGate } from "@/lib/auth/signout";
 
 export type AccessRole = {
   id: string;
@@ -26,19 +28,20 @@ async function loadAccessContext() {
 
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: assignments }] = await Promise.all([
+  const [{ data: profile, error: profileError }, { data: assignments }] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, full_name, job_title, locale, is_active, user_type, counterparty_id, phone")
       .eq("id", user.id)
-      .single(),
+      .maybeSingle(),
     supabase
       .from("user_roles")
       .select("app_roles(id, code, name)")
       .eq("user_id", user.id),
   ]);
 
-  if (!profile?.is_active) redirect("/auth/signout?reason=disabled");
+  // The sign-out link checks the profile again and ends only a disabled employee's session (src/lib/auth/signout.ts).
+  if (profileGate(profile, profileError) === "signout") redirect("/auth/signout");
 
   const roles = (assignments ?? []).flatMap(
     (assignment) => assignment.app_roles ?? [],
@@ -64,13 +67,22 @@ export async function requirePortalUser() {
   return context;
 }
 
-export async function requireAccessManager() {
+/**
+ * Administration screens are offered to administrators and directors. An action additionally names the permissions
+ * it needs; they are checked in the database right away, so a personal deny stops the action before anything is sent
+ * with the server key (src/lib/auth/access-permissions.ts).
+ */
+export async function requireAccessManager(permissions: readonly AccessPermission[] = []) {
   const context = await requireUser();
   const allowed = context.roles.some((role) =>
     ["administrator", "director"].includes(role.code),
   );
 
   if (!allowed) redirect("/?error=forbidden");
+  if (permissions.length) {
+    const { data, error } = await context.supabase.rpc("my_permissions", { p_codes: [...permissions] });
+    if (!grantsAll(permissions, data, error)) redirect("/?error=forbidden");
+  }
   return context;
 }
 

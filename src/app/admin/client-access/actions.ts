@@ -13,7 +13,8 @@ const checked = (form: FormData, key: string) => form.get(key) === "on";
 const done = (kind: "error" | "success", message: string): never => redirect(`/admin/client-access?${kind}=${encodeURIComponent(message)}`);
 
 export async function inviteExternalClient(formData: FormData) {
-  const { supabase } = await requireAccessManager();
+  // Checked before the invitation is sent with the server key: it creates an account and grants document access.
+  const { supabase } = await requireAccessManager(["users.manage", "roles.manage"]);
   const email = value(formData, "email").toLowerCase();
   const fullName = value(formData, "full_name");
   const counterpartyId = value(formData, "counterparty_id");
@@ -38,7 +39,7 @@ export async function inviteExternalClient(formData: FormData) {
 }
 
 export async function setExternalAccess(formData: FormData) {
-  const { supabase } = await requireAccessManager();
+  const { supabase } = await requireAccessManager(["roles.manage"]);
   const userId = value(formData, "user_id");
   const view = checked(formData, "view");
   const download = checked(formData, "download");
@@ -50,7 +51,7 @@ export async function setExternalAccess(formData: FormData) {
 }
 
 export async function setExternalActive(formData: FormData) {
-  const { supabase, user } = await requireAccessManager();
+  const { supabase, user } = await requireAccessManager(["users.manage"]);
   const userId = value(formData, "user_id");
   const active = value(formData, "make_active") === "true";
   const { error } = await supabase.from("profiles").update({ is_active: active, deactivated_at: active ? null : new Date().toISOString(), deactivated_by: active ? null : user.id }).eq("id", userId).eq("user_type", "external");
