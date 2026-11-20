@@ -13,7 +13,9 @@ do $$
 begin
   assert has_function_privilege('anon', 'public.allocate_shipment_item(uuid, uuid, numeric)', 'execute'), 'S1: anon executes a definer RPC';
   assert has_function_privilege('anon', 'public.create_shipment_with_stages(text,text,uuid,uuid,uuid,uuid,uuid,uuid,date,date)', 'execute'), 'S1: anon executes create_shipment_with_stages';
-  assert has_table_privilege('anon', 'public.shipments', 'select'), 'S1: anon holds table privileges';
+  -- The working project gives new tables only REFERENCES, TRIGGER and TRUNCATE by default (supabase_stub.sql);
+  -- even that let anon empty a table.
+  assert has_table_privilege('anon', 'public.shipments', 'truncate'), 'S1: anon holds table privileges (TRUNCATE)';
   assert has_table_privilege('authenticated', 'public.shipments', 'truncate'), 'S1: authenticated may TRUNCATE';
   assert has_function_privilege('authenticated', 'private.protect_last_administrator_role()', 'execute'),
     'S1: authenticated executes a trigger function (through PUBLIC)';
