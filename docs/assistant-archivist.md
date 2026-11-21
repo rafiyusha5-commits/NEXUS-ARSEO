@@ -60,12 +60,67 @@
 | roles | Роли системы | roles.manage |  |
 | permissions | Справочник прав | roles.manage |  |
 | role_permissions | Права конкретной роли | roles.manage |  |
+| returns | Возвраты от покупателей | sales.view |  |
+| return_items | Строки возвратов: количество, причина и решение | sales.view |  |
+| reservations | Резервы товара под заказы | sales.view |  |
+| guarantee_letters | Гарантийные письма покупателям | sales.view |  |
+| guarantee_items | Товары гарантийных писем | sales.view |  |
+| sale_price_changes | История цен строк заказов | sales.view |  |
+| sale_date_changes | Переносы даты отгрузки заказов | sales.view |  |
+| sale_credit_decisions | Решения по кредиту при подтверждении заказа |  | sales.view, receivables.view |
+| credit_terms | Кредитные условия клиентов: лимит и отсрочка | receivables.view |  |
+| balance_adjustments | Корректировки сальдо клиентов | receivables.view |  |
+| opening_balances | Начальные остатки дебиторки | receivables.view |  |
+| reconciliation_acts | Акты сверки с клиентами | receivables.view |  |
+| bank_imports | Загрузки банковских выписок | receivables.view |  |
+| bank_lines | Поступления из банка: строки выписки | receivables.view |  |
+| expense_allocations | Распределение расходов по товарам и партиям | finance.view |  |
+| warehouse_documents | Складские документы: перемещения, списания, корректировки | inventory.view |  |
+| warehouse_document_lines | Строки складских документов | inventory.view |  |
+| transport_receipts | Приёмки машин на складе | shipments.view, inventory.view |  |
+| transport_receipt_items | Строки приёмки: ожидалось, принято, брак, недостача | shipments.view, inventory.view |  |
+| milestones | Вехи поставок: план и факт | calendar.view, shipments.view |  |
+| stage_history | История этапов поставок | shipments.view |  |
+| stage_templates | Шаблон этапов поставки: порядок, сроки, ответственные |  |  |
+| logist_proposals | Предложения Логиста по поставкам | shipments.view, documents.view |  |
+| approvals | Согласования: документы, поставки и другое |  | documents.view, shipments.view |
+| document_versions | Версии документов: файл, размер, текущая | documents.view |  |
+| document_links | Связи документов с поставками, машинами и заказами | documents.view |  |
+| document_types | Виды документов |  |  |
+| document_requirements | Обязательные документы по маршрутам и этапам |  | documents.view, documents.manage_requirements |
+| carriers | Перевозчики: направления, рефрижераторы, условия оплаты | suppliers.view |  |
+| brokers | Таможенные брокеры | suppliers.view |  |
+
+
+## Отчёты (get_report, с 21.11.2026)
+
+Те же функции базы, что у экранов Nexus; каждая сама проверяет права сотрудника, а ассистент вызывает только функции из фиксированного списка (`src/lib/agent/report-tools.ts`). Результат разворачивается в строки «поле: значение», идентификаторы остаются ссылками, пути к файлам, контрольные суммы, счета и секреты отбрасываются.
+
+| Отчёт | Что даёт | Функция | Права |
+|---|---|---|---|
+| price_list | Прайс: действующие цены по видам цен | `price_list` | sales.view, products.view |
+| price_history | История цен товара в прайсе | `price_list_history` | sales.view, products.view |
+| brands | Бренды прайса и товары с брендом вне справочника | `brand_overview` | sales.view, products.view |
+| vat_rates | Ставки НДС по странам | `vat_rate_history` | sales.view, products.view |
+| batch_margins | Маржа партий товара по видам цен | `price_list_batch_margins` | prices.purchase.view, inventory.view |
+| customer_prices | Условия цен клиента: вид цены, проценты по брендам, фиксированные цены | `customer_price_conditions` | customers.view, pricing.customer_terms.manage |
+| customer_margins | Маржа клиента по товарам и партиям и его порог | `customer_margin_overview` | customers.view, pricing.customer_terms.manage, prices.purchase.view, inventory.view |
+| payables | Кредиторская задолженность по получателям | `payables_summary` | finance.view |
+| payables_payee | Кредиторка получателя: расходы, оплаты, авансы, переплаты | `payables_payee` | finance.view |
+| receivables | Дебиторская задолженность клиентов | `customer_receivables` | receivables.view |
+| customer_statement | Выписка клиента: отгрузки, оплаты, сальдо | `customer_statement` | receivables.view |
+| credit_check | Кредитная проверка заказа: лимит, просрочка, отсрочка | `customer_credit_check` | sales.view |
+| profitability | Прибыльность по поставкам, товарам или клиентам | `profitability_report` | prices.purchase.view, reports.view |
+| profitability_lines | Прибыльность: строки отгрузок за период | `profitability_lines` | prices.purchase.view, reports.view |
+| document_check | Сверка документов поставки: замечания по машинам и документам | `shipment_document_check` | documents.view, shipments.view |
+| daily_summary | Сводка дня: поставки, заказы, склад, задачи | `operational_summary` | одно из: shipments.view, sales.view, inventory.view, tasks.view, reports.view |
+| shelf_life_risks | Сроки годности под риском | `shelf_life_risks` | inventory.view, products.view |
 
 ## Проверка и включение
 
 После прежних миграций 5200–5500 требуется `202609275600_agent_archivist.sql`: она расширяет только строгий формат служебной трассы. Бизнес-таблицы, роли и бюджет не меняются. Повторное применение допустимо.
 
-Рекомендуемые ограничения пилота для сложных запросов: `AGENT_MAX_INPUT_TOKENS=55000`, `AGENT_MAX_OUTPUT_TOKENS=9000`. При тарифах ввода $2/M и вывода $12/M резерв модели равен $0.273; с голосом $0.293, в пределах прежнего резерва $0.30. Общий бюджет остаётся $5/месяц, лимит 20 вопросов/сутки. Реальный расход, а не резерв, записывается после ответа. В оценку входа входит размер определений инструментов.
+Рекомендуемые ограничения для сложных запросов (с 21.11.2026): `AGENT_MAX_INPUT_TOKENS=150000`, `AGENT_MAX_OUTPUT_TOKENS=9000`, `AGENT_MAX_STEPS=8`, `AGENT_MAX_TOOL_CALLS=12`: один шаг с инструкциями и описаниями инструментов занимает около 30 тысяч токенов, и при 55 тысячах ассистент успевал сделать только один поиск. При тарифах ввода $2/M и вывода $12/M резерв модели равен $0.273; с голосом $0.293, в пределах прежнего резерва $0.30. Общий бюджет остаётся $5/месяц, лимит 20 вопросов/сутки. Реальный расход, а не резерв, записывается после ответа. В оценку входа входит размер определений инструментов.
 
 Проверки прав выполняются при формировании доступных разделов, перед каждым инструментом, в слое Supabase и перед выдачей ответа. Для обычных таблиц также заново проверяется RLS видимость конкретных записей, включая смену ответственного. Перед отправкой в Telegram проверки повторяются. Условно закрытые строки договоров с закупочными ценами и расходы на стоимость товара требуют prices.purchase.view. Данные калькулятора с закупочными значениями читаются отдельным разделом calculator_finance.
 

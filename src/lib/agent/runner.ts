@@ -69,7 +69,7 @@ const LEDGER_CODES = new Set(["AGENT_FORBIDDEN", "AGENT_DAILY_LIMIT", "AGENT_MON
 const TOOL_STAGE: Record<string, string> = {
   find_shipments: "Ищу поставки", get_shipment: "Читаю карточку поставки", get_shipment_vehicles: "Читаю автомобили поставки",
   get_shipment_documents: "Читаю документы поставки", get_document_extraction: "Читаю результаты распознавания",
-  search_system: "Ищу информацию в Nexus", get_system_record: "Читаю подробную карточку", find_products: "Ищу товары в справочнике", list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
+  search_system: "Ищу информацию в Nexus", get_report: "Строю отчёт Nexus", get_system_record: "Читаю подробную карточку", find_products: "Ищу товары в справочнике", list_delayed_shipments: "Ищу задержки", get_stock_status: "Читаю остатки", get_my_tasks: "Читаю ваши задачи", get_help: "Открываю справку",
 };
 const MAX_TOOL_CONTENT = 12_000;
 const MAX_TRACE_ENTRIES = 30;

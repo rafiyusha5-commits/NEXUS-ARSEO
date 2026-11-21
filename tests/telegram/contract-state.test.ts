@@ -5,7 +5,8 @@ import { AGENT_TOOLS } from "../../src/lib/agent/tools.ts";
 import { STALE_AFTER_MS, telegramUpdateState, type TelegramUpdateRow } from "../../src/lib/telegram/update-state.ts";
 
 const migration = readFileSync(new URL("../../supabase/migrations/202609275400_telegram_reliability.sql", import.meta.url), "utf8");
-const catalog = readFileSync(new URL("../../supabase/migrations/202610240400_assistant_return_cancellation.sql", import.meta.url), "utf8");
+// The latest definition of private.agent_clean_tools (the tool and parameter list of a run trace).
+const catalog = readFileSync(new URL("../../supabase/migrations/202611210700_assistant_reports.sql", import.meta.url), "utf8");
 const original = readFileSync(new URL("../../supabase/migrations/202609275200_agent_web_mvp.sql", import.meta.url), "utf8");
 const runner = readFileSync(new URL("../../src/lib/agent/runner.ts", import.meta.url), "utf8");
 

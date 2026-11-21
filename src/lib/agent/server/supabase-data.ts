@@ -3,6 +3,7 @@ import { driveArchive } from "../../google/drive-server.ts";
 import { catalogGateway } from "../../google/catalog-gateway.ts";
 import { createCatalogAccess } from "../../google/catalog-access.ts";
 import { SYSTEM_BY_KEY, sectionAllowed } from "../system-registry.ts";
+import { REPORT_RPCS } from "../report-tools.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentDataSource, ShipmentRow } from "../types.ts";
 
@@ -88,6 +89,13 @@ export function createSupabaseAgentData(supabase: SupabaseClient): AgentDataSour
         return [...ids].every(id=>visible.has(id));
       }));
       return checks.every(Boolean);
+    },
+    async readReport(rpc, args, signal) {
+      // Only the fixed report functions; each checks the employee's permissions in the database.
+      if (!REPORT_RPCS.has(rpc)) throw new DataError();
+      const named = Object.fromEntries(Object.entries(args).filter(([, value]) => value !== null));
+      const { data } = ensure(await supabase.rpc(rpc, named).abortSignal(signal));
+      return data;
     },
     async readSystem(input, signal) {
       const section = SYSTEM_BY_KEY.get(input.section);
