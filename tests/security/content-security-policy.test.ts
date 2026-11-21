@@ -33,6 +33,7 @@ describe("Content-Security-Policy with a nonce (K11)", () => {
   });
 
   it("does not set a second, static policy for every response", () => {
-    assert.ok(!applicationSecurityHeaders.some((header) => header.key === "Content-Security-Policy"));
+    const keys: readonly string[] = applicationSecurityHeaders.map((header) => header.key);
+    assert.ok(!keys.includes("Content-Security-Policy"));
   });
 });
