@@ -54,13 +54,25 @@ export async function recordAdvancePayment(data: FormData) {
   redirect(cardUrl(data, "success", "Аванс внесён. Зачтите его в расход, когда расход появится в Nexus."));
 }
 
-/** Sets an advance off against an expense of the same payee and currency. */
+/** Money the payee returned: closes an overpayment of a reversed expense or the unused rest of an advance (202611210200). */
+export async function recordPaymentRefund(data: FormData) {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.rpc("record_payment_refund", {
+    p_request_id: uuid(data, "request_id"), p_payment_id: uuid(data, "payment_id"), p_amount: amount(data, "amount"),
+    p_received_on: day(data, "received_on"), p_document_id: null, p_note: text(data, "note") || null,
+  });
+  if (error) redirect(cardUrl(data, "error", ruleViolationMessage(error, "Не удалось записать возврат.")));
+  revalidatePath("/finance/payables");
+  redirect(cardUrl(data, "success", "Возврат денег от получателя записан."));
+}
+
+/** Sets an advance or an overpayment off against an expense of the same payee, currency and kind. */
 export async function applyAdvance(data: FormData) {
   const { supabase } = await requireUser();
   const { error } = await supabase.rpc("apply_advance", {
     p_request_id: uuid(data, "request_id"), p_payment_id: uuid(data, "advance_id"), p_expense_id: uuid(data, "expense_id"), p_amount: amount(data, "amount"),
   });
-  if (error) redirect(cardUrl(data, "error", ruleViolationMessage(error, "Не удалось зачесть аванс.")));
+  if (error) redirect(cardUrl(data, "error", ruleViolationMessage(error, "Не удалось зачесть аванс или переплату.")));
   revalidatePath("/finance/payables");
-  redirect(cardUrl(data, "success", "Аванс зачтён в расход."));
+  redirect(cardUrl(data, "success", "Зачтено в расход."));
 }
