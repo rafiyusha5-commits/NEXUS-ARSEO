@@ -78,4 +78,26 @@ assert.equal(setOffs.filter((r) => r.code === 0).length, 1, JSON.stringify(setOf
 assert.ok(setOffs.some((r) => /распределены: остаток 40/.test(r.stderr)), JSON.stringify(setOffs.map((r) => r.stderr)));
 assert.equal(await run(`select sum(amount) from public.payment_applications where payment_id='d4900000-0000-4000-8000-0000000000ad'`), '60.00');
 console.log('PASS advances: two parallel set-offs of one advance => one, never above the advance');
+// Overpayment of a reversed expense (202611210200): 100 paid, the expense reversed; three refunds of 40 and two
+// set-offs of 40 at the same moment: exactly two pass, never more than the 100 that is free.
+await run(`
+with e as (
+ insert into public.expenses(attributed_customer_id,expense_type,payee_counterparty_id,amount,currency_id,incurred_at,is_planned,status,confirmed_by,confirmed_at,created_by,notes)
+ select '${customer}','promo','${payee}',100,(select id from public.currencies where code='EUR'),current_date-3,false,'confirmed','${user}',now(),'${user}','Overpay '||g
+ from generate_series(1,2) g returning id, notes)
+insert into tests_payables_race select case when notes='Overpay 1' then 'overpaid-expense' else 'setoff-expense' end,id from e;`);
+const overpay = await run(`${who} select public.record_expense_payment(gen_random_uuid(),(select id from tests_payables_race where k='overpaid-expense'),100,current_date-2,null,'Race');`);
+await run(`${who} select public.reverse_expense((select id from tests_payables_race where k='overpaid-expense'),'Race reversal');`);
+const refund = () => start(`${who} select public.record_payment_refund(gen_random_uuid(),'${overpay.split('\n').pop()}',40,current_date,null,'Race');`);
+const reuse = () => start(`${who} select public.apply_advance(gen_random_uuid(),'${overpay.split('\n').pop()}',(select id from tests_payables_race where k='setoff-expense'),40);`);
+const closing = await Promise.all([refund(), refund(), refund(), reuse(), reuse()]);
+assert.equal(closing.filter((r) => r.code === 0).length, 2, JSON.stringify(closing.map((r) => r.stderr)));
+assert.equal(await run(`select private.payment_unapplied('${overpay.split('\n').pop()}')`), '20.00');
+// The same refund request ten times in parallel: one refund.
+results = await Promise.all(Array.from({ length: 10 }, () =>
+  start(`${who} select public.record_payment_refund('d4900000-0000-4000-8000-0000000000bb','${overpay.split('\n').pop()}',5,current_date,null,'Race');`)));
+assert.ok(results.every((r) => r.code === 0), JSON.stringify(results.filter((r) => r.code !== 0)));
+assert.equal(await run(`select count(*) from public.payment_refunds where request_id='d4900000-0000-4000-8000-0000000000bb'`), '1');
+assert.equal(await run(`select private.payment_unapplied('${overpay.split('\n').pop()}')`), '15.00');
+console.log('PASS overpayments: 3 refunds + 2 set-offs of 40 on 100 at once => 2; 10 repeated refund requests => one refund');
 console.log('PASS payables: 2 parallel overpaying payments => one; 10 repeated requests => one payment; 8 payments for 3 remaining => 3, never above the amount');

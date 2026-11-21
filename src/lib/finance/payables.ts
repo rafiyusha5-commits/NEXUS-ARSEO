@@ -1,7 +1,7 @@
 // Formatting of the payables register (202611170400). Amounts come as decimal strings and are never added across
 // currencies.
 export type PayableRow = {
-  payee_id: string | null; payee: string | null; currency: string; accrued: string; paid: string; rest: string; advances?: string;
+  payee_id: string | null; payee: string | null; currency: string; accrued: string; paid: string; rest: string; advances?: string; overpaid?: string;
   open_expenses: number; no_due_date: number; nearest_due: string | null; overdue_amount: string; overdue_days: number | null;
 };
 
