@@ -34,6 +34,8 @@ export default async function PayeePage({ params, searchParams }: { params: Prom
   const today = almatyToday();
   const advances = card?.advances ?? [];
   const openAdvances = advances.filter(advance => Number(advance.remaining) > 0);
+  // An advance for goods pays only for goods, an advance for services only for the other expenses (202611210100).
+  const fits = (advance: Advance, expense: Expense) => advance.currency_id === expense.currency_id && (advance.advance_for === "goods") === (expense.type === "goods_cost");
   const row = (expense: Expense) => <article className="panel admin-section" key={expense.id}>
     <div className="panel-heading"><div><p className="eyebrow">{expenseTypeLabel[expense.type] ?? expense.type} · {expenseStatusLabel[expense.status] ?? expense.status}{expense.shipment && <> · <Link href={`/shipments/${expense.shipment_id}`}>{expense.shipment}</Link></>}</p>
       <h2>{money(expense.amount, expense.currency)}</h2></div>
@@ -49,10 +51,10 @@ export default async function PayeePage({ params, searchParams }: { params: Prom
       <label className="wide-field">Документ-основание и примечание<input name="note" maxLength={1000} placeholder="Например: платёжное поручение № 15"/></label>
       <PendingSubmitButton pendingText="Вносим…" className="primary" type="submit">Внести оплату</PendingSubmitButton>
     </form>}
-    {card?.can_pay && Number(expense.rest) > 0 && ["confirmed", "allocated"].includes(expense.status) && openAdvances.some(advance => advance.currency_id === expense.currency_id) && <form action={applyAdvance} className="inline-action">
+    {card?.can_pay && Number(expense.rest) > 0 && ["confirmed", "allocated"].includes(expense.status) && openAdvances.some(advance => fits(advance, expense)) && <form action={applyAdvance} className="inline-action">
       <input type="hidden" name="request_id" value={randomUUID()}/><input type="hidden" name="expense_id" value={expense.id}/><input type="hidden" name="payee" value={payee}/>
-      <label>Зачесть аванс<select name="advance_id" required>{openAdvances.filter(advance => advance.currency_id === expense.currency_id).map(advance => <option key={advance.id} value={advance.id}>от {day(advance.paid_on)}, остаток {money(advance.remaining, advance.currency)}</option>)}</select></label>
-      <label>Сумма<input name="amount" inputMode="decimal" required defaultValue={String(Math.min(Number(expense.rest), Math.max(...openAdvances.filter(advance => advance.currency_id === expense.currency_id).map(advance => Number(advance.remaining)))))}/></label>
+      <label>Зачесть аванс<select name="advance_id" required>{openAdvances.filter(advance => fits(advance, expense)).map(advance => <option key={advance.id} value={advance.id}>от {day(advance.paid_on)}, остаток {money(advance.remaining, advance.currency)}</option>)}</select></label>
+      <label>Сумма<input name="amount" inputMode="decimal" required defaultValue={String(Math.min(Number(expense.rest), Math.max(...openAdvances.filter(advance => fits(advance, expense)).map(advance => Number(advance.remaining)))))}/></label>
       <PendingSubmitButton pendingText="Зачитываем…" className="secondary" type="submit">Зачесть</PendingSubmitButton>
     </form>}
     {card?.can_manage && Number(expense.rest) > 0 && <form action={setExpenseDueDate} className="inline-action">
