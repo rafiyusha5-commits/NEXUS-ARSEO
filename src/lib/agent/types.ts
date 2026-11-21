@@ -66,6 +66,8 @@ export interface AgentDataSource {
   findDriveDocuments?(query: string, offset: number, signal: AbortSignal): Promise<{ files: import("../google/drive-readonly.ts").DriveFile[]; total: number | null; truncated: boolean; requiredPermissions?: string[] }>;
   downloadDriveFile?(id: string, signal: AbortSignal): Promise<{ blob: Blob; filename: string }>;
   getDriveDocument?(id:string,signal:AbortSignal):Promise<{file:import("../google/drive-readonly.ts").DriveFile;text:string|null;truncated:boolean}|null>;
+  /** A fixed read-only report function (src/lib/agent/report-tools.ts) with the employee's session. */
+  readReport?(rpc: string, args: Record<string, string | number | null>, signal: AbortSignal): Promise<unknown>;
   verifySystemAccess(records: { section: string; ids: string[]; versions?: Record<string,string> }[], signal: AbortSignal): Promise<boolean>;
   readSystem(input: { section: string; userId: string; recordId?: string; query?: string; status?: string; date?: string; dateTo?: string; parentId?: string; relatedBy?: string; offset: number; limit: number }, signal: AbortSignal): Promise<{ rows: ShipmentRow[]; total: number | null }>;
 

@@ -1541,6 +1541,836 @@ export const SYSTEM_SECTIONS: readonly SystemSection[] = [
     "idColumn": "role_id",
     "date": "",
     "anyPermissions": []
+  },
+  // Added 2026-11-21: tables the assistant could not see; permissions mirror their SELECT policies.
+  {
+    "key": "returns",
+    "title": "Возвраты от покупателей",
+    "table": "customer_returns",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "return_number",
+      "sale_id",
+      "customer_id",
+      "warehouse_id",
+      "status",
+      "reason",
+      "received_at",
+      "cancelled_at",
+      "cancellation_reason",
+      "created_at"
+    ],
+    "search": [
+      "return_number",
+      "reason"
+    ],
+    "date": "received_at",
+    "parent": "sale_id",
+    "path": "/sales/returns",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "return_items",
+    "title": "Строки возвратов: количество, причина и решение",
+    "table": "customer_return_items",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "return_id",
+      "sale_item_id",
+      "batch_id",
+      "quantity",
+      "uom",
+      "reason_code",
+      "unit_price",
+      "decision",
+      "decision_note",
+      "decided_at"
+    ],
+    "search": [],
+    "date": "decided_at",
+    "parent": "return_id",
+    "path": "/sales/returns",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "reservations",
+    "title": "Резервы товара под заказы",
+    "table": "inventory_reservations",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "sale_item_id",
+      "inventory_balance_id",
+      "batch_id",
+      "quantity",
+      "uom",
+      "sale_quantity",
+      "remaining_shelf_life_pct",
+      "status",
+      "is_fefo_override",
+      "override_reason",
+      "created_at"
+    ],
+    "search": [],
+    "date": "created_at",
+    "parent": "sale_item_id",
+    "path": "/sales",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "guarantee_letters",
+    "title": "Гарантийные письма покупателям",
+    "table": "guarantee_letters",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "letter_number",
+      "customer_id",
+      "sale_id",
+      "reason",
+      "status",
+      "notes",
+      "approved_at",
+      "sent_at",
+      "customer_decision_at",
+      "created_at"
+    ],
+    "search": [
+      "letter_number",
+      "reason"
+    ],
+    "date": "created_at",
+    "parent": "sale_id",
+    "path": "/sales",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "guarantee_items",
+    "title": "Товары гарантийных писем",
+    "table": "guarantee_letter_items",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "guarantee_letter_id",
+      "sale_item_id",
+      "batch_id",
+      "quantity",
+      "remaining_shelf_life_pct",
+      "required_shelf_life_pct"
+    ],
+    "search": [],
+    "date": "",
+    "parent": "guarantee_letter_id",
+    "path": "/sales",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "sale_price_changes",
+    "title": "История цен строк заказов",
+    "table": "sale_item_price_changes",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "sale_item_id",
+      "sale_id",
+      "kind",
+      "previous_price",
+      "previous_source",
+      "new_price",
+      "new_source",
+      "reason",
+      "changed_at"
+    ],
+    "search": [],
+    "date": "changed_at",
+    "parent": "sale_id",
+    "path": "/sales",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "sale_date_changes",
+    "title": "Переносы даты отгрузки заказов",
+    "table": "sale_shipment_date_changes",
+    "permissions": [
+      "sales.view"
+    ],
+    "columns": [
+      "id",
+      "sale_id",
+      "previous_date",
+      "new_date",
+      "change_kind",
+      "reason",
+      "changed_at"
+    ],
+    "search": [],
+    "date": "changed_at",
+    "parent": "sale_id",
+    "path": "/sales",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "sale_credit_decisions",
+    "title": "Решения по кредиту при подтверждении заказа",
+    "table": "sale_credit_decisions",
+    "permissions": [],
+    "columns": [
+      "id",
+      "sale_id",
+      "reason",
+      "decided_at"
+    ],
+    "search": [],
+    "date": "decided_at",
+    "parent": "sale_id",
+    "path": "/sales",
+    "anyPermissions": [
+      "sales.view",
+      "receivables.view"
+    ],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "credit_terms",
+    "title": "Кредитные условия клиентов: лимит и отсрочка",
+    "table": "customer_credit_terms",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "customer_id",
+      "credit_limit",
+      "limit_currency_id",
+      "default_deferral_days",
+      "updated_at"
+    ],
+    "search": [],
+    "date": "updated_at",
+    "parent": "customer_id",
+    "path": "/finance/receivables",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "customer_id"
+  },
+  {
+    "key": "balance_adjustments",
+    "title": "Корректировки сальдо клиентов",
+    "table": "customer_balance_adjustments",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "id",
+      "customer_id",
+      "currency_id",
+      "entry_date",
+      "amount",
+      "reason",
+      "created_at"
+    ],
+    "search": [
+      "reason"
+    ],
+    "date": "entry_date",
+    "parent": "customer_id",
+    "path": "/finance/receivables",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "opening_balances",
+    "title": "Начальные остатки дебиторки",
+    "table": "customer_opening_balances",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "id",
+      "customer_id",
+      "currency_id",
+      "as_of",
+      "amount",
+      "due_date",
+      "contract_number",
+      "superseded_at",
+      "created_at"
+    ],
+    "search": [
+      "contract_number"
+    ],
+    "date": "as_of",
+    "parent": "customer_id",
+    "path": "/finance/receivables",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "reconciliation_acts",
+    "title": "Акты сверки с клиентами",
+    "table": "customer_reconciliation_acts",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "id",
+      "customer_id",
+      "currency_id",
+      "as_of",
+      "act_balance",
+      "nexus_balance",
+      "note",
+      "created_at"
+    ],
+    "search": [],
+    "date": "as_of",
+    "parent": "customer_id",
+    "path": "/finance/receivables",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "bank_imports",
+    "title": "Загрузки банковских выписок",
+    "table": "bank_statement_imports",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "id",
+      "file_name",
+      "period_from",
+      "period_to",
+      "currency_id",
+      "lines_total",
+      "lines_new",
+      "lines_matched",
+      "created_at"
+    ],
+    "search": [
+      "file_name"
+    ],
+    "date": "period_from",
+    "parent": "",
+    "path": "/finance/bank",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "bank_lines",
+    "title": "Поступления из банка: строки выписки",
+    "table": "bank_statement_lines",
+    "permissions": [
+      "receivables.view"
+    ],
+    "columns": [
+      "id",
+      "import_id",
+      "doc_number",
+      "doc_date",
+      "amount",
+      "currency_id",
+      "payer_name",
+      "purpose",
+      "status",
+      "customer_id",
+      "sale_id",
+      "matched_how",
+      "note",
+      "resolved_at"
+    ],
+    "search": [
+      "doc_number",
+      "payer_name",
+      "purpose"
+    ],
+    "date": "doc_date",
+    "parent": "customer_id",
+    "path": "/finance/bank",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "expense_allocations",
+    "title": "Распределение расходов по товарам и партиям",
+    "table": "expense_allocations",
+    "permissions": [
+      "finance.view"
+    ],
+    "columns": [
+      "id",
+      "expense_id",
+      "shipment_item_id",
+      "batch_id",
+      "allocation_method",
+      "allocation_basis",
+      "allocation_share",
+      "allocated_amount",
+      "currency_id",
+      "created_at"
+    ],
+    "search": [],
+    "date": "created_at",
+    "parent": "expense_id",
+    "path": "/finance",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "warehouse_documents",
+    "title": "Складские документы: перемещения, списания, корректировки",
+    "table": "inventory_operation_documents",
+    "permissions": [
+      "inventory.view"
+    ],
+    "columns": [
+      "id",
+      "document_number",
+      "operation_type",
+      "status",
+      "document_date",
+      "from_warehouse_id",
+      "to_warehouse_id",
+      "reference",
+      "reason",
+      "performed_by_name",
+      "posted_at",
+      "cancelled_at",
+      "cancellation_reason",
+      "created_at"
+    ],
+    "search": [
+      "document_number",
+      "reference",
+      "reason"
+    ],
+    "date": "document_date",
+    "parent": "from_warehouse_id",
+    "path": "/inventory/movements",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "warehouse_document_lines",
+    "title": "Строки складских документов",
+    "table": "inventory_operation_lines",
+    "permissions": [
+      "inventory.view"
+    ],
+    "columns": [
+      "id",
+      "document_id",
+      "source_balance_id",
+      "batch_id",
+      "from_location_id",
+      "to_location_id",
+      "uom",
+      "quantity",
+      "adjustment_direction",
+      "notes"
+    ],
+    "search": [],
+    "date": "",
+    "parent": "document_id",
+    "path": "/inventory/movements",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "transport_receipts",
+    "title": "Приёмки машин на складе",
+    "table": "shipment_transport_receipts",
+    "permissions": [
+      "shipments.view",
+      "inventory.view"
+    ],
+    "columns": [
+      "id",
+      "shipment_id",
+      "shipment_transport_id",
+      "warehouse_id",
+      "warehouse_location_id",
+      "performed_by_name",
+      "notes",
+      "received_at"
+    ],
+    "search": [],
+    "date": "received_at",
+    "parent": "shipment_id",
+    "path": "/shipments",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "transport_receipt_items",
+    "title": "Строки приёмки: ожидалось, принято, брак, недостача",
+    "table": "shipment_transport_receipt_items",
+    "permissions": [
+      "shipments.view",
+      "inventory.view"
+    ],
+    "columns": [
+      "id",
+      "receipt_id",
+      "shipment_item_id",
+      "expected_quantity",
+      "accepted_quantity",
+      "damaged_quantity",
+      "shortage_quantity",
+      "overage_quantity",
+      "discrepancy_reason",
+      "inventory_batch_id",
+      "batch_number",
+      "manufacture_date",
+      "expiry_date"
+    ],
+    "search": [
+      "batch_number"
+    ],
+    "date": "expiry_date",
+    "parent": "receipt_id",
+    "path": "/shipments",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "milestones",
+    "title": "Вехи поставок: план и факт",
+    "table": "shipment_milestones",
+    "permissions": [
+      "calendar.view",
+      "shipments.view"
+    ],
+    "columns": [
+      "id",
+      "shipment_id",
+      "title",
+      "kind",
+      "planned_at",
+      "actual_at",
+      "notes",
+      "is_cancelled"
+    ],
+    "search": [
+      "title"
+    ],
+    "date": "planned_at",
+    "parent": "shipment_id",
+    "path": "/calendar",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "stage_history",
+    "title": "История этапов поставок",
+    "table": "shipment_stage_history",
+    "permissions": [
+      "shipments.view"
+    ],
+    "columns": [
+      "id",
+      "stage_run_id",
+      "shipment_id",
+      "from_status",
+      "to_status",
+      "performed_by_name",
+      "reason",
+      "created_at"
+    ],
+    "search": [],
+    "date": "created_at",
+    "parent": "shipment_id",
+    "path": "/shipments",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "stage_templates",
+    "title": "Шаблон этапов поставки: порядок, сроки, ответственные",
+    "table": "shipment_stages",
+    "permissions": [],
+    "columns": [
+      "id",
+      "process_template_id",
+      "code",
+      "name",
+      "sequence_order",
+      "requirement",
+      "scope",
+      "status_category",
+      "default_responsible_role",
+      "sla_days",
+      "is_active"
+    ],
+    "search": [
+      "code"
+    ],
+    "date": "",
+    "parent": "process_template_id",
+    "path": "/shipments",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "logist_proposals",
+    "title": "Предложения Логиста по поставкам",
+    "table": "logist_proposals",
+    "permissions": [
+      "shipments.view",
+      "documents.view"
+    ],
+    "columns": [
+      "id",
+      "shipment_id",
+      "kind",
+      "title",
+      "reason",
+      "status",
+      "decided_at",
+      "decision_note",
+      "created_at"
+    ],
+    "search": [
+      "title"
+    ],
+    "date": "created_at",
+    "parent": "shipment_id",
+    "path": "/logist",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "approvals",
+    "title": "Согласования: документы, поставки и другое",
+    "table": "approvals",
+    "permissions": [],
+    "columns": [
+      "id",
+      "entity_type",
+      "entity_id",
+      "approver_role",
+      "status",
+      "requested_at",
+      "decided_at",
+      "comment",
+      "request_comment"
+    ],
+    "search": [],
+    "date": "requested_at",
+    "parent": "entity_id",
+    "path": "/",
+    "anyPermissions": [
+      "documents.view",
+      "shipments.view"
+    ],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "document_versions",
+    "title": "Версии документов: файл, размер, текущая",
+    "table": "document_versions",
+    "permissions": [
+      "documents.view"
+    ],
+    "columns": [
+      "id",
+      "document_id",
+      "version_number",
+      "original_filename",
+      "mime_type",
+      "file_size_bytes",
+      "is_current",
+      "comment",
+      "uploaded_at"
+    ],
+    "search": [
+      "original_filename"
+    ],
+    "date": "uploaded_at",
+    "parent": "document_id",
+    "path": "/documents",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "document_links",
+    "title": "Связи документов с поставками, машинами и заказами",
+    "table": "document_links",
+    "permissions": [
+      "documents.view"
+    ],
+    "columns": [
+      "id",
+      "document_id",
+      "entity_type",
+      "entity_id",
+      "link_role",
+      "note",
+      "created_at",
+      "removed_at"
+    ],
+    "search": [],
+    "date": "created_at",
+    "parent": "document_id",
+    "path": "/documents",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "document_types",
+    "title": "Виды документов",
+    "table": "document_types",
+    "permissions": [],
+    "columns": [
+      "id",
+      "code",
+      "name_ru",
+      "name_en",
+      "category",
+      "is_required_by_default",
+      "has_validity_period",
+      "is_active"
+    ],
+    "search": [
+      "code",
+      "name_ru",
+      "name_en"
+    ],
+    "date": "",
+    "parent": "",
+    "path": "/documents",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "document_requirements",
+    "title": "Обязательные документы по маршрутам и этапам",
+    "table": "document_requirements",
+    "permissions": [],
+    "columns": [
+      "id",
+      "document_type_id",
+      "applies_to",
+      "shipment_type",
+      "stage_id",
+      "route_id",
+      "is_mandatory",
+      "due_days",
+      "due_description",
+      "notes",
+      "is_active"
+    ],
+    "search": [
+      "due_description",
+      "notes"
+    ],
+    "date": "",
+    "parent": "document_type_id",
+    "path": "/documents",
+    "anyPermissions": [
+      "documents.view",
+      "documents.manage_requirements"
+    ],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "carriers",
+    "title": "Перевозчики: направления, рефрижераторы, условия оплаты",
+    "table": "carriers",
+    "permissions": [
+      "suppliers.view"
+    ],
+    "columns": [
+      "id",
+      "counterparty_id",
+      "transport_types",
+      "has_refrigerated_fleet",
+      "directions",
+      "payment_terms",
+      "directory_active",
+      "inactive_reason",
+      "notes"
+    ],
+    "search": [
+      "notes",
+      "payment_terms"
+    ],
+    "date": "",
+    "parent": "counterparty_id",
+    "path": "/freight",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
+  },
+  {
+    "key": "brokers",
+    "title": "Таможенные брокеры",
+    "table": "brokers",
+    "permissions": [
+      "suppliers.view"
+    ],
+    "columns": [
+      "id",
+      "counterparty_id",
+      "countries_serviced",
+      "notes"
+    ],
+    "search": [
+      "notes"
+    ],
+    "date": "",
+    "parent": "counterparty_id",
+    "path": "/suppliers",
+    "anyPermissions": [],
+    "rpc": null,
+    "idColumn": "id"
   }
 ];
 export const SYSTEM_BY_KEY: ReadonlyMap<string, SystemSection> = new Map(SYSTEM_SECTIONS.map(section => [section.key, section]));

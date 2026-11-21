@@ -317,7 +317,8 @@ describe("assistant run", () => {
     const provider = new ScriptedProvider([finalAnswer(NOTE("Нет данных."))]);
     await runAgent("Остатки?", deps(provider, { permissions: permissionsOf(["agent.use", "shipments.view"]) }));
     const offered = provider.requests[0].tools.map((tool) => tool.name).sort();
-    assert.deepEqual(offered, ["find_shipments", "get_help", "get_shipment", "get_shipment_vehicles", "get_system_record", "list_delayed_shipments", "search_system"]);
+    // get_report: the daily summary is open to anyone who sees shipments; other reports stay hidden.
+    assert.deepEqual(offered, ["find_shipments", "get_help", "get_report", "get_shipment", "get_shipment_vehicles", "get_system_record", "list_delayed_shipments", "search_system"]);
   });
 
   it("refuses without agent.use and does not reserve", async () => {

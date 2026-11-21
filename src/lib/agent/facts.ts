@@ -198,7 +198,7 @@ export function verifyAnswer(raw: RawAnswer, calls: ReadonlyMap<string, CallReco
   // A requested system page is rendered completely by code, rather than depending on how many
   // of its records the model selected (its JSON schema has a smaller fact limit).
   // Keep explicit relevant selections; use full cards only when no facts were selected.
-  for (const [id, call] of calls) if (["search_system", "get_system_record"].includes(call.tool.name)) {
+  for (const [id, call] of calls) if (["search_system", "get_system_record", "get_report"].includes(call.tool.name)) {
     if (raw.facts.length) continue;
     const countOnly=raw.facts.some(fact=>fact.call===id && fact.fields.every(field=>field==="$count"||field==="$total"));
     if (countOnly) continue;
