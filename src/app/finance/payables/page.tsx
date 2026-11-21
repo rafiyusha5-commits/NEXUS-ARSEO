@@ -31,10 +31,10 @@ export default async function PayablesPage({ searchParams }: { searchParams: Pro
         <div className="panel-heading"><div><p className="eyebrow">По получателям</p><h2>Начислено, оплачено, остаток</h2></div><span className="page-count">{rows.length}</span></div>
         <p className="form-help">В реестре фактические расходы с момента подтверждения, без отменённых и сторнированных. Оплаты вносятся частями в карточке получателя. Расход без срока оплаты отмечен «срок не задан» и просроченным не считается. Стоимость товара видна только с правом на закупочные цены. Плановые расходы сюда не входят. Аванс получателю показан отдельно и зачитывается в его расходы в карточке получателя.</p>
         <div className="import-table-wrap"><table className="import-table">
-          <thead><tr><th>Получатель</th><th>Валюта</th><th>Начислено</th><th>Оплачено</th><th>Остаток</th><th>Аванс без зачёта</th><th>Ближайший срок</th><th>Просрочка</th></tr></thead>
+          <thead><tr><th>Получатель</th><th>Валюта</th><th>Начислено</th><th>Оплачено</th><th>Остаток</th><th>Аванс без зачёта</th><th>Переплата</th><th>Ближайший срок</th><th>Просрочка</th></tr></thead>
           <tbody>{rows.map(row => <tr key={`${row.payee_id}-${row.currency}`} className={row.overdue_days ? "has-error" : ""}>
             <td><Link href={payeeHref(row.payee_id)}>{row.payee ?? "Получатель не указан"}</Link><br/><small>открытых расходов: {row.open_expenses}{row.no_due_date ? ` · срок не задан: ${row.no_due_date}` : ""}</small></td>
-            <td>{row.currency}</td><td>{money(row.accrued)}</td><td>{money(row.paid)}</td><td><strong>{money(row.rest)}</strong></td><td>{Number(row.advances ?? 0) ? money(row.advances) : "—"}</td>
+            <td>{row.currency}</td><td>{money(row.accrued)}</td><td>{money(row.paid)}</td><td><strong>{money(row.rest)}</strong></td><td>{Number(row.advances ?? 0) ? money(row.advances) : "—"}</td><td>{Number(row.overpaid ?? 0) ? money(row.overpaid) : "—"}</td>
             <td>{day(row.nearest_due)}</td>
             <td>{row.overdue_days ? <>{row.overdue_days} дн.<br/><small>{money(row.overdue_amount, row.currency)}</small></> : "—"}</td>
           </tr>)}</tbody>
