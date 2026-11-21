@@ -272,6 +272,8 @@ echo "re-applying document migrations (idempotency check)"
 # Overpayments of reversed expenses redefine the payment check, apply_advance and the register of 202611170700/0100
 # re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611210200_reversed_expense_overpayment.sql" >/dev/null
+# Shipment shares of profitability redefine the report and lines of 202611170500 re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611210300_profitability_shipment_shares.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
