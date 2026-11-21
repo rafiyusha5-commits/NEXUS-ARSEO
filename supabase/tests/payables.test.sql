@@ -144,7 +144,8 @@ begin
    from jsonb_array_elements(r->'expenses') x where x->>'id'=pg_temp.id('freight')::text);
 end $$;
 reset role;
--- No due date: "срок не задан", not overdue. Reversal of the partly paid KZT freight takes it out of the register.
+-- No due date: "срок не задан", not overdue. Reversal of the partly paid KZT freight takes it out of the debt; since
+-- 202611210200 what was paid against it stays in the register as the carrier's overpayment.
 do $$begin
  assert (select (x->>'no_due_date')::int=0 from jsonb_array_elements(public.payables_summary()) x where x->>'currency'='KZT');
 end $$;
@@ -157,7 +158,9 @@ do $$begin
 end $$;
 select public.reverse_expense(pg_temp.id('freight_kzt'),'Перевозчик выставил неверный счёт');
 do $$begin
- assert not exists(select 1 from jsonb_array_elements(public.payables_summary()) x where x->>'currency'='KZT'),'reversed: out of the register';
+ assert (select (x->>'accrued')::numeric=0 and (x->>'rest')::numeric=0 and (x->>'overpaid')::numeric=30000
+           from jsonb_array_elements(public.payables_summary()) x where x->>'currency'='KZT'),
+   'reversed: no debt any more; the 30 000 paid against it is the overpayment';
 end $$;
 reset role;
 do $$begin
