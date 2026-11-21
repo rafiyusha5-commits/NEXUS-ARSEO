@@ -43,12 +43,15 @@ export function createDocumentGateway(supabase: SupabaseClient, userId: string):
     },
 
     async findDocumentWithChecksum(checksum) {
-      const { data } = await supabase
+      // documents and document_versions are linked twice (a version's document and a document's shared version):
+      // the embed names its link, otherwise the query fails and a repeated file would not be noticed.
+      const { data, error } = await supabase
         .from("document_versions")
-        .select("document_id, document:documents(title)")
+        .select("document_id, document:documents!document_versions_document_id_fkey(title)")
         .eq("checksum_sha256", checksum)
         .limit(1)
         .maybeSingle();
+      if (error) throw new Error("DUPLICATE_CHECK_FAILED");
       if (!data) return null;
       const document = Array.isArray(data.document) ? data.document[0] : data.document;
       return { id: data.document_id as string, title: (document as { title?: string } | null)?.title ?? "документ" };

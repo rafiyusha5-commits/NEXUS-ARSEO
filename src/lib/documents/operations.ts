@@ -134,7 +134,13 @@ export async function registerDocumentWithFile(
   if ("error" in checked) return fail("invalid", checked.error ?? "Некорректный файл");
 
   const checksum = await deps.sha256Hex(checked.bytes);
-  const existing = await gateway.findDocumentWithChecksum(checksum);
+  let existing: { id: string; title: string } | null;
+  try {
+    existing = await gateway.findDocumentWithChecksum(checksum);
+  } catch {
+    // Without the check a repeated file would be registered twice: stop instead.
+    return fail("failed", "Не удалось проверить, загружался ли этот файл раньше. Повторите загрузку");
+  }
   if (existing) {
     return fail("duplicate", `Этот файл уже зарегистрирован: «${existing.title}». Откройте документ и добавьте нужную связь`);
   }
