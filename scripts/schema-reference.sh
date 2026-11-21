@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reference schema fingerprint (audit 2026-11-11, K3): applies every migration once, in name order, to a throwaway
 # local PostgreSQL with supabase/tests/supabase_stub.sql — the order a production database should have received them —
-# and prints the output of scripts/schema-fingerprint.sql. Compare it with the fingerprint of a real database:
+# and prints the output of supabase/tools/schema-fingerprint.sql. Compare it with the fingerprint of a real database:
 #
 #   bash scripts/schema-reference.sh > reference.tsv
 #   UNTIL=202611190200_calculator_price_blocks.sql bash scripts/schema-reference.sh > reference.tsv  # stop after it
@@ -52,4 +52,4 @@ for migration in "$ROOT"/supabase/migrations/*.sql; do
   "${PSQL[@]}" -o /dev/null -f "$migration"
   [[ -n "$UNTIL" && "$(basename "$migration")" == "$UNTIL" ]] && break
 done
-"${PSQL[@]}" -At -F $'\t' -f "$ROOT/scripts/schema-fingerprint.sql"
+"${PSQL[@]}" -At -F $'\t' -f "$ROOT/supabase/tools/schema-fingerprint.sql"

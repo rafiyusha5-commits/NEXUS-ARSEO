@@ -1,5 +1,5 @@
 /**
- * Compares two schema fingerprints made by scripts/schema-fingerprint.sql (audit 2026-11-11, K3): for example a
+ * Compares two schema fingerprints made by supabase/tools/schema-fingerprint.sql (audit 2026-11-11, K3): for example a
  * production database against a reference built by scripts/schema-reference.sh (every migration once, in order).
  * Prints object names only, never definitions or data.
  *

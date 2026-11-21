@@ -1,6 +1,6 @@
 -- Read-only fingerprint of the Nexus schema (audit 2026-11-11, K3): one line per object,
 -- "kind<TAB>name<TAB>md5<TAB>md5 without whitespace".
--- Run with: psql -X -At -F "<TAB>" -f scripts/schema-fingerprint.sql  (inside a read-only transaction below).
+-- Run with: psql -X -At -F "<TAB>" -f supabase/tools/schema-fingerprint.sql  (inside a read-only transaction below).
 -- Compare two outputs with scripts/schema-diff.mts: a production database against a reference built by applying
 -- every migration once in order. Only the structure is read, never table contents, except two seeded catalogues
 -- (permission codes, storage buckets), which migrations create.

@@ -11,7 +11,7 @@
 
 | Что | Файл | Что делает |
 | --- | --- | --- |
-| Снимок схемы | `scripts/schema-fingerprint.sql` | только чтение: по строке на объект — функции и процедуры (полное определение и права), таблицы, столбцы, ограничения, индексы, триггеры, политики, перечисления, коды прав, бакеты Storage; два отпечатка — точный и без пробелов. Данные таблиц не читаются |
+| Снимок схемы | `supabase/tools/schema-fingerprint.sql` | только чтение: по строке на объект — функции и процедуры (полное определение и права), таблицы, столбцы, ограничения, индексы, триггеры, политики, перечисления, коды прав, бакеты Storage; два отпечатка — точный и без пробелов. Данные таблиц не читаются |
 | Эталон | `scripts/schema-reference.sh` | временная PostgreSQL с `supabase_stub.sql`, все миграции по одному разу по порядку имён (до `UNTIL`, если задан), затем снимок |
 | Сравнение | `scripts/schema-diff.mts` | чего нет, что лишнее, что отличается; отдельно — объекты, отличающиеся только пробелами. Печатает только имена |
 | Реестр | `scripts/migration-registry.mts` | `record` — SQL записи миграций (`applied` или `reconciled`); `pending` — какие миграции репозитория не записаны или записаны с другим содержимым |
@@ -27,7 +27,7 @@ CR в телах функций.
 
 ```bash
 UNTIL=<последняя применённая миграция> bash scripts/schema-reference.sh > reference.tsv
-psql "<рабочая база>" -X -q -At -F $'\t' -f scripts/schema-fingerprint.sql > production.tsv
+psql "<рабочая база>" -X -q -At -F $'\t' -f supabase/tools/schema-fingerprint.sql > production.tsv
 node --disable-warning=ExperimentalWarning scripts/schema-diff.mts reference.tsv production.tsv
 ```
 

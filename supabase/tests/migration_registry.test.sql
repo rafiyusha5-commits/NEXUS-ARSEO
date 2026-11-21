@@ -1,8 +1,8 @@
--- 202611210600 and scripts/schema-fingerprint.sql (audit 2026-11-11, K3). Synthetic data only; rolled back.
+-- 202611210600 and supabase/tools/schema-fingerprint.sql (audit 2026-11-11, K3). Synthetic data only; rolled back.
 \set ON_ERROR_STOP 1
 -- The read-only schema fingerprint runs on a database with every migration (it opens and closes its own
 -- read-only transaction, so it runs before the test transaction).
-\set fingerprint :repo_root '/scripts/schema-fingerprint.sql'
+\set fingerprint :repo_root '/supabase/tools/schema-fingerprint.sql'
 \i :fingerprint
 begin;
 -- 1. The registry is closed to every API role, with RLS on.
