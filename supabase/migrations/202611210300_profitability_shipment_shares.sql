@@ -46,8 +46,11 @@ begin
     g as (
       select case p_group when 'shipment' then coalesce(s.shipment_id, l.shipment_id) when 'product' then l.product_id else l.customer_id end as key,
              l.kind, l.status, l.old_rule,
-             l.revenue_net_kzt * coalesce(s.share, 1) as revenue_net_kzt, l.revenue_gross_kzt * coalesce(s.share, 1) as revenue_gross_kzt,
-             l.cost_kzt * coalesce(s.share, 1) as cost_kzt, l.pieces * coalesce(s.share, 1) as pieces
+             -- A whole line stays exact; a shared one is rounded to tiyn and to thousandths of a piece.
+             case when coalesce(s.share, 1) = 1 then l.revenue_net_kzt else round(l.revenue_net_kzt * s.share, 2) end as revenue_net_kzt,
+             case when coalesce(s.share, 1) = 1 then l.revenue_gross_kzt else round(l.revenue_gross_kzt * s.share, 2) end as revenue_gross_kzt,
+             case when coalesce(s.share, 1) = 1 then l.cost_kzt else round(l.cost_kzt * s.share, 2) end as cost_kzt,
+             case when coalesce(s.share, 1) = 1 then l.pieces else round(l.pieces * s.share, 3) end as pieces
         from l left join shares s on s.batch_id = l.batch_id
     ), agg as (
       select g.key,
@@ -72,7 +75,8 @@ begin
                when 'product' then (select p.internal_sku || ' · ' || coalesce(p.name->>'ru', '') from public.products p where p.id = a.key)
                else (select coalesce(c.short_name, c.legal_name) from public.counterparties c where c.id = a.key) end as name,
              case when p_group = 'shipment' then (
-               select coalesce(sum(bal.quantity_on_hand * private.uom_pieces(b.product_id, bal.uom) * coalesce(s.share, 1)), 0)
+               select coalesce(sum(case when coalesce(s.share, 1) = 1 then bal.quantity_on_hand * private.uom_pieces(b.product_id, bal.uom)
+                                        else round(bal.quantity_on_hand * private.uom_pieces(b.product_id, bal.uom) * s.share, 3) end), 0)
                  from public.inventory_batches b
                  join public.inventory_balances bal on bal.batch_id = b.id
                  left join lateral (select x.shipment_id, x.share from private.batch_shipment_shares(b.id) x) s on true
