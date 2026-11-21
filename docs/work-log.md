@@ -1885,6 +1885,24 @@ Gmail владельцев в метаданных коммитов. У `rafiyus
 
 
 
+## 2026-11-21 — реестр миграций и сверка схемы рабочей базы (Р4, К3)
+
+Задача владельца `rafiyusha5-commits`, агент Claude. Основа: `main` `56c781b`.
+
+- `supabase/tools/schema-fingerprint.sql` (в `supabase/`, чтобы его видел и изолированный Docker-прогон тестов) — снимок схемы только на чтение (функции с определениями и правами, таблицы,
+  столбцы, ограничения, индексы, триггеры, политики, права ролей API, коды прав, бакеты), с отпечатком без пробелов;
+  `scripts/schema-reference.sh` — эталон: все миграции по одному разу по порядку; `scripts/schema-diff.mts` —
+  сравнение по именам; `scripts/migration-registry.mts` — SQL записи в реестр и список незаписанных миграций.
+- Миграция `202611210600_migration_registry.sql`: `private.applied_migrations` (имя, SHA-256 файла, способ
+  `applied`/`reconciled`, кто, когда, примечание), закрыта для ролей API.
+- Сверка рабочей базы (только чтение) с эталоном до `202611190200`: совпадает, кроме RLS на
+  `private.drive_access_cleanup` (вероятно, включён служебной функцией Supabase `rls_auto_enable`; строже, не шире)
+  и пробелов в 11 функциях. Подробности — `docs/migration-registry.md`.
+
+Тесты: `tests/scripts/schema-diff.test.ts`, `tests/scripts/migration-registry.test.ts`,
+`supabase/tests/migration_registry.test.sql` (запрос снимка выполняется на базе со всеми миграциями). Миграция к
+рабочей базе не применена; заполнение реестра — после неё, по решению владельцев.
+
 
 ## 2026-11-21 — CSP без `unsafe-inline` для скриптов (Р3, К11)
 
