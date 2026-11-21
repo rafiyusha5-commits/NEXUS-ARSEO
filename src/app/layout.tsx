@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { headers } from "next/headers";
 import "./globals.css";
 
 // ARSEO brand type: Jost (close to the site's geometric headings) and Golos Text for interface text.
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
   description: "Управление импортом, экспортом и логистикой ТОО ARSEO",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+// Reading the request headers renders every page per request, so each response carries the nonce of its own
+// Content-Security-Policy (src/proxy.ts); Next.js adds the nonce to its scripts itself.
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  await headers();
   return <html lang="ru" data-scroll-behavior="smooth" className={`${display.variable} ${body.variable}`}><body>{children}</body></html>;
 }

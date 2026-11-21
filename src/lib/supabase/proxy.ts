@@ -11,22 +11,32 @@ function copySessionState(source: NextResponse, target: NextResponse) {
   return target;
 }
 
-export async function updateSession(request: NextRequest) {
+/**
+ * `extraHeaders` are added to the request the application sees (the CSP nonce of src/proxy.ts). They are applied on
+ * top of the current request headers each time, so cookies refreshed below reach the server components too.
+ */
+export async function updateSession(request: NextRequest, extraHeaders?: Headers) {
+  const next = () => {
+    if (!extraHeaders) return NextResponse.next({ request });
+    const headers = new Headers(request.headers);
+    extraHeaders.forEach((value, name) => headers.set(name, value));
+    return NextResponse.next({ request: { headers } });
+  };
   // Public responses contain only ok/unavailable. Liveness must not depend on Auth/DB.
-  if (["/api/health/live", "/api/health/ready"].includes(request.nextUrl.pathname)) return NextResponse.next({ request });
+  if (["/api/health/live", "/api/health/ready"].includes(request.nextUrl.pathname)) return next();
   // Exact internal worker route authenticates with its own server secret, never employee cookies.
-  if (request.nextUrl.pathname === "/api/telegram/process") return NextResponse.next({ request });
-  if (!hasSupabaseEnv()) return NextResponse.next({ request });
+  if (request.nextUrl.pathname === "/api/telegram/process") return next();
+  if (!hasSupabaseEnv()) return next();
 
   const { url, publishableKey } = getSupabaseEnv();
-  let response = NextResponse.next({ request });
+  let response = next();
 
   const supabase = createServerClient(url, publishableKey, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = next();
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );

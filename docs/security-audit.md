@@ -5,7 +5,11 @@
 ### Последующее усиление приложения и production
 
 - 03.10.2026 в production Supabase отключена самостоятельная регистрация (`Allow new users to sign up`). Существующие пользователи, вход, восстановление пароля и приглашения администратора продолжают работать.
-- Все маршруты приложения получают CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` и `Permissions-Policy` из `next.config.ts`.
+- Все маршруты приложения получают HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` и `Permissions-Policy` из `next.config.ts`.
+- CSP (с 21.11.2026, К11) строится на каждый запрос в `src/proxy.ts` с новым nonce: `script-src 'self' 'nonce-…'
+  'strict-dynamic'` без `unsafe-inline` (в разработке добавляется `unsafe-eval` для среды Next.js). Next.js ставит nonce
+  на свои скрипты сам; корневой макет читает заголовки запроса, поэтому каждая страница рендерится на запрос.
+  `style-src` сохраняет `unsafe-inline`: атрибуты `style` в React не принимают nonce, а стили не выполняют код.
 - Серверные действия преобразуют неизвестные ошибки Supabase и PostgreSQL в безопасные сообщения через `src/lib/errors/public-message.ts`; исходные SQL, политики, имена таблиц и ограничения пользователю не возвращаются.
 - Серверные действия интеграций явно проверяют `integrations.manage` или `integrations.resolve` до вызова RPC. Соответствующие RPC повторяют проверку в базе.
 
