@@ -14,7 +14,8 @@ export default async function ClientAccessPage({ searchParams }: { searchParams:
   const { profile, roles, supabase } = await requireAccessManager();
   const [{ data: customers, error: customersError }, { data: users, error: usersError }] = await Promise.all([
     selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name").contains("roles", ["customer"]).eq("status", "active").order("legal_name").order("id").range(from,to)),
-    supabase.from("profiles").select("id,full_name,email,phone,locale,is_active,counterparties(legal_name),user_permission_overrides(effect,revoked_at,permissions(code))").eq("user_type", "external").order("full_name"),
+    // Overrides link to profiles three times (whose, granted by, revoked by): the embed names the owner's link.
+    supabase.from("profiles").select("id,full_name,email,phone,locale,is_active,counterparties(legal_name),user_permission_overrides!user_permission_overrides_user_id_fkey(effect,revoked_at,permissions(code))").eq("user_type", "external").order("full_name"),
   ]);
   const ready = !customersError && !usersError;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="client-access" />
@@ -22,7 +23,7 @@ export default async function ClientAccessPage({ searchParams }: { searchParams:
       <header className="topbar"><div><p className="eyebrow">Внешний контур</p><h1>Доступ клиентов</h1></div><span className="page-count">{users?.length ?? 0} представителей</span></header>
     <WorkflowHelp section="access"/>
       {params.error && <div className="login-error admin-message">{params.error}</div>}{params.success && <div className="login-success admin-message">{params.success}</div>}
-      {!ready && <div className="setup-notice">Примените миграцию <strong>202609273300_external_client_portal.sql</strong>.</div>}
+      {!ready && <div className="setup-notice">Не удалось загрузить клиентов и их представителей. Обновите страницу; если ошибка повторяется, сообщите администратору.</div>}
       <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Новая учётная запись</p><h2>Пригласить представителя клиента</h2></div></div>
         <form action={inviteExternalClient} className="admin-form-grid">
           <label>ФИО<input name="full_name" required /></label><label>Электронная почта<input name="email" type="email" required /></label>

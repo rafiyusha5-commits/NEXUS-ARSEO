@@ -29,6 +29,7 @@ function fakeGateway(options: {
   permissions?: DocumentPermissions;
   document?: { archived: boolean; checksums: string[] } | null;
   existingChecksum?: string;
+  duplicateCheckFails?: boolean;
   uploadFailure?: { message: string; statusCode?: string | number };
   registerError?: string;
   insertError?: string;
@@ -40,6 +41,7 @@ function fakeGateway(options: {
     async permissions() { record("permissions"); return options.permissions ?? allow(); },
     async findDocumentWithChecksum(checksum) {
       record("findDocumentWithChecksum", checksum);
+      if (options.duplicateCheckFails) throw new Error("DUPLICATE_CHECK_FAILED");
       return checksum === options.existingChecksum ? { id: DOC_ID, title: "Инвойс INV-1" } : null;
     },
     async getDocumentState(id) {
@@ -148,6 +150,18 @@ describe("registering a document", () => {
       assert.match(result.error, /INV-1/);
     }
     assert.equal(duplicate.called("uploadFile").length, 0);
+  });
+
+  it("stops instead of registering a possible duplicate when the duplicate check fails", async () => {
+    const broken = fakeGateway({ duplicateCheckFails: true });
+    const result = await registerDocumentWithFile(broken.gateway, deps, metadata(), [], pdfFile());
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.code, "failed");
+      assert.match(result.error, /загружался ли этот файл раньше/);
+    }
+    assert.equal(broken.called("uploadFile").length, 0);
+    assert.equal(broken.called("registerDocument").length, 0);
   });
 
   it("explains a missing bucket to the administrator and does not register", async () => {
