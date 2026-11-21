@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { confirmPriceListImport, saveBrand, setPriceListPrice, setVatRate } from "./actions";
 import { BatchMargins, type BatchMarginsData } from "@/components/sales/batch-margins";
+import { productsWithoutPrices, selectedPriceProduct, type CatalogProduct } from "@/lib/sales/price-list-products";
+import { selectAll } from "@/lib/supabase/select-all";
 
 type PriceType = { id: string; code: string; name: string; market: string; currency: string; vat_included: boolean; payment_terms: string | null; is_reference: boolean; from_sheet: boolean };
 type Price = { price: string; origin: "calculator" | "manual"; valid_from: string; reason: string | null };
@@ -40,12 +42,14 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
   const importFrom = notices.import_from && /^\d{4}-\d{2}-\d{2}$/.test(notices.import_from) ? notices.import_from : null;
   const product = notices.product && /^[0-9a-f-]{36}$/i.test(notices.product) ? notices.product : null;
 
-  const [{ data: list, error }, { data: brands }, { data: vat }, preview, history] = await Promise.all([
+  const [{ data: list, error }, { data: brands }, { data: vat }, preview, history, catalog] = await Promise.all([
     supabase.rpc("price_list", { p_date: onDate }),
     supabase.rpc("brand_overview"),
     supabase.rpc("vat_rate_history"),
     canManage && notices.tab === "import" ? supabase.rpc("price_list_import_preview", { p_valid_from: importFrom }) : Promise.resolve({ data: null }),
     product ? supabase.rpc("price_list_history", { p_product_id: product }) : Promise.resolve({ data: null }),
+    // Active products for a manual price of a product that has no price yet (the price list shows only priced ones).
+    canManage ? selectAll((from, to) => supabase.from("products").select("id, internal_sku, name").eq("status", "active").order("internal_sku").order("id").range(from, to)) : Promise.resolve({ data: [] }),
   ]);
   const { data: margins } = product && canSeeMargin ? await supabase.rpc("price_list_batch_margins", { p_product_id: product, p_date: onDate }) : { data: null };
   const priceList = list as PriceList | null;
@@ -54,7 +58,8 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
   const productHistory = history.data as History | null;
   const types = priceList?.types ?? [];
   const rows = priceList?.products ?? [];
-  const selected = rows.find(row => row.id === product);
+  const withoutPrices = productsWithoutPrices((catalog.data ?? []) as CatalogProduct[], rows);
+  const selected = selectedPriceProduct(product, rows, withoutPrices);
   const conflicts = (importPreview?.rows ?? []).filter(row => row.status === "conflict");
 
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="price-list"/><section className="workspace admin-workspace">
@@ -81,6 +86,14 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
             </tr>)}</tbody>
           </table></div>
           {!rows.length && <p className="empty-state">Цен пока нет. Администратор загружает их из калькулятора на вкладке «Загрузка из калькулятора».</p>}
+          {canManage && withoutPrices.length > 0 && <form className="inline-action" action="/sales/prices">
+            <input type="hidden" name="tab" value="list"/>{onDate && <input type="hidden" name="date" value={onDate}/>}
+            <label>Товар без цен ({withoutPrices.length})<select name="product" required defaultValue={selected && !selected.hasPrices ? selected.id : ""}>
+              <option value="" disabled>Выберите товар</option>
+              {withoutPrices.map(item => <option key={item.id} value={item.id}>{item.sku} — {item.name}</option>)}
+            </select></label>
+            <button className="ghost" type="submit">Поставить цену вручную</button>
+          </form>}
         </section>
         {selected && <section className="panel admin-section">
           <div className="panel-heading"><div><p className="eyebrow">{selected.sku}</p><h2>История цен: {selected.name}</h2></div><Link className="ghost button-link compact" href={`/sales/prices?tab=list${onDate ? `&date=${onDate}` : ""}`}>Закрыть</Link></div>
@@ -98,6 +111,7 @@ export default async function PriceListPage({ searchParams }: { searchParams: Pr
               <td>{entry.origin === "manual" ? "Ручная корректировка" : `Калькулятор${entry.source_row ? `, строка ${entry.source_row}` : ""}`}</td>
               <td>{entry.reason ?? "—"}</td><td>{entry.author ?? "—"}<br/><small>{dateTime(entry.created_at)}</small></td>
             </tr>)}</tbody></table>
+          {!selected.hasPrices && <p className="empty-state">У товара пока нет цен. Первая появится в таблице прайса после сохранения формы.</p>}
         </section>}
         {selected && margins && <BatchMargins data={margins as BatchMarginsData} types={types}/>}
       </>
