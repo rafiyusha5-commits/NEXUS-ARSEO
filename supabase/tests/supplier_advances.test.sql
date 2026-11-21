@@ -94,7 +94,7 @@ insert into ab8 values('adv2',public.record_advance_payment(gen_random_uuid(),'a
 select pg_temp.fails($q$select public.apply_advance(gen_random_uuid(),pg_temp.id('adv2'),pg_temp.id('kzt'),10)$q$,'валюте расхода');
 select pg_temp.fails($q$select public.apply_advance(gen_random_uuid(),pg_temp.id('adv2'),pg_temp.id('other'),10)$q$,'другому получателю');
 select pg_temp.fails($q$select public.apply_advance(gen_random_uuid(),pg_temp.id('adv2'),pg_temp.id('f200'),101)$q$,'осталось оплатить 100');
-select pg_temp.fails($q$select public.apply_advance(gen_random_uuid(),gen_random_uuid(),pg_temp.id('f200'),1)$q$,'Аванс не найден');
+select pg_temp.fails($q$select public.apply_advance(gen_random_uuid(),gen_random_uuid(),pg_temp.id('f200'),1)$q$,'Аванс или переплата не найдены');
 select public.apply_advance(gen_random_uuid(),pg_temp.id('adv2'),pg_temp.id('f200'),100);
 -- Carrier EUR: 500 accrued, 500 paid (all through advances), remainder 400 of the second advance.
 do $$declare r jsonb;c jsonb;begin
