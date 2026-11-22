@@ -10,6 +10,8 @@ import { isUuid } from "../src/lib/documents/rules.ts";
 import * as processingStatus from "../src/lib/documents/processing-status.ts";
 import * as workflow from "../src/lib/agent/shipment-workflow.ts";
 import { isShipmentDriveRoot } from "../src/lib/google/shipment-drive.ts";
+import { DRIVE_ID } from "../src/lib/google/drive-readonly.ts";
+import { DRIVE_BATCH_LIMIT } from "../src/lib/google/document-classify.ts";
 
 // Execute the real action with I/O replaced; file validation and Storage path rules stay real.
 const action = ts.transpileModule(readFileSync(new URL("../src/app/shipments/drive-folder-actions.ts", import.meta.url), "utf8"), {
@@ -65,6 +67,7 @@ for (const { filename, fault } of cases) {
       "@/lib/google/shipment-gateway": { shipmentDriveGateway: async () => db },
       "@/lib/google/shipment-folder": { insideFolder },
       "@/lib/google/shipment-drive": { isShipmentDriveRoot },
+      "@/lib/google/drive-readonly": { DRIVE_ID }, "@/lib/google/document-classify": { DRIVE_BATCH_LIMIT },
       "@/lib/google/drive-server": { shipmentDrive: () => ({
         scopedReference: async () => {
           referenceCalls++;
@@ -119,3 +122,54 @@ for (const { filename, fault } of cases) {
     }
   });
 }
+
+// «Загрузить отмеченные»: each ticked file is one claimed import with its own confirmed type; a file without a type
+// is reported, not guessed; nothing runs without the confirmation.
+test("Drive batch upload: one operation per file, untyped files are reported", async () => {
+  const shipment = randomUUID(), type = randomUUID(), registered: unknown[] = [], claims: unknown[] = [];
+  const bytes = new TextEncoder().encode("%PDF-1.4\ntest");
+  const sources: Record<string, { file_id: string; revision: string; present: boolean; imported_document_id: null; imported_revision: null }> = {
+    File_a_1234567: { file_id: "File_a_1234567", revision: "3", present: true, imported_document_id: null, imported_revision: null },
+    File_b_1234567: { file_id: "File_b_1234567", revision: "4", present: true, imported_document_id: null, imported_revision: null },
+  };
+  const query = (pick: (id: string) => unknown) => { let id = ""; const q = { select() { return q; }, eq(column: string, value: string) { if (column === "file_id") id = value; return q; }, is() { return q; }, neq() { return q; },
+    single: async () => ({ data: pick(id) }), maybeSingle: async () => ({ data: pick(id) }), limit: async () => ({ data: [] }) }; return q; };
+  const storage = { upload: async () => ({ error: null }), remove: async () => ({ error: null }), download: async () => ({ data: new Blob([bytes]) }) };
+  const supabase = { from: () => query(() => ({ id: shipment })), storage: { from: () => storage } };
+  const db = {
+    from: (table: string) => query(id => table === "shipment_drive_folders" ? { folder_id: "Drive_folder_123456" } : sources[id]),
+    rpc: async (name: string, params: Record<string, unknown>) => {
+      if (name === "begin_shipment_drive_operation") { claims.push(params.p_file_id); return { data: { action: "run", attempt: 1 }, error: null }; }
+      if (name === "record_shipment_drive_operation") return { data: null, error: null };
+      registered.push(params.p_file_id); return { data: params.p_document_id, error: null };
+    },
+  };
+  const dependencies: Record<string, unknown> = {
+    "@/lib/agent/shipment-workflow": workflow, "node:crypto": { createHash, randomUUID }, "next/cache": { revalidatePath() {} },
+    "next/navigation": { redirect: (url: string) => { throw new Error(url); } },
+    "@/lib/auth/access": { requireUser: async () => ({ supabase }) },
+    "@/lib/permissions": { loadPermissions: async (_: unknown, names: string[]) => Object.fromEntries(names.map(n => [n, true])) },
+    "@/lib/documents/rules": { isUuid }, "@/lib/documents/files": files, "@/lib/documents/processing-status": processingStatus,
+    "@/lib/google/shipment-gateway": { shipmentDriveGateway: async () => db }, "@/lib/google/shipment-folder": { insideFolder },
+    "@/lib/google/shipment-drive": { isShipmentDriveRoot }, "@/lib/google/drive-readonly": { DRIVE_ID }, "@/lib/google/document-classify": { DRIVE_BATCH_LIMIT },
+    "@/lib/google/drive-server": { shipmentDrive: () => ({
+      scopedReference: async (id: string) => ({ ancestors: ["Drive_folder_123456"], version: sources[id].revision }),
+      download: async () => ({ blob: new Blob([bytes]), filename: "Synthetic.pdf" }),
+    }) },
+  };
+  const exports: { importShipmentDriveFiles?: (form: FormData) => Promise<void> } = {};
+  runInNewContext(action, { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, AbortSignal, Uint8Array, Error });
+  const form = new FormData();
+  form.set("shipment_id", shipment);
+  for (const id of Object.keys(sources)) { form.append("file_id", id); form.set(`revision:${id}`, sources[id].revision); }
+  form.set("type:File_a_1234567", type);
+  const message = async () => { try { await exports.importShipmentDriveFiles!(form); } catch (error) { return decodeURIComponent((error as Error).message); } return ""; };
+  assert.ok((await message()).includes("error=Подтвердите загрузку"), "no confirmation, no upload");
+  assert.equal(claims.length, 0);
+  form.set("confirm", "yes");
+  const result = await message();
+  assert.ok(result.includes("error=Загружено для проверки: 1 из 2"), result);
+  assert.ok(result.includes("Не выбран тип документа"));
+  assert.deepEqual(claims, ["File_a_1234567"]);
+  assert.deepEqual(registered, ["File_a_1234567"]);
+});

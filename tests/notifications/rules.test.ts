@@ -21,6 +21,7 @@ describe("notification links", () => {
     assert.equal(notificationLink({ entity_type: "sale", entity_id: "../admin", shipment_id: null }), null);
     assert.deepEqual(notificationLink({ entity_type: "price_review", entity_id: TASK, shipment_id: null }), { href: `/sales/prices?tab=list&product=${TASK}`, label: "Открыть прайс товара" });
     assert.equal(notificationLink({ entity_type: "price_review", entity_id: "../admin", shipment_id: null }), null);
+    assert.deepEqual(notificationLink({ entity_type: "shipment_drive_folder", entity_id: TASK, shipment_id: TASK }), { href: `/shipments/${TASK}?tab=documents#drive-folder`, label: "Открыть папку поставки" });
   });
 
   it("falls back to the shipment and to no link", () => {

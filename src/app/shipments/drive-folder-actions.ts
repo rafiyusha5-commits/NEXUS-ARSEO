@@ -12,6 +12,8 @@ import { shipmentDrive } from "@/lib/google/drive-server";
 import { isShipmentDriveRoot } from "@/lib/google/shipment-drive";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { folderId, FOLDER_MIME, insideFolder, scanFolder } from "@/lib/google/shipment-folder";
+import { DRIVE_ID } from "@/lib/google/drive-readonly";
+import { DRIVE_BATCH_LIMIT } from "@/lib/google/document-classify";
 import { processingErrorCode, processingErrors, processingDiagnostic, type ProcessingStage } from "@/lib/documents/processing-status";
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -25,43 +27,54 @@ async function context(form: FormData, ctx: Awaited<ReturnType<typeof requireUse
   if (!shipment.data || shipment.error) throw new Error("Поставка недоступна");
   return { ...ctx, id, db: await shipmentDriveGateway(ctx.supabase), drive: shipmentDrive(), signal: AbortSignal.timeout(90000) };
 }
-async function operation(form: FormData, kind: "bind" | "scan" | "import" | "check" | "link", work: (ctx: Awaited<ReturnType<typeof context>> & { operationId: string; report: (stage: ProcessingStage) => Promise<void> }) => Promise<string>) {
-  const id = text(form, "shipment_id");
-  if (!isUuid(id)) redirect("/shipments");
-  // Preserve framework login/signout redirects; never turn them into a provider error.
-  const user = await requireUser();
-  let message = ""; let ok = false;
-  const operationId = isUuid(text(form, "operation_id")) ? text(form, "operation_id") : randomUUID();
+type Kind = "bind" | "scan" | "import" | "check" | "link";
+type Context = Awaited<ReturnType<typeof context>>;
+type Work = (ctx: Context & { operationId: string; report: (stage: ProcessingStage) => Promise<void> }) => Promise<string>;
+/** One claimed, recorded operation; never redirects, so a batch can run several. */
+async function claimed(ctx: Context, operationId: string, kind: Kind, fileId: string, revision: string, work: Work): Promise<{ ok: boolean; message: string }> {
   const started = Date.now();
   let stage: ProcessingStage = "checking";
   let record: ((stage: ProcessingStage, state?: string, code?: string | null) => Promise<void>) | undefined;
   try {
-    const ctx = await context(form, user);
-    const claim = await ctx.db.rpc("begin_shipment_drive_operation", { p_id: operationId, p_shipment_id: id, p_kind: kind, p_file_id: text(form, "file_id"), p_revision: text(form, "revision") });
+    const claim = await ctx.db.rpc("begin_shipment_drive_operation", { p_id: operationId, p_shipment_id: ctx.id, p_kind: kind, p_file_id: fileId, p_revision: revision });
     if (claim.error || !claim.data) throw new Error(claim.error?.code === "42501" ? "Недостаточно прав" : "Не удалось начать операцию");
-    if (claim.data.action === "completed") { message = "Эта операция уже завершена. Повторная запись не выполнялась."; ok = true; }
-    else if (claim.data.action === "busy") { message = "Операция уже выполняется. Обновите страницу для проверки сохранённого состояния."; }
-    else {
-      record = async (next, state = "running", code = null) => {
-        stage = next;
-        const saved = await ctx.db.rpc("record_shipment_drive_operation", { p_id: operationId, p_attempt: claim.data.attempt, p_stage: next, p_state: state, p_error_code: code });
-        if (saved.error) throw new Error(saved.error.code === "42501" ? "Недостаточно прав" : "Не удалось сохранить состояние операции");
-      };
-      message = await work({ ...ctx, operationId, report: record });
-      await record("finished", "completed");
-      ok = true;
+    if (claim.data.action === "completed") {
+      console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), null));
+      return { ok: true, message: "Эта операция уже завершена. Повторная запись не выполнялась." };
     }
-  }
-  catch (error) {
+    if (claim.data.action === "busy") return { ok: false, message: "Операция уже выполняется. Обновите страницу для проверки сохранённого состояния." };
+    record = async (next, state = "running", code = null) => {
+      stage = next;
+      const saved = await ctx.db.rpc("record_shipment_drive_operation", { p_id: operationId, p_attempt: claim.data.attempt, p_stage: next, p_state: state, p_error_code: code });
+      if (saved.error) throw new Error(saved.error.code === "42501" ? "Недостаточно прав" : "Не удалось сохранить состояние операции");
+    };
+    const message = await work({ ...ctx, operationId, report: record });
+    await record("finished", "completed");
+    console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), null));
+    return { ok: true, message };
+  } catch (error) {
     const code = processingErrorCode(error, stage);
-    message = processingErrors[code];
     try { await record?.(stage, code === "SAVE_UNCERTAIN" ? "needs_action" : "failed", code); } catch { /* expired session/lease: UI derives needs_action after lease expiry */ }
     console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), code));
+    return { ok: false, message: processingErrors[code] };
   }
-  if (ok) console.info("[document-processing]", processingDiagnostic(operationId, stage, started, Date.now(), null));
+}
+async function operation(form: FormData, kind: Kind, work: Work) {
+  const id = text(form, "shipment_id");
+  if (!isUuid(id)) redirect("/shipments");
+  // Preserve framework login/signout redirects; never turn them into a provider error.
+  const user = await requireUser();
+  const operationId = isUuid(text(form, "operation_id")) ? text(form, "operation_id") : randomUUID();
+  let result: { ok: boolean; message: string };
+  try { result = await claimed(await context(form, user), operationId, kind, text(form, "file_id"), text(form, "revision"), work); }
+  catch (error) {
+    const code = processingErrorCode(error, "checking");
+    console.info("[document-processing]", processingDiagnostic(operationId, "checking", Date.now(), Date.now(), code));
+    result = { ok: false, message: processingErrors[code] };
+  }
   revalidatePath(`/shipments/${id}`);
   revalidatePath(`/assistant/shipments/${id}`);
-  redirect(documentActionReturn(form, id, ok ? "success" : "error", message));
+  redirect(documentActionReturn(form, id, result.ok ? "success" : "error", result.message));
 }
 export async function bindShipmentDriveFolder(form: FormData) {
   await operation(form, "bind", async ({ id, db, drive, signal, report }) => {
@@ -78,14 +91,17 @@ export async function bindShipmentDriveFolder(form: FormData) {
 }
 export async function checkShipmentDriveFolder(form: FormData) {
   await operation(form, "scan", async ({ id, db, drive, signal, report }) => {
-    const { data: binding, error } = await db.from("shipment_drive_folders").select("folder_id,generation").eq("shipment_id", id).single();
+    const { data: binding, error } = await db.from("shipment_drive_folders").select("folder_id,generation,checked_at").eq("shipment_id", id).single();
     if (error || !binding) throw new Error("Нет привязки");
+    const known = await db.from("shipment_drive_files").select("file_id").eq("shipment_id", id).limit(1000);
+    if (known.error) throw new Error("Нет привязки");
     await report("reading");
     const files = await scanFolder(drive, binding.folder_id, signal);
     await report("registering");
     const saved = await db.rpc("scan_shipment_drive_folder", { p_shipment_id: id, p_generation: binding.generation, p_files: files });
     if (saved.error) throw new Error("Проверка не сохранена");
-    return `Проверка завершена: ${files.length} файлов. Документы и подтверждённые данные Nexus не изменены.`;
+    const added = files.filter(file => !known.data?.some(row => row.file_id === file.file_id)).length;
+    return `Проверка завершена: ${files.length} файлов${binding.checked_at ? `, новых с прошлой проверки: ${added}` : ""}. Документы и подтверждённые данные Nexus не изменены.`;
   });
 }
 // Explicit content check only: no Storage write, recognition or document confirmation.
@@ -162,19 +178,14 @@ export async function linkShipmentDriveDocument(form: FormData) {
     return "Связь сохранена. Документ, его версия и ручные подтверждения не изменены. Копия в Storage не создавалась.";
   });
 }
-export async function importShipmentDriveFile(form: FormData) {
-  await operation(form, "import", async ctx => {
+/** Downloads one Drive file of the shipment folder and registers it as a document for review. */
+async function importWork(ctx: Parameters<Work>[0], fileId: string, revision: string, type: string): Promise<string> {
     const { id, supabase, db, drive, signal, report, operationId } = ctx;
-    const permissions = await loadPermissions(supabase, ["documents.create", "documents.update"] as const);
-    if (!permissions["documents.create"] || !permissions["documents.update"]) throw new Error("Недостаточно прав");
-    if (text(form, "confirm") !== "yes") throw new Error("Подтвердите загрузку документа");
-    const type = text(form, "document_type_id");
-    if (!isUuid(type)) throw new Error("Укажите тип документа");
     const [{ data: binding }, { data: source }] = await Promise.all([
       db.from("shipment_drive_folders").select("folder_id").eq("shipment_id", id).single(),
-      db.from("shipment_drive_files").select("file_id,revision,present,imported_document_id,imported_revision").eq("shipment_id", id).eq("file_id", text(form, "file_id")).single(),
+      db.from("shipment_drive_files").select("file_id,revision,present,imported_document_id,imported_revision").eq("shipment_id", id).eq("file_id", fileId).single(),
     ]);
-    if (!binding || !source || !source.present || source.revision !== text(form, "revision")) throw new Error("Файл изменён. Сначала повторите проверку папки");
+    if (!binding || !source || !source.present || source.revision !== revision) throw new Error("Файл изменён. Сначала повторите проверку папки");
     if (source.imported_document_id) {
       // A saved receipt avoids a second upload, not the live-source boundary.
       // Recheck membership/revision before reporting a successful retry.
@@ -212,5 +223,49 @@ export async function importShipmentDriveFile(form: FormData) {
     if (result.data !== document) await storage.remove([path]); // only our unused Nexus staging object
     revalidatePath("/documents");
     return result.data === document ? "Документ загружен для проверки. Распознавание и подтверждение выполняются отдельно." : "Этот файл уже есть в Nexus. Добавлена связь с существующим документом, дубль не создан.";
+}
+async function canUpload(supabase: Context["supabase"]) {
+  const permissions = await loadPermissions(supabase, ["documents.create", "documents.update"] as const);
+  return permissions["documents.create"] && permissions["documents.update"];
+}
+export async function importShipmentDriveFile(form: FormData) {
+  await operation(form, "import", async ctx => {
+    if (!await canUpload(ctx.supabase)) throw new Error("Недостаточно прав");
+    if (text(form, "confirm") !== "yes") throw new Error("Подтвердите загрузку документа");
+    const type = text(form, "document_type_id");
+    if (!isUuid(type)) throw new Error("Укажите тип документа");
+    return importWork(ctx, text(form, "file_id"), text(form, "revision"), type);
   });
+}
+/** «Загрузить все»: the files the employee ticked, each with the type they confirmed, one claimed operation per file. */
+export async function importShipmentDriveFiles(form: FormData) {
+  const id = text(form, "shipment_id");
+  if (!isUuid(id)) redirect("/shipments");
+  const user = await requireUser();
+  const files = [...new Set(form.getAll("file_id").map(value => String(value)).filter(value => DRIVE_ID.test(value)))];
+  let ok = false; let message: string;
+  if (text(form, "confirm") !== "yes") message = "Подтвердите загрузку выбранных файлов";
+  else if (!files.length) message = "Отметьте файлы для загрузки";
+  else if (files.length > DRIVE_BATCH_LIMIT) message = `За один раз можно загрузить не больше ${DRIVE_BATCH_LIMIT} файлов. Снимите отметку с части файлов`;
+  else {
+    try {
+      const ctx = await context(form, user);
+      if (!await canUpload(ctx.supabase)) throw new Error("Недостаточно прав");
+      let done = 0; const failed: string[] = [];
+      for (const fileId of files) {
+        const type = text(form, `type:${fileId}`), revision = text(form, `revision:${fileId}`);
+        const operationId = isUuid(text(form, `operation:${fileId}`)) ? text(form, `operation:${fileId}`) : randomUUID();
+        const result = isUuid(type)
+          ? await claimed({ ...ctx, signal: AbortSignal.timeout(90000) }, operationId, "import", fileId, revision, work => importWork(work, fileId, revision, type))
+          : { ok: false, message: "Не выбран тип документа" };
+        if (result.ok) done++; else failed.push(result.message);
+      }
+      ok = !failed.length;
+      message = `Загружено для проверки: ${done} из ${files.length}.` + (failed.length ? ` Не загружено: ${failed.length} (${[...new Set(failed)].join("; ")}). Эти файлы остались в списке — загрузите их по одному.` : " Распознавание и подтверждение выполняются отдельно.");
+      revalidatePath("/documents");
+    } catch (error) { message = processingErrors[processingErrorCode(error, "checking")]; }
+  }
+  revalidatePath(`/shipments/${id}`);
+  revalidatePath(`/assistant/shipments/${id}`);
+  redirect(documentActionReturn(form, id, ok ? "success" : "error", message));
 }
