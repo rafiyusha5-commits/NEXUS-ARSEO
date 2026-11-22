@@ -107,7 +107,7 @@ select 'authenticated', unnest(array[
   'public.record_advance_payment', 'public.apply_advance', 'public.record_payment_refund',
   'public.reprice_customer_order_item', 'public.set_customer_order_item_price',
   'public.my_product_master_calculated_data',
-  'public.set_order_prefix', 'public.remove_order_prefix', 'public.apply_order_workbook',
+  'public.set_order_prefix', 'public.remove_order_prefix', 'public.apply_order_workbook', 'public.create_distribution_orders',
   'public.cancel_expense', 'public.reverse_expense',
   'public.shipment_document_check', 'public.run_shipment_document_check', 'public.reopen_shipment',
   'public.shelf_life_risks',
