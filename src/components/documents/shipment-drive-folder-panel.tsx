@@ -8,7 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 import { loadPermissions } from "@/lib/permissions";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { shipmentDrive } from "@/lib/google/drive-server";
-import { bindShipmentDriveFolder, checkShipmentDriveFolder, importShipmentDriveFile, checkShipmentDriveContent, linkShipmentDriveDocument } from "@/app/shipments/drive-folder-actions";
+import { bindShipmentDriveFolder, checkShipmentDriveFolder, importShipmentDriveFile, importShipmentDriveFiles, checkShipmentDriveContent, linkShipmentDriveDocument } from "@/app/shipments/drive-folder-actions";
+import { suggestDocumentType } from "@/lib/google/document-classify";
 import { reconcileSource, type VisibleDocument } from "@/lib/google/folder-reconciliation";
 import { ShipmentDriveFolderView, type FolderBinding, type FolderFile } from "./shipment-drive-folder-view";
 
@@ -20,7 +21,7 @@ export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { 
   if (required.some(p => !permissions[p])) return null;
   let binding: FolderBinding | null = null;
   let files: FolderFile[] = [];
-  let types: { id: string; name_ru: string }[] = [];
+  let types: { id: string; code: string; name_ru: string }[] = [];
   let failed = false;
   let receipts: ProcessingReceipt[] = [];
   try {
@@ -34,8 +35,8 @@ export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { 
     if (binding) {
       await shipmentDrive().scopedReference(binding.folder_id, AbortSignal.timeout(12000));
       const [fileResult, typeResult, documentResult, versionResult, linkResult, reviewResult] = await Promise.all([
-        selectAll((from, to) => db.from("shipment_drive_files").select("file_id,name,path,mime_type,revision,present,imported_document_id,imported_revision,checked_revision,checked_checksum,verified_version_ids").eq("shipment_id", shipmentId).order("path").order("file_id").range(from, to)),
-        session.from("document_types").select("id,name_ru").eq("is_active", true).order("name_ru"),
+        selectAll((from, to) => db.from("shipment_drive_files").select("file_id,name,path,mime_type,revision,present,imported_document_id,imported_revision,checked_revision,checked_checksum,verified_version_ids,first_seen_at").eq("shipment_id", shipmentId).order("path").order("file_id").range(from, to)),
+        session.from("document_types").select("id,code,name_ru").eq("is_active", true).order("name_ru"),
         selectAll((from, to) => session.from("documents").select("id,title,document_type_id,status,current_version,original_filename").is("archived_at", null).neq("status", "rejected").order("id").range(from, to)),
         selectAll((from, to) => session.from("document_versions").select("id,document_id,version_number,checksum_sha256").eq("is_current", true).order("id").range(from, to)),
         selectAll((from, to) => session.from("document_links").select("document_id,id").eq("entity_type", "shipment").eq("entity_id", shipmentId).is("removed_at", null).order("id").range(from, to)),
@@ -52,10 +53,15 @@ export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { 
           versionId: version.id, version: version.version_number, checksum: version.checksum_sha256, filename: d.original_filename }] : [];
       });
       const linkedIds = new Set((linkResult.data ?? []).map(l => l.document_id));
-      files = (fileResult.data ?? []).map(file => ({ ...reconcileSource(file, documents, linkedIds), operation_id: randomUUID() }));
+      files = (fileResult.data ?? []).map(file => {
+        const hint = suggestDocumentType(file.path, file.name);
+        const type = hint && types.find(item => item.code === hint.code);
+        return { ...reconcileSource(file, documents, linkedIds), first_seen_at: file.first_seen_at, operation_id: randomUUID(),
+          suggested: type ? { id: type.id, name: type.name_ru, reason: hint.reason } : null };
+      });
     }
   } catch { failed = true; }
   if (failed) return <section className="panel admin-section" id="drive-folder"><h2>Папка Google Drive</h2><p role="status">Привязка Drive сейчас недоступна. Проверьте настройку подключения и доступ к папке. Сохранённые документы Nexus доступны в обычном списке.</p></section>;
   const documentActions = await loadDocumentActions(session, files.flatMap(file => [file.imported_document_id, ...(file.candidates ?? []).map(candidate => candidate.id)]));
-  return <>{binding && initialFolder && initialFolder !== `https://drive.google.com/drive/folders/${binding.folder_id}` && <p role="alert" className="login-error">У этой поставки уже другая папка. Привязка не заменена; ниже показана сохранённая папка. Проверьте выбор поставки до загрузки файлов.</p>}<ProcessingStatus receipts={receipts} serverNow={serverNow}/><ShipmentDriveFolderView documentActions={documentActions} initialFolder={initialFolder} operationId={randomUUID()} shipmentId={shipmentId} binding={binding} files={files} types={types} canImport={permissions["documents.create"] && permissions["documents.update"]} actions={{ bind: bindShipmentDriveFolder, scan: checkShipmentDriveFolder, upload: importShipmentDriveFile, check: checkShipmentDriveContent, link: linkShipmentDriveDocument }}/></>;
+  return <>{binding && initialFolder && initialFolder !== `https://drive.google.com/drive/folders/${binding.folder_id}` && <p role="alert" className="login-error">У этой поставки уже другая папка. Привязка не заменена; ниже показана сохранённая папка. Проверьте выбор поставки до загрузки файлов.</p>}<ProcessingStatus receipts={receipts} serverNow={serverNow}/><ShipmentDriveFolderView documentActions={documentActions} initialFolder={initialFolder} operationId={randomUUID()} shipmentId={shipmentId} binding={binding} files={files} types={types} canImport={permissions["documents.create"] && permissions["documents.update"]} actions={{ bind: bindShipmentDriveFolder, scan: checkShipmentDriveFolder, upload: importShipmentDriveFile, uploadMany: importShipmentDriveFiles, check: checkShipmentDriveContent, link: linkShipmentDriveDocument }}/></>;
 }

@@ -9,6 +9,7 @@ export const notificationTypeLabel: Record<string, string> = {
   stage_blocked: "Этап заблокирован",
   order_blocked: "Заказ нельзя отгрузить",
   price_review: "Проверьте цену",
+  drive_new_files: "Новые файлы в папке Drive",
   approval_request: "Запрос согласования",
   approval_decision: "Согласование завершено",
   status_change: "Изменение статуса",
@@ -50,6 +51,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
         return { href: `/sales/${entity}?tab=shipping`, label: "Открыть заказ" };
       case "price_review":
         return { href: `/sales/prices?tab=list&product=${entity}`, label: "Открыть прайс товара" };
+      case "shipment_drive_folder":
+        return { href: `/shipments/${entity}?tab=documents#drive-folder`, label: "Открыть папку поставки" };
     }
   }
   // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.

@@ -3,6 +3,8 @@ import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {syntheticPng} from './external-fixtures.mjs';
+// After the first check the button of a Drive folder reads «Обновить из Drive» (202611220300).
+const SCAN_FOLDER=/^(Проверить папку|Обновить из Drive)$/;
 
 export const FAULT_CASES=['download-before-storage','storage-before-registration','ocr-timeout-retry',
   'late-after-success','late-after-confirmation','source-version-change','access-revoked',
@@ -63,7 +65,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     shipment=q(`select to_jsonb(id) from public.shipments where project_code='FAULT-${name}';`);assert.match(shipment,/^[a-f0-9-]{36}$/);
     await docs(page);const bind=page.locator('#drive-folder form').filter({has:page.locator('[name="folder"]')});
     await fill(bind,{folder:`https://drive.google.com/drive/folders/${fixtures.folder}`});await submit(page,bind,'Привязать папку');
-    await docs(page);await submit(page,buttonForm(page,'Проверить папку'),'Проверить папку');
+    await docs(page);await submit(page,buttonForm(page,SCAN_FOLDER),SCAN_FOLDER);
   }
   async function importForm(p,file){
     await docs(p);const f=p.locator('form').filter({has:p.locator(`input[name="file_id"][value="${file.id}"]`)}).filter({has:p.locator('select[name="document_type_id"]')});
@@ -117,7 +119,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     await importAll();assert.ok(objects().includes(staging[0]),'Uncertain staging must not be deleted');
     // Also lose a response AFTER commit: a retry must find the saved receipt.
     fixtures.files.push({...fixtures.files[0],id:fixtures.files[0].id+'_receipt'});
-    await docs(page);await submit(page,buttonForm(page,'Проверить папку'),'Проверить папку');
+    await docs(page);await submit(page,buttonForm(page,SCAN_FOLDER),SCAN_FOLDER);
     const receiptForm=await importForm(other,fixtures.files[1]);
     gate=http.arm('import-rpc','fail-after');url=await submit(page,await importForm(page,fixtures.files[1]));await gate.wait();assert.ok(url.searchParams.has('error'));
     assert.equal(count(),2); // two file links to the SAME document; no second business document
@@ -141,7 +143,7 @@ export async function runDocumentFaults({chromium,base,email,password,refs,sql,o
     await setup(FAULT_CASES[5]);before=objects();gate=http.arm('drive-media');pending=submit(page,await importForm(page,fixtures.files[0]));await gate.wait();
     fixtures.files[0].version='2';fixtures.files[0].modifiedTime='2026-02-01T00:00:00Z';gate.release();url=await pending;
     assert.ok(url.searchParams.has('error'));assert.equal(count(),0);assert.deepEqual(objects(),before);
-    await docs(page);await submit(page,buttonForm(page,'Проверить папку'),'Проверить папку');await importAll();passed(FAULT_CASES[5],{staleRegistrationRejected:true,explicitRescanSucceeded:true});
+    await docs(page);await submit(page,buttonForm(page,SCAN_FOLDER),SCAN_FOLDER);await importAll();passed(FAULT_CASES[5],{staleRegistrationRejected:true,explicitRescanSucceeded:true});
 
     await setup(FAULT_CASES[6]);before=objects();gate=http.arm('drive-media');pending=submit(page,await importForm(page,fixtures.files[0]));await gate.wait();
     fixtures.files[0].parents=[];gate.release();url=await pending;
