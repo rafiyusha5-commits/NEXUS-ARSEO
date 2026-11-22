@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+// After the first check the button of a Drive folder reads «Обновить из Drive» (202611220300).
+const SCAN_FOLDER=/^(Проверить папку|Обновить из Drive)$/;
 
 export async function runHistoricalForms({chromium,base,email,password,restrictedEmail,refs,sql,output,fixtures}){
   const browser=await chromium.launch({headless:true});
@@ -91,7 +93,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     let f=page.locator('#drive-folder form').filter({has:page.locator('[name="folder"]')});
     await fill(f,{folder:`https://drive.google.com/drive/folders/${fixtures.folder}`});await submit(f,'Привязать папку');
     await go(`/shipments/${shipment}?tab=documents`);
-    await submit(page.locator('#drive-folder form').filter({has:page.getByRole('button',{name:'Проверить папку',exact:true})}),'Проверить папку');
+    await submit(page.locator('#drive-folder form').filter({has:page.getByRole('button',{name:SCAN_FOLDER,exact:true})}),SCAN_FOLDER);
     const typeIds=q("select jsonb_object_agg(code,id) from public.document_types;");
     for(const file of fixtures.files){
       await go(`/shipments/${shipment}?tab=documents`);
@@ -143,7 +145,7 @@ export async function runHistoricalForms({chromium,base,email,password,restricte
     await submit(page.locator('#source-documents form').filter({has:page.getByRole('button',{name:'Распознать и сверить',exact:true})}),'Распознать и сверить');
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);evidence.manualConfirmationsPreserved=true;
     await go(`/shipments/${shipment}?tab=documents`);
-    await submit(page.locator('#drive-folder form').filter({has:page.getByRole('button',{name:'Проверить папку',exact:true})}),'Проверить папку');
+    await submit(page.locator('#drive-folder form').filter({has:page.getByRole('button',{name:SCAN_FOLDER,exact:true})}),SCAN_FOLDER);
     assert.equal(q('select count(*) from public.documents;'),5);
     assert.equal(q('select count(*) from public.document_versions;'),5);
     assert.deepEqual(sources().filter(s=>s.status==='confirmed'),confirmedBefore);
