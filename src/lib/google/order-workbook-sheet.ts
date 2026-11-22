@@ -39,6 +39,24 @@ async function sheet(id: string, name: string, columns: string, required: boolea
 
 export async function readOrderWorkbookSheets(spreadsheetId: string) {
   if (!DRIVE_ID.test(spreadsheetId)) throw new PublicError("Некорректная таблица.");
-  const [calculation, client] = await Promise.all([sheet(spreadsheetId, "Расчеты", "DZ", true), sheet(spreadsheetId, "От клиента", "Z", false)]);
-  return { calculation, client };
+  const [calculation, client, customs, stickers, distribution] = await Promise.all([
+    sheet(spreadsheetId, "Расчеты", "DZ", true), sheet(spreadsheetId, "От клиента", "Z", false),
+    sheet(spreadsheetId, "Растаможка", "Z", false), sheet(spreadsheetId, "Стикеры", "P", false), sheet(spreadsheetId, "Распределение", "AZ", false),
+  ]);
+  return { calculation, client, customs, stickers, distribution };
+}
+
+/** The first sheet of a separate distribution spreadsheet («Распределение …»). */
+export async function readFirstSheet(spreadsheetId: string): Promise<Cell[][]> {
+  if (!DRIVE_ID.test(spreadsheetId)) throw new PublicError("Некорректная таблица.");
+  const response = await fetch(`${SHEETS_API}/${spreadsheetId}?fields=sheets.properties.title`, {
+    method: "GET", headers: { Authorization: `Bearer ${await sheetsAccessToken()}`, Accept: "application/json" },
+    cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30000),
+  });
+  if (response.status === 403 || response.status === 404) throw new PublicError("Служебному аккаунту не выдан доступ к этой таблице.");
+  if (!response.ok) throw new PublicError("Не удалось прочитать таблицу из Google Sheets.");
+  const data = await response.json() as { sheets?: { properties?: { title?: unknown } }[] };
+  const title = data.sheets?.[0]?.properties?.title;
+  if (typeof title !== "string" || !title || title.length > 100 || title.includes("'")) throw new PublicError("В таблице распределения нет листа.");
+  return sheet(spreadsheetId, title, "AZ", true);
 }

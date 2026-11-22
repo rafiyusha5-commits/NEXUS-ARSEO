@@ -6,16 +6,20 @@ import { requireUser } from "@/lib/auth/access";
 import { isUuid } from "@/lib/documents/rules";
 import { loadPermissions } from "@/lib/permissions";
 import { selectAll } from "@/lib/supabase/select-all";
+import { businessToday } from "@/lib/dates/business-day";
 import { shipmentDrive } from "@/lib/google/drive-server";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
-import { readOrderWorkbookSheets } from "@/lib/google/order-workbook-sheet";
+import { readFirstSheet, readOrderWorkbookSheets } from "@/lib/google/order-workbook-sheet";
+import { customsIssues, isDistributionSheet, matchCustomer, overDistributed, parseCustomsSheet, parseDistributionSheet, parseStickerSheet } from "@/lib/shipments/order-workbook-extra";
+import { CustomsCheck, DistributionView, StickerCheck, type SaleTarget, type StickerRow } from "./phase2";
 import { PublicError } from "@/lib/errors/public-message";
-import { isOrderWorkbook, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
+import { isOrderWorkbook, matchLine, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
 import { applyOrderWorkbook } from "./actions";
 
 const REQUIRED = ["shipments.view", "shipments.update", "documents.view", "documents.drive.view", "prices.purchase.view"] as const;
+const OPTIONAL = ["sales.view", "sales.manage", "stickers.view"] as const;
 const SHEET = "application/vnd.google-apps.spreadsheet";
-type Params = { file?: string; error?: string; success?: string };
+type Params = { file?: string; distribution?: string; error?: string; success?: string };
 const date = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC" }).format(new Date(value)) : "—";
 const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 4 }).format(value);
 const kindLabel: Record<LinePlan["kind"], string> = { add: "Новая позиция", update: "Изменится", same: "Совпадает", split: "Распределена по машинам — не меняется", unknown: "Не сопоставлена" };
@@ -28,13 +32,13 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
     <header className="topbar"><div><p className="eyebrow">Поставка · Google Таблицы только чтение</p><h1>{title}</h1></div><div className="topbar-actions"><Link className="ghost button-link" href={`/shipments/${id}?tab=documents#drive-folder`}>К поставке</Link></div></header>
     {query.error && <div className="login-error admin-message">{query.error}</div>}{query.success && <div className="login-success admin-message">{query.success}</div>}
     {body}</section></main>;
-  const permissions = await loadPermissions(supabase, REQUIRED);
+  const permissions = await loadPermissions(supabase, [...REQUIRED, ...OPTIONAL]);
   if (REQUIRED.some(code => !permissions[code])) return shell(<div className="setup-notice">Нужны права на изменение поставки, документы Google Drive и закупочные цены.</div>);
-  const { data: shipment } = await supabase.from("shipments").select("id,shipment_number,project_code,supplier_id,planned_ready_date,planned_arrival_date,is_locked,status").eq("id", id).maybeSingle();
+  const { data: shipment } = await supabase.from("shipments").select("id,shipment_number,project_code,supplier_id,planned_ready_date,planned_arrival_date,is_locked,status,currency_id").eq("id", id).maybeSingle();
   if (!shipment) return shell(<div className="setup-notice">Поставка недоступна.</div>);
   const title = `«Вн расчеты» · ${shipment.shipment_number}`;
 
-  let workbooks: { file_id: string; name: string }[] = []; let folderId = "";
+  let workbooks: { file_id: string; name: string }[] = []; let distributions: { file_id: string; name: string }[] = []; let folderId = "";
   try {
     const db = await shipmentDriveGateway(supabase);
     const [binding, files] = await Promise.all([
@@ -44,6 +48,7 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
     if (binding.error || files.error) throw new Error("unavailable");
     folderId = binding.data?.folder_id ?? "";
     workbooks = (files.data ?? []).filter(file => isOrderWorkbook(file.name, file.mime_type));
+    distributions = (files.data ?? []).filter(file => isDistributionSheet(file.name, file.mime_type)).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   } catch { return shell(<div className="setup-notice">Привязка Google Drive сейчас недоступна.</div>, title); }
   if (!folderId) return shell(<div className="setup-notice">К поставке не привязана папка Google Drive.</div>, title);
   if (!workbooks.length) return shell(<div className="setup-notice">В сохранённом списке папки нет таблицы «Вн расчеты». Нажмите «Обновить из Drive» на вкладке «Документы» и откройте эту страницу снова.</div>, title);
@@ -52,10 +57,11 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
 
   // The sheet must still lie inside the bound folder before anything is read from it.
   let workbook: OrderWorkbook;
+  let sheets: Awaited<ReturnType<typeof readOrderWorkbookSheets>>;
   try {
     const reference = await shipmentDrive().scopedReference(chosen.file_id, AbortSignal.timeout(30000));
     if (reference.mimeType !== SHEET || !reference.ancestors?.includes(folderId)) throw new PublicError("Таблица больше не лежит в папке поставки. Обновите папку из Drive.");
-    const sheets = await readOrderWorkbookSheets(chosen.file_id);
+    sheets = await readOrderWorkbookSheets(chosen.file_id);
     workbook = parseOrderWorkbook(sheets.calculation, sheets.client);
   } catch (error) {
     const message = error instanceof PublicError || (error instanceof Error && /^В листе/.test(error.message)) ? error.message : "Не удалось прочитать таблицу. Проверьте доступ к папке и повторите.";
@@ -63,7 +69,7 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
   }
 
   const [products, identifiers, items, prices, currencies] = await Promise.all([
-    selectAll((from, to) => supabase.from("products").select("id,internal_sku,name").order("id").range(from, to)),
+    selectAll((from, to) => supabase.from("products").select("id,internal_sku,name,hs_code,country_of_origin,requires_sticker").order("id").range(from, to)),
     selectAll((from, to) => supabase.from("product_identifiers").select("product_id,identifier_type,value,counterparty_id").order("id").range(from, to)),
     supabase.from("shipment_items").select("id,product_id,ordered_quantity,currency_id,shipment_transport_id").eq("shipment_id", id),
     supabase.rpc("my_shipment_item_purchase_prices", { p_shipment_id: id }),
@@ -81,6 +87,52 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
   const locked = shipment.is_locked || shipment.status === "closed" || shipment.status === "cancelled";
   const changes = plans.filter(plan => plan.kind === "add" || plan.kind === "update");
   const readyChanges = workbook.loadingDate && workbook.loadingDate !== shipment.planned_ready_date;
+
+  // ── Phase 2: customs and sticker checks, distribution and client order drafts ──
+  const keyOf = (sku: string, factorySku: string, ean: string) => { const match = matchLine({ row: 0, sku, factorySku, ean, name: "", quantity: 1, price: null }, keys); return "id" in match ? match.id : null; };
+  const productRow = (productId: string | null) => products.data?.find(row => row.id === productId) ?? null;
+  const itemTotals = (productId: string) => { const rows = existing.filter(item => item.product_id === productId); if (!rows.length) return null;
+    return { quantity: rows.reduce((sum, item) => sum + item.quantity, 0), price: rows.length === 1 ? rows[0].price : rows.every(item => item.price === rows[0].price) ? rows[0].price : null }; };
+  const customsLines = parseCustomsSheet(sheets.customs);
+  const issues = customsIssues(customsLines, line => { const product = productRow(keyOf(line.article, line.article, line.ean)); return product ? { id: product.id, hs_code: product.hs_code, country_of_origin: product.country_of_origin } : null; }, itemTotals);
+  const stickerSheet = parseStickerSheet(sheets.stickers);
+  const templates = permissions["stickers.view"] ? await supabase.from("sticker_templates").select("product_id,customer_id,sticker_level,current_version:sticker_template_versions!sticker_templates_current_version_fk(status)").eq("status", "active") : { data: null };
+  const approved = (productId: string, level: "unit" | "box") => (templates.data ?? []).some(row => row.product_id === productId && row.sticker_level === level && (Array.isArray(row.current_version) ? row.current_version[0] : row.current_version)?.status === "approved");
+  const stickerRows: StickerRow[] = stickerSheet.lines.map(line => { const product = productRow(keyOf(line.sku, "", line.ean));
+    return { ...line, product: product ? productName(product.id) : null, requiresSticker: product ? Boolean(product.requires_sticker) : null, unitTemplate: product ? approved(product.id, "unit") : false, boxTemplate: product ? approved(product.id, "box") : false }; });
+
+  const distributionFile = distributions.find(file => file.file_id === query.distribution) ?? distributions[0] ?? null;
+  let distributionRows = sheets.distribution; let distributionSource = chosen.file_id; let distributionName = "Лист «Распределение» таблицы «Вн расчеты»"; let distributionError = "";
+  if (distributionFile) {
+    try {
+      const reference = await shipmentDrive().scopedReference(distributionFile.file_id, AbortSignal.timeout(30000));
+      if (reference.mimeType !== SHEET || !reference.ancestors?.includes(folderId)) throw new PublicError("Таблица распределения больше не лежит в папке поставки.");
+      distributionRows = await readFirstSheet(distributionFile.file_id); distributionSource = distributionFile.file_id; distributionName = `Таблица «${distributionFile.name}»`;
+    } catch (error) { distributionError = error instanceof PublicError ? error.message : "Не удалось прочитать таблицу распределения."; }
+  }
+  const distribution = parseDistributionSheet(distributionRows);
+  const productOfLine = (line: { sku: string; factorySku: string; ean: string }) => keyOf(line.sku, line.factorySku, line.ean);
+  const saleDestinations = distribution.destinations.filter(item => item.kind === "sale");
+  const [customers, linked, lastSales] = saleDestinations.length && permissions["sales.view"] ? await Promise.all([
+    selectAll((from, to) => supabase.from("counterparties").select("id,legal_name,short_name,roles").eq("status", "active").order("legal_name").order("id").range(from, to)),
+    supabase.from("shipment_distribution_orders").select("customer_id,sale_id").eq("shipment_id", id),
+    supabase.from("sales").select("customer_id,currency_id,created_at").order("created_at", { ascending: false }).limit(500),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+  const customerList = (customers.data ?? []).filter(party => party.roles?.includes("customer"));
+  const linkedSales = (linked.data ?? []).length ? (await supabase.from("sales").select("id,sale_number").in("id", (linked.data ?? []).map(row => row.sale_id))).data ?? [] : [];
+  const sales: SaleTarget[] = saleDestinations.map(destination => {
+    const customerId = matchCustomer(destination.name, customerList);
+    const link = (linked.data ?? []).find(row => row.customer_id === customerId);
+    const lines = distribution.lines.filter(line => line.quantities[destination.column]);
+    const items = new Map<string, number>(); let unmatched = 0;
+    for (const line of lines) { const productId = productOfLine(line); if (!productId) { unmatched++; continue; } items.set(productId, (items.get(productId) ?? 0) + line.quantities[destination.column]); }
+    return { column: destination.column, label: destination.label, customerId,
+      existing: link ? { saleId: link.sale_id, number: linkedSales.find(sale => sale.id === link.sale_id)?.sale_number ?? "заказ" } : null,
+      currencyId: (lastSales.data ?? []).find(sale => sale.customer_id === customerId)?.currency_id ?? shipment.currency_id ?? currencies.data?.[0]?.id ?? "",
+      items: [...items].map(([productId, quantity]) => ({ productId, quantity })), unmatched };
+  });
+  const today = businessToday();
+  const defaultDate = shipment.planned_arrival_date && shipment.planned_arrival_date > today ? shipment.planned_arrival_date : today;
 
   return shell(<>
     <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Источник</p><h2>{chosen.name}</h2></div></div>
@@ -117,5 +169,14 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
         <PendingSubmitButton pendingText="Применяем…" className="primary" type="submit">Применить отмеченные</PendingSubmitButton></>
         : <p className="login-success">Поставка совпадает с таблицей: изменений нет.</p>}
     </form>
+    <CustomsCheck lines={customsLines.length} issues={issues}/>
+    <StickerCheck rows={stickerRows} size={stickerSheet.size} marking={stickerSheet.marking} templatesVisible={Boolean(permissions["stickers.view"])}/>
+    <div id="distribution">
+      {distributions.length > 1 && <p className="form-help">Таблицы распределения в папке: {distributions.map(file => <Link key={file.file_id} href={`/shipments/${id}/workbook?file=${encodeURIComponent(chosen.file_id)}&distribution=${encodeURIComponent(file.file_id)}#distribution`}>{file.name} </Link>)}</p>}
+      {distributionError && <div className="login-error admin-message">{distributionError}</div>}
+      <DistributionView shipmentId={id} file={chosen.file_id} source={distributionSource} sourceName={distributionName} distribution={distribution} over={overDistributed(distribution)}
+        productOf={line => { const productId = productOfLine(line); return productId ? productName(productId) : null; }} sales={sales}
+        customers={customerList.map(party => ({ id: party.id, name: party.short_name || party.legal_name }))} currencies={currencies.data ?? []} defaultDate={defaultDate} canOrder={Boolean(permissions["sales.manage"])}/>
+    </div>
   </>, title);
 }

@@ -36,3 +36,32 @@ export async function applyOrderWorkbook(form: FormData) {
   const result = data as { added: number; updated: number; ready_date: boolean };
   redirect(`/shipments/${id}?success=${encodeURIComponent(`Из «Вн расчетов» добавлено позиций: ${result.added}, изменено: ${result.updated}${result.ready_date ? ", дата готовности обновлена" : ""}.`)}`);
 }
+
+/** Draft client orders from the reviewed distribution: one per ticked «Продажа в …» column, all in one transaction. */
+export async function createDistributionOrders(form: FormData) {
+  const id = text(form, "shipment_id");
+  if (!isUuid(id)) redirect("/shipments");
+  const file = text(form, "file");
+  const back = (kind: "error" | "success", message: string) => `/shipments/${id}/workbook?${file ? `file=${encodeURIComponent(file)}&` : ""}${kind}=${encodeURIComponent(message)}#distribution`;
+  if (text(form, "confirm") !== "yes") redirect(back("error", "Подтвердите, что проверили клиентов и количества"));
+  const orders: { customer_id: string; currency_id: string; planned_shipment_date: string; items: { product_id: string; quantity: number }[] }[] = [];
+  for (const column of new Set(form.getAll("order").map(String))) {
+    const customer = text(form, `customer:${column}`), currency = text(form, `currency:${column}`), date = text(form, `date:${column}`);
+    if (!isUuid(customer)) redirect(back("error", "Выберите клиента для каждого отмеченного заказа"));
+    if (!isUuid(currency) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) redirect(back("error", "Укажите валюту и дату отгрузки"));
+    let items: { productId?: unknown; quantity?: unknown }[] = [];
+    try { items = JSON.parse(text(form, `items:${column}`)); } catch { redirect(back("error", "Обновите страницу и повторите")); }
+    const clean = Array.isArray(items) ? items.filter(item => typeof item.productId === "string" && isUuid(item.productId) && typeof item.quantity === "number" && item.quantity > 0)
+      .map(item => ({ product_id: item.productId as string, quantity: item.quantity as number })) : [];
+    if (!clean.length) redirect(back("error", "В заказе нет строк"));
+    orders.push({ customer_id: customer, currency_id: currency, planned_shipment_date: date, items: clean });
+  }
+  if (!orders.length) redirect(back("error", "Отметьте хотя бы один заказ"));
+  if (new Set(orders.map(order => order.customer_id)).size !== orders.length) redirect(back("error", "Один клиент выбран для двух столбцов. Объедините их в таблице"));
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.rpc("create_distribution_orders", { p_shipment_id: id, p_source_file_id: text(form, "source"), p_orders: orders });
+  if (error || !data) redirect(back("error", ruleViolationMessage(error, "Не удалось создать заказы")));
+  revalidatePath("/sales"); revalidatePath(`/shipments/${id}/workbook`);
+  const result = data as { orders: unknown[]; lines: number };
+  redirect(back("success", `Создано черновиков заказов: ${result.orders.length}, строк: ${result.lines}. Цены подставлены из прайса — проверьте заказы в «Продажах».`));
+}
