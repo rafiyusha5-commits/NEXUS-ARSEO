@@ -278,6 +278,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611210700_assistant_reports.sql" >/dev/null
 # Stage status keeps completion dates: redefines change_shipment_stage_status of 202609272300 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220100_stage_status_keeps_dates.sql" >/dev/null
+# Order prefixes grant their RPCs after the hardening re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220200_order_prefixes.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
