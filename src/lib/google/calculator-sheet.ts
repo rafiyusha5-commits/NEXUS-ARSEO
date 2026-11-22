@@ -39,7 +39,8 @@ function serviceAccount() {
   return { email, privateKey };
 }
 
-async function accessToken() {
+/** A spreadsheets.readonly token of the service account; shared with the order workbook reader. */
+export async function sheetsAccessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
   const account = serviceAccount();
   const now = Math.floor(Date.now() / 1000);
@@ -77,7 +78,7 @@ async function accessToken() {
 }
 
 export async function readCalculatorSheet(): Promise<Cell[][]> {
-  const token = await accessToken();
+  const token = await sheetsAccessToken();
   const response = await fetch(calculatorValuesUrl(), {
     method: "GET",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },

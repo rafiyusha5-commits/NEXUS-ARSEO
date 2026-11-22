@@ -56,7 +56,7 @@ export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { 
       files = (fileResult.data ?? []).map(file => {
         const hint = suggestDocumentType(file.path, file.name);
         const type = hint && types.find(item => item.code === hint.code);
-        return { ...reconcileSource(file, documents, linkedIds), first_seen_at: file.first_seen_at, operation_id: randomUUID(),
+        return { ...reconcileSource(file, documents, linkedIds), mime_type: file.mime_type, first_seen_at: file.first_seen_at, operation_id: randomUUID(),
           suggested: type ? { id: type.id, name: type.name_ru, reason: hint.reason } : null };
       });
     }
