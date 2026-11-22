@@ -6,8 +6,9 @@ import { sourceState } from "@/lib/google/shipment-folder";
 import { reconciliationLabels, type Candidate, type ReconciliationState } from "@/lib/google/folder-reconciliation";
 import { DriveSubmit } from "./shipment-drive-submit";
 import { DRIVE_BATCH_LIMIT } from "@/lib/google/document-classify";
+import { isOrderWorkbook } from "@/lib/shipments/order-workbook";
 export type FolderBinding = { folder_id: string; folder_name: string; checked_at: string | null };
-export type FolderFile = { file_id: string; name: string; path: string; revision: string; present: boolean; imported_document_id: string | null; imported_revision: string | null; state?: ReconciliationState; candidates?: Candidate[]; verified?: boolean; operation_id?: string; first_seen_at?: string | null; suggested?: { id: string; name: string; reason: string } | null };
+export type FolderFile = { file_id: string; name: string; path: string; mime_type?: string; revision: string; present: boolean; imported_document_id: string | null; imported_revision: string | null; state?: ReconciliationState; candidates?: Candidate[]; verified?: boolean; operation_id?: string; first_seen_at?: string | null; suggested?: { id: string; name: string; reason: string } | null };
 export type FolderActions = { bind: (form: FormData) => Promise<void>; scan: (form: FormData) => Promise<void>; upload: (form: FormData) => Promise<void>; uploadMany?: (form: FormData) => Promise<void>; check?: (form: FormData) => Promise<void>; link?: (form: FormData) => Promise<void> };
 export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId, initialFolder, documentActions = {} }: { documentActions?: DocumentActionIndex;  shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string; initialFolder?: string }) {
   const [search, setSearch] = useState("");
@@ -57,6 +58,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
             <DriveSubmit pending="Загружаю файлы по очереди…">Загрузить отмеченные</DriveSubmit>
           </form>
         </details>}
+        {files.some(file => file.present && isOrderWorkbook(file.name, file.mime_type ?? "")) && <p><a className="ghost button-link" href={`/shipments/${shipmentId}/workbook`}>Сверить поставку с «Вн расчетами»</a> Строки заказа поставщику, дата погрузки и заказ клиента из таблицы папки — с просмотром перед сохранением.</p>}
         <p role="status">Показано {shown.length} из {files.length}</p>
         {binding.checked_at && !files.length && <p className="empty-state">В сохранённом списке пока нет файлов. Откройте подключённую папку, проверьте её состав и нажмите «Проверить папку».</p>}
         {files.length > 0 && !shown.length && <div className="empty-state"><p>Под выбранные условия файлы не найдены.</p><button className="ghost" type="button" onClick={() => { setSearch(""); setFilter(""); setFolder(""); }}>Сбросить фильтры</button></div>}
