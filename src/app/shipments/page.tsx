@@ -33,6 +33,7 @@ export default async function ShipmentsPage({searchParams}:{searchParams:Promise
     <WorkflowHelp section="shipments"/>
     <div className="topbar-actions">
       {preparationAccess?.["agent.use"] && preparationAccess["shipments.view"] && <Link className="primary button-link" href="/assistant/shipments">Подготовить из папки Google Drive</Link>}
+      <Link className="primary button-link" href="/shipments/from-drive">Создать из папки заказа на Drive</Link>
       <Link className="ghost button-link" href="/shipments/prepare">Подготовить историческую поставку</Link>
     </div>
     {params.error&&<div className="login-error admin-message">{params.error}</div>}{params.success&&<div className="login-success admin-message">{params.success}</div>}
