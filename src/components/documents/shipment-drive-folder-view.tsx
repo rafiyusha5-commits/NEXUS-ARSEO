@@ -36,6 +36,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
       content = <>
         <div className="drive-source"><p>Подключена папка <a href={`https://drive.google.com/drive/folders/${binding.folder_id}`} target="_blank" rel="noreferrer">{binding.folder_name}</a></p>
         <p>{binding.checked_at ? `Список проверен ${new Date(binding.checked_at).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" })}. Файлов в сохранённом списке: ${files.length}.` : "Нажмите «Проверить папку», чтобы увидеть её файлы."}</p></div>
+        {files.some(file => file.present && isOrderWorkbook(file.name, file.mime_type ?? "")) && <p><a className="primary button-link" href={`/shipments/${shipmentId}/workbook`}>Сверить поставку с «Вн расчетами»</a> Строки заказа поставщику, растаможка, стикеры и распределение из таблицы папки — с просмотром перед сохранением.</p>}
         <form action={actions.scan}><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="operation_id" value={operationId ?? ""}/><DriveSubmit pending="Проверяю папку и вложенные папки…">{binding.checked_at ? "Обновить из Drive" : "Проверить папку"}</DriveSubmit></form>
         <p>Файлы проверяются по кнопке. Удалённые или изменённые исходники не удаляют и не заменяют документы Nexus. Ярлыки пропускаются.</p>
         <p className="form-help">Выберите нужные файлы ниже. Для каждого проверьте тип и назначение. Файлов без доступной связи с документом Nexus: {files.filter(f => !f.imported_document_id).length}. Полноту обязательного комплекта проверяйте в блоке «Сверка».</p>
@@ -58,7 +59,6 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
             <DriveSubmit pending="Загружаю файлы по очереди…">Загрузить отмеченные</DriveSubmit>
           </form>
         </details>}
-        {files.some(file => file.present && isOrderWorkbook(file.name, file.mime_type ?? "")) && <p><a className="ghost button-link" href={`/shipments/${shipmentId}/workbook`}>Сверить поставку с «Вн расчетами»</a> Строки заказа поставщику, дата погрузки и заказ клиента из таблицы папки — с просмотром перед сохранением.</p>}
         <p role="status">Показано {shown.length} из {files.length}</p>
         {binding.checked_at && !files.length && <p className="empty-state">В сохранённом списке пока нет файлов. Откройте подключённую папку, проверьте её состав и нажмите «Проверить папку».</p>}
         {files.length > 0 && !shown.length && <div className="empty-state"><p>Под выбранные условия файлы не найдены.</p><button className="ghost" type="button" onClick={() => { setSearch(""); setFilter(""); setFolder(""); }}>Сбросить фильтры</button></div>}
