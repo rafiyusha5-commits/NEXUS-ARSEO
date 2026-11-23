@@ -39,7 +39,7 @@ const sourceLabel: Record<string, string> = {
   driver_document: "Документы водителя", waybill: "Накладная", other: "Прочий источник",
 };
 
-export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false, showDocumentList = false }: { shipmentId: string; workspace?: boolean; showDocumentList?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
+export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false, showDocumentList = false, hideMissing = false }: { shipmentId: string; workspace?: boolean; showDocumentList?: boolean; hideMissing?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
   const supabase = await createClient();
   const serverNow = await loadProcessingClock();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update", "products.view"] as const);
@@ -91,7 +91,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
   const ocr = describeOcrConfig(loadOcrConfig());
   const currentRows = rows.filter(current);
   return <>
-  {showDocumentList && <ShipmentDocumentsPanel shipmentId={shipmentId} reviews={new Map(rows
+  {showDocumentList && <ShipmentDocumentsPanel shipmentId={shipmentId} hideMissing={hideMissing} reviews={new Map(rows
     .filter(current)
     .map(row => {
       const lots = row.extracted_data?.supplier_lots;

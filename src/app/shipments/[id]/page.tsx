@@ -14,6 +14,7 @@ import { ShipmentDriveFolderPanel } from "@/components/documents/shipment-drive-
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentReadiness } from "@/components/documents/shipment-document-readiness";
 import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
+import { ShipmentDocumentsOverview } from "@/components/documents/shipment-documents-overview";
 import { LogistShipmentPanel } from "@/components/logist/logist-shipment-panel";
 import { OperationTabs } from "@/components/operation-tabs";
 import { requireUser } from "@/lib/auth/access";
@@ -139,8 +140,9 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
       </section>
       <ShipmentTransportsPanel shipmentId={shipment.id} transports={transports??[]} receivedIds={[...receivedTransports]} canEdit={canEdit} canReceive={!!permissions["inventory.receive"]} loadLines={loadSummary.lines} operation={cargoOperation(shipment.type)}/>
     <>
+    <ShipmentDocumentsOverview shipmentId={shipment.id}/>
     <ShipmentDocumentCheckPanel shipmentId={shipment.id} notice={notices.check_error?{kind:"error",message:notices.check_error}:notices.check_success?{kind:"success",message:notices.check_success}:undefined}/>
-    <ShipmentSourceDocumentsPanel showDocumentList readiness={documentReadiness} shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
+    <ShipmentSourceDocumentsPanel showDocumentList hideMissing readiness={documentReadiness} shipmentId={shipment.id} notice={notices.source_error?{kind:"error",message:notices.source_error}:notices.source_success?{kind:"success",message:notices.source_success}:undefined}/>
     {generationPreview&&<ShipmentDocumentReadiness result={documentReadiness??undefined} shipmentId={shipment.id} data={generationPreview.data} confirmedSourceFields={generationPreview.confirmedSourceFields}/>}
     {permissions["templates.generate"]&&permissions["documents.create"]&&<section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Выходной комплект</p><h2>Сформировать документы перевозки</h2></div><span className="page-count">{generationTemplates.length}</span></div><p className="form-help">Система использует подтверждённые данные из загруженных инвойсов, договор-заявок и транспортных документов.</p><div className="compact-list">{generationTemplates.map(template=>{const type=one(template.type);return <div className="doc-link-row" key={template.id}><div><strong>{template.name}</strong><small>{type?.name_ru??"Документ"} · {template.flow_direction==="input"?"от поставщика":"для покупателя"}</small></div><Link className="primary button-link compact" href={`/templates/${template.id}/generate?shipment=${shipment.id}`}>Сформировать</Link></div>})}{!generationTemplates.length&&<div className="empty-state">Нет подходящих утверждённых DOCX/XLSX-шаблонов для этой поставки.</div>}</div></section>}
     <ShipmentDriveFolderPanel shipmentId={shipment.id}/>

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DocumentActions } from "@/components/documents/document-actions";
 import type { DocumentActionIndex } from "@/lib/documents/action-index";
 import { sourceState } from "@/lib/google/shipment-folder";
@@ -12,6 +12,9 @@ export type FolderFile = { file_id: string; name: string; path: string; mime_typ
 export type FolderActions = { bind: (form: FormData) => Promise<void>; scan: (form: FormData) => Promise<void>; upload: (form: FormData) => Promise<void>; uploadMany?: (form: FormData) => Promise<void>; check?: (form: FormData) => Promise<void>; link?: (form: FormData) => Promise<void> };
 export function ShipmentDriveFolderView({ shipmentId, binding, files, types, canImport, actions, operationId, initialFolder, documentActions = {} }: { documentActions?: DocumentActionIndex;  shipmentId: string; binding: FolderBinding | null; files: FolderFile[]; types: { id: string; name_ru: string }[]; canImport: boolean; actions: FolderActions; operationId?: string; initialFolder?: string }) {
   const [search, setSearch] = useState("");
+  // The file list folds when there is nothing to do in it; a link to #drive-folder («Загрузить файлы») opens it.
+  const listRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (window.location.hash === "#drive-folder" && listRef.current) listRef.current.open = true; }, []);
   const [filter, setFilter] = useState("");
   const [folder, setFolder] = useState("");
   const group = (file: FolderFile) => file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")).trim() : "Корень папки";
@@ -38,6 +41,8 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
         <p>{binding.checked_at ? `Список проверен ${new Date(binding.checked_at).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" })}. Файлов в сохранённом списке: ${files.length}.` : "Нажмите «Проверить папку», чтобы увидеть её файлы."}</p></div>
         {files.some(file => file.present && isOrderWorkbook(file.name, file.mime_type ?? "")) && <p><a className="primary button-link" href={`/shipments/${shipmentId}/workbook`}>Сверить поставку с «Вн расчетами»</a> Строки заказа поставщику, растаможка, стикеры и распределение из таблицы папки — с просмотром перед сохранением.</p>}
         <form action={actions.scan}><input type="hidden" name="shipment_id" value={shipmentId}/><input type="hidden" name="operation_id" value={operationId ?? ""}/><DriveSubmit pending="Проверяю папку и вложенные папки…">{binding.checked_at ? "Обновить из Drive" : "Проверить папку"}</DriveSubmit></form>
+        <details className="docs-collapse" ref={listRef} open={files.some(file => file.present && !file.imported_document_id)}>
+        <summary>Файлы папки: {files.length}{waiting.length ? ` · ещё не в Nexus: ${waiting.length}` : " · все в Nexus"}</summary>
         <p>Файлы проверяются по кнопке. Удалённые или изменённые исходники не удаляют и не заменяют документы Nexus. Ярлыки пропускаются.</p>
         <p className="form-help">Выберите нужные файлы ниже. Для каждого проверьте тип и назначение. Файлов без доступной связи с документом Nexus: {files.filter(f => !f.imported_document_id).length}. Полноту обязательного комплекта проверяйте в блоке «Сверка».</p>
         <div className="form-grid">
@@ -90,6 +95,7 @@ export function ShipmentDriveFolderView({ shipmentId, binding, files, types, can
             </form>}
           </div>
         </article>)}</div>
+        </details>
       </>;
     }
   return <section className="panel admin-section shipment-drive-panel" id="drive-folder"><div className="panel-heading"><div><p className="eyebrow">Источник документов · только чтение</p><h2>Папка Google Drive</h2></div></div><p>Google Drive остаётся без изменений. Загрузка файлов не меняет товары, приёмку, расходы и подтверждённые значения.</p>{content}</section>;

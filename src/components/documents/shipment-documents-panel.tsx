@@ -11,6 +11,8 @@ import {
   todayIso,
 } from "@/lib/documents/rules.ts";
 import { loadDocumentPermissions } from "@/lib/documents/supabase-gateway.ts";
+import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
+import { documentFolders, typeTag } from "@/lib/documents/overview";
 
 type LinkedDocument = {
   id: string;
@@ -35,9 +37,11 @@ const one = <T,>(value: T | T[] | null | undefined) => (Array.isArray(value) ? v
 
 // Self-contained block for the shipment page: loads its own data with the user's
 // session, so the shipment page only needs to render <ShipmentDocumentsPanel />.
-export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
+export async function ShipmentDocumentsPanel({ shipmentId, reviews, hideMissing = false }: {
   shipmentId: string;
   reviews?: ReadonlyMap<string, { preview: ReactNode; isPackingList: boolean }>;
+  /** The overview at the top of the tab already lists missing documents by stage. */
+  hideMissing?: boolean;
 }) {
   if (!isUuid(shipmentId)) return null;
   const supabase = await createClient();
@@ -117,12 +121,20 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
     return { typeId, name: one(rule.type)?.name_ru ?? "Документ", stage: one(rule.stage)?.name?.ru, due: rule.due_description };
   });
   const today = todayIso();
+  // Documents are grouped by the Drive subfolder they came from; documents uploaded by hand form their own group.
+  let folderOf = new Map<string, string>();
+  try {
+    const db = await shipmentDriveGateway(supabase);
+    const files = await db.from("shipment_drive_files").select("imported_document_id,path").eq("shipment_id", shipmentId).not("imported_document_id", "is", null).limit(1000);
+    if (!files.error) folderOf = new Map((files.data ?? []).map(file => [file.imported_document_id as string, String(file.path)]));
+  } catch { /* without the Drive connection every document is in one group */ }
+  const groups = documentFolders(documents.map(({ document }) => ({ id: document.id, status: document.status, path: folderOf.get(document.id) ?? null })));
 
   return (
     <section className="panel admin-section">
       {heading}
 
-      {missing.length > 0 && (
+      {!hideMissing && missing.length > 0 && (
         <div className="doc-missing">
           <strong>Не хватает обязательных документов: {missing.length}</strong>
           <ul>
@@ -137,7 +149,9 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
       )}
 
       <div className="doc-shipment-list" id="shipment-document-list">
-        {documents.map(({ document, viaTransport }) => {
+        {groups.map(group => <details className="docs-folder" key={group.name} open={group.open}>
+          <summary><span className="docs-folder-name">{group.name}</span><span className="docs-count">{group.ids.length}</span><span className="docs-folder-summary">{group.summary}</span></summary>
+        {documents.filter(({ document }) => group.ids.includes(document.id)).map(({ document, viaTransport }) => {
           const requirement = coverage.byType.get(document.document_type_id);
           const expiry = documentExpiry(document.valid_until, today);
           const file = document.versions.find(version => version.is_current && version.version_number === document.current_version);
@@ -145,6 +159,7 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
           const cardUrl = `/documents/${document.id}`;
           return (
             <article className="doc-shipment-row" id={`shipment-document-${document.id}`} key={document.id} aria-label={document.title}>
+              <span className="docs-type-tag" aria-hidden="true">{typeTag(review?.isPackingList ? "Упаковочный лист" : one(document.type)?.name_ru ?? "Документ")}</span>
               <div>
                 <span className="doc-type">{review?.isPackingList ? "Упаковочный лист" : one(document.type)?.name_ru ?? "Документ"}{viaTransport ? " · по перевозке" : ""}</span>
                 <Link href={cardUrl}><strong>{document.document_number ? `№ ${document.document_number}` : document.title}</strong></Link>
@@ -169,6 +184,7 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews }: {
             </article>
           );
         })}
+        </details>)}
         {!documents.length && (
           <div className="empty-state">К поставке ещё не привязан ни один документ.</div>
         )}
