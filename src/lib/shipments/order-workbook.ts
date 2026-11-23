@@ -139,7 +139,8 @@ export function planLines(lines: readonly WorkbookLine[], products: readonly Pro
   return { plans, notInWorkbook: items.filter(item => !used.has(item.product_id)) };
 }
 
-/** The workbook of an order folder: «Вн расчеты …», not a «Копия …» of it. */
+/** The workbook of an order folder: «Вн расчеты» anywhere in the name («HS-46 Вн. расчеты …» too), not a «Копия …» of it. */
 export function isOrderWorkbook(name: string, mimeType: string): boolean {
-  return mimeType === "application/vnd.google-apps.spreadsheet" && /^вн\.?\s*расч[её]т/i.test(name.trim()) && !/^копия/i.test(name.trim());
+  const title = name.normalize("NFKC").trim();
+  return mimeType === "application/vnd.google-apps.spreadsheet" && /(?<!\p{L})вн\.?\s*расч[её]т/iu.test(title) && !/(?<!\p{L})копия(?!\p{L})/iu.test(title);
 }

@@ -74,5 +74,12 @@ describe("«Вн расчеты» workbook", () => {
     assert.equal(isOrderWorkbook("Вн расчеты AB-50 Nordic", sheet), true);
     assert.equal(isOrderWorkbook("Копия для расчетов Вн расчеты AB-50", sheet), false);
     assert.equal(isOrderWorkbook("Вн расчеты AB-50.xlsx", "application/pdf"), false);
+    // The words may stand anywhere in the name, with or without a dot, in any case.
+    assert.equal(isOrderWorkbook("AB-46 Вн расчеты паста", sheet), true);
+    assert.equal(isOrderWorkbook("Паста AB-46 (вн. расчёты)", sheet), true);
+    assert.equal(isOrderWorkbook("AB-46 ВН.РАСЧЕТЫ", sheet), true);
+    assert.equal(isOrderWorkbook("AB-46 Вн расчеты — копия", sheet), false);
+    assert.equal(isOrderWorkbook("Свн расчеты", sheet), false);
+    assert.equal(isOrderWorkbook("Внешние расчеты AB-46", sheet), false);
   });
 });
