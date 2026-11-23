@@ -13,7 +13,7 @@ import { readFirstSheet, readOrderWorkbookSheets } from "@/lib/google/order-work
 import { customsIssues, isDistributionSheet, matchCustomer, overDistributed, parseCustomsSheet, parseDistributionSheet, parseStickerSheet } from "@/lib/shipments/order-workbook-extra";
 import { CustomsCheck, DistributionView, StickerCheck, type SaleTarget, type StickerRow } from "./phase2";
 import { PublicError } from "@/lib/errors/public-message";
-import { isOrderWorkbook, matchLine, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
+import { isOrderWorkbook, matchLine, orderWorkbooks, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
 import { applyOrderWorkbook } from "./actions";
 
 const REQUIRED = ["shipments.view", "shipments.update", "documents.view", "documents.drive.view", "prices.purchase.view"] as const;
@@ -47,13 +47,13 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
     ]);
     if (binding.error || files.error) throw new Error("unavailable");
     folderId = binding.data?.folder_id ?? "";
-    workbooks = (files.data ?? []).filter(file => isOrderWorkbook(file.name, file.mime_type));
+    workbooks = orderWorkbooks((files.data ?? []).filter(file => isOrderWorkbook(file.name, file.mime_type)), shipment.project_code);
     distributions = (files.data ?? []).filter(file => isDistributionSheet(file.name, file.mime_type)).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   } catch { return shell(<div className="setup-notice">Привязка Google Drive сейчас недоступна.</div>, title); }
   if (!folderId) return shell(<div className="setup-notice">К поставке не привязана папка Google Drive.</div>, title);
   if (!workbooks.length) return shell(<div className="setup-notice">В сохранённом списке папки нет таблицы «Вн расчеты». Нажмите «Обновить из Drive» на вкладке «Документы» и откройте эту страницу снова.</div>, title);
   const chosen = workbooks.find(file => file.file_id === query.file) ?? (workbooks.length === 1 ? workbooks[0] : null);
-  if (!chosen) return shell(<section className="panel admin-section"><h2>Выберите таблицу</h2><ul>{workbooks.map(file => <li key={file.file_id}><Link href={`/shipments/${id}/workbook?file=${encodeURIComponent(file.file_id)}`}>{file.name}</Link></li>)}</ul></section>, title);
+  if (!chosen) return shell(<section className="panel admin-section"><h2>Выберите таблицу «Вн расчеты»</h2><p className="form-help">В папке несколько подходящих таблиц{shipment.project_code ? ` с кодом ${shipment.project_code}` : ""}. Откройте ту, по которой работаете.</p><ul>{workbooks.map(file => <li key={file.file_id}><Link href={`/shipments/${id}/workbook?file=${encodeURIComponent(file.file_id)}`}>{file.name}</Link></li>)}</ul></section>, title);
 
   // The sheet must still lie inside the bound folder before anything is read from it.
   let workbook: OrderWorkbook;

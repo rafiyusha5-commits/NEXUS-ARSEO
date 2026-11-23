@@ -139,8 +139,28 @@ export function planLines(lines: readonly WorkbookLine[], products: readonly Pro
   return { plans, notInWorkbook: items.filter(item => !used.has(item.product_id)) };
 }
 
-/** The workbook of an order folder: «Вн расчеты» anywhere in the name («HS-46 Вн. расчеты …» too), not a «Копия …» of it. */
+/** A workbook of an order folder: «Вн расчеты» anywhere in the name («HS-46 Вн. расчеты …», «Копия для расчетов … Вн расчеты …»). */
 export function isOrderWorkbook(name: string, mimeType: string): boolean {
-  const title = name.normalize("NFKC").trim();
-  return mimeType === "application/vnd.google-apps.spreadsheet" && /(?<!\p{L})вн\.?\s*расч[её]т/iu.test(title) && !/(?<!\p{L})копия(?!\p{L})/iu.test(title);
+  return mimeType === "application/vnd.google-apps.spreadsheet" && /(?<!\p{L})вн\.?\s*расч[её]т/iu.test(name.normalize("NFKC"));
+}
+
+/** Order codes of a project code ("HS-48, HS-49", "Leib-12") as prefix and number. */
+export function projectCodes(projectCode: string | null | undefined): { prefix: string; number: number }[] {
+  return [...String(projectCode ?? "").matchAll(/(?<!\p{L})(\p{L}{1,12})(?:x|-|\s)?(\d{1,4})(?!\d)/gu)].map(match => ({ prefix: match[1], number: Number(match[2]) }));
+}
+
+/** Whether a file name carries one of the shipment's order codes («HS-50», «HS 50», «Leibx12»; «HS-500» is another order). */
+export function namesOrder(name: string, codes: readonly { prefix: string; number: number }[]): boolean {
+  // Prefixes are letters only (projectCodes), so they need no escaping in the pattern.
+  const found = [...name.normalize("NFKC").matchAll(/(?<!\p{L})(\p{L}{1,12})(?:x|-|\s)?(\d{1,4})(?!\d)/gu)];
+  // «Leibx12»: the letters before the number then end with the «x» separator.
+  const same = (letters: string, prefix: string) => { const a = letters.toLocaleLowerCase("en"), b = prefix.toLocaleLowerCase("en"); return a === b || a === `${b}x`; };
+  return codes.some(code => found.some(match => same(match[1], code.prefix) && Number(match[2]) === code.number));
+}
+
+/** The workbooks of this order when their names carry its code; otherwise every workbook of the folder. */
+export function orderWorkbooks<T extends { name: string }>(workbooks: readonly T[], projectCode: string | null | undefined): T[] {
+  const codes = projectCodes(projectCode);
+  const own = codes.length ? workbooks.filter(file => namesOrder(file.name, codes)) : [];
+  return own.length ? own : [...workbooks];
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Cell } from "../../src/lib/reference-import/normalize.ts";
-import { isOrderWorkbook, matchLine, parseOrderWorkbook, planLines, workbookDate, workbookNumber } from "../../src/lib/shipments/order-workbook.ts";
+import { isOrderWorkbook, matchLine, orderWorkbooks, projectCodes, parseOrderWorkbook, planLines, workbookDate, workbookNumber } from "../../src/lib/shipments/order-workbook.ts";
 
 // Synthetic sheet shaped like «Расчеты»: two header rows, the label row, then order lines. No real products or prices.
 const blank = (n: number): Cell[] => Array.from({ length: n }, () => null);
@@ -69,16 +69,24 @@ describe("«Вн расчеты» workbook", () => {
     assert.deepEqual(result.plans.map(plan => plan.kind), ["split"]);
   });
 
-  it("finds the workbook file of a folder, not its copy", () => {
+  it("keeps the workbooks of the shipment's order", () => {
+    const files = [{ name: "Вн расчеты AB-50 Nordic" }, { name: "Копия для расчетов Вн расчеты AB-50 Nordic" }, { name: "Вн расчеты EF-06" }, { name: "Вн расчеты AB-500" }];
+    assert.deepEqual(projectCodes("AB-48, AB-49"), [{ prefix: "AB", number: 48 }, { prefix: "AB", number: 49 }]);
+    assert.deepEqual(orderWorkbooks(files, "AB-50").map(file => file.name), ["Вн расчеты AB-50 Nordic", "Копия для расчетов Вн расчеты AB-50 Nordic"]);
+    assert.deepEqual(orderWorkbooks([{ name: "Вн расчеты Cdx12-x" }, { name: "Вн расчеты Cdx13" }], "Cd-12").map(file => file.name), ["Вн расчеты Cdx12-x"]);
+    assert.equal(orderWorkbooks(files, "ZZ-1").length, 4, "no workbook carries the code: all are offered");
+    assert.equal(orderWorkbooks(files, null).length, 4);
+  });
+
+  it("finds the workbook file of a folder", () => {
     const sheet = "application/vnd.google-apps.spreadsheet";
     assert.equal(isOrderWorkbook("Вн расчеты AB-50 Nordic", sheet), true);
-    assert.equal(isOrderWorkbook("Копия для расчетов Вн расчеты AB-50", sheet), false);
     assert.equal(isOrderWorkbook("Вн расчеты AB-50.xlsx", "application/pdf"), false);
     // The words may stand anywhere in the name, with or without a dot, in any case.
     assert.equal(isOrderWorkbook("AB-46 Вн расчеты паста", sheet), true);
     assert.equal(isOrderWorkbook("Паста AB-46 (вн. расчёты)", sheet), true);
     assert.equal(isOrderWorkbook("AB-46 ВН.РАСЧЕТЫ", sheet), true);
-    assert.equal(isOrderWorkbook("AB-46 Вн расчеты — копия", sheet), false);
+    assert.equal(isOrderWorkbook("Копия для расчетов Вн расчеты AB-50", sheet), true);
     assert.equal(isOrderWorkbook("Свн расчеты", sheet), false);
     assert.equal(isOrderWorkbook("Внешние расчеты AB-46", sheet), false);
   });
