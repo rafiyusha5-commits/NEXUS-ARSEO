@@ -65,3 +65,16 @@ export async function createDistributionOrders(form: FormData) {
   const result = data as { orders: unknown[]; lines: number };
   redirect(back("success", `Создано черновиков заказов: ${result.orders.length}, строк: ${result.lines}. Цены подставлены из прайса — проверьте заказы в «Продажах».`));
 }
+
+/** Remembers which «Вн расчеты» of the folder this shipment works with. */
+export async function chooseShipmentWorkbook(form: FormData) {
+  const id = text(form, "shipment_id");
+  if (!isUuid(id)) redirect("/shipments");
+  const file = text(form, "file");
+  if (!/^[A-Za-z0-9_-]{10,120}$/.test(file)) redirect(`/shipments/${id}/workbook?choose=1&error=${encodeURIComponent("Выберите таблицу")}`);
+  const { supabase } = await requireUser();
+  const { error } = await supabase.rpc("choose_shipment_workbook", { p_shipment_id: id, p_file_id: file });
+  if (error) redirect(`/shipments/${id}/workbook?choose=1&error=${encodeURIComponent(ruleViolationMessage(error, "Не удалось сохранить выбор таблицы"))}`);
+  revalidatePath(`/shipments/${id}/workbook`);
+  redirect(`/shipments/${id}/workbook?success=${encodeURIComponent("Таблица выбрана для поставки. Дальше эта страница открывает её сразу")}`);
+}

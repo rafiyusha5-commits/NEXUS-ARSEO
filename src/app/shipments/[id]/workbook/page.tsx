@@ -13,13 +13,13 @@ import { readFirstSheet, readOrderWorkbookSheets } from "@/lib/google/order-work
 import { customsIssues, isDistributionSheet, matchCustomer, overDistributed, parseCustomsSheet, parseDistributionSheet, parseStickerSheet } from "@/lib/shipments/order-workbook-extra";
 import { CustomsCheck, DistributionView, StickerCheck, type SaleTarget, type StickerRow } from "./phase2";
 import { PublicError } from "@/lib/errors/public-message";
-import { isOrderWorkbook, matchLine, orderWorkbooks, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
-import { applyOrderWorkbook } from "./actions";
+import { formatPrice, isOrderWorkbook, matchLine, orderWorkbooks, parseOrderWorkbook, planLines, type LinePlan, type OrderWorkbook, type ProductKeys } from "@/lib/shipments/order-workbook";
+import { applyOrderWorkbook, chooseShipmentWorkbook } from "./actions";
 
 const REQUIRED = ["shipments.view", "shipments.update", "documents.view", "documents.drive.view", "prices.purchase.view"] as const;
 const OPTIONAL = ["sales.view", "sales.manage", "stickers.view"] as const;
 const SHEET = "application/vnd.google-apps.spreadsheet";
-type Params = { file?: string; distribution?: string; error?: string; success?: string };
+type Params = { file?: string; distribution?: string; choose?: string; error?: string; success?: string };
 const date = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC" }).format(new Date(value)) : "—";
 const num = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 4 }).format(value);
 const kindLabel: Record<LinePlan["kind"], string> = { add: "Новая позиция", update: "Изменится", same: "Совпадает", split: "Распределена по машинам — не меняется", unknown: "Не сопоставлена" };
@@ -38,22 +38,39 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
   if (!shipment) return shell(<div className="setup-notice">Поставка недоступна.</div>);
   const title = `«Вн расчеты» · ${shipment.shipment_number}`;
 
-  let workbooks: { file_id: string; name: string }[] = []; let distributions: { file_id: string; name: string }[] = []; let folderId = "";
+  let workbooks: { file_id: string; name: string }[] = []; let allWorkbooks: { file_id: string; name: string }[] = []; let savedFile: string | null = null; let distributions: { file_id: string; name: string }[] = []; let folderId = "";
   try {
     const db = await shipmentDriveGateway(supabase);
-    const [binding, files] = await Promise.all([
+    const [binding, files, saved] = await Promise.all([
       db.from("shipment_drive_folders").select("folder_id").eq("shipment_id", id).maybeSingle(),
       db.from("shipment_drive_files").select("file_id,name,mime_type,present").eq("shipment_id", id).eq("present", true).limit(1000),
+      supabase.from("shipment_workbook_choices").select("file_id").eq("shipment_id", id).maybeSingle(),
     ]);
+    savedFile = saved.data?.file_id ?? null;
     if (binding.error || files.error) throw new Error("unavailable");
     folderId = binding.data?.folder_id ?? "";
-    workbooks = orderWorkbooks((files.data ?? []).filter(file => isOrderWorkbook(file.name, file.mime_type)), shipment.project_code);
+    allWorkbooks = (files.data ?? []).filter(file => isOrderWorkbook(file.name, file.mime_type));
+    workbooks = orderWorkbooks(allWorkbooks, shipment.project_code);
     distributions = (files.data ?? []).filter(file => isDistributionSheet(file.name, file.mime_type)).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   } catch { return shell(<div className="setup-notice">Привязка Google Drive сейчас недоступна.</div>, title); }
   if (!folderId) return shell(<div className="setup-notice">К поставке не привязана папка Google Drive.</div>, title);
   if (!workbooks.length) return shell(<div className="setup-notice">В сохранённом списке папки нет таблицы «Вн расчеты». Нажмите «Обновить из Drive» на вкладке «Документы» и откройте эту страницу снова.</div>, title);
-  const chosen = workbooks.find(file => file.file_id === query.file) ?? (workbooks.length === 1 ? workbooks[0] : null);
-  if (!chosen) return shell(<section className="panel admin-section"><h2>Выберите таблицу «Вн расчеты»</h2><p className="form-help">В папке несколько подходящих таблиц{shipment.project_code ? ` с кодом ${shipment.project_code}` : ""}. Откройте ту, по которой работаете.</p><ul>{workbooks.map(file => <li key={file.file_id}><Link href={`/shipments/${id}/workbook?file=${encodeURIComponent(file.file_id)}`}>{file.name}</Link></li>)}</ul></section>, title);
+  // The table chosen for this shipment opens directly; «Выбрать другую таблицу» shows the list again.
+  const choosing = query.choose === "1";
+  const chosen = choosing ? null : allWorkbooks.find(file => file.file_id === query.file) ?? allWorkbooks.find(file => file.file_id === savedFile) ?? (workbooks.length === 1 ? workbooks[0] : null);
+  if (!chosen) {
+    const offered = choosing && query.file === "all" ? allWorkbooks : workbooks;
+    return shell(<section className="panel admin-section"><h2>Выберите таблицу «Вн расчеты»</h2>
+      <p className="form-help">{offered.length > 1 ? `В папке несколько подходящих таблиц${shipment.project_code && offered !== allWorkbooks ? ` с кодом ${shipment.project_code}` : ""}.` : "Подходящая таблица папки:"} Выберите ту, по которой работаете, — Nexus запомнит её для этой поставки.</p>
+      <div className="compact-list">{offered.map(file => <form action={chooseShipmentWorkbook} className="shipment-row" key={file.file_id}>
+        <input type="hidden" name="shipment_id" value={id}/><input type="hidden" name="file" value={file.file_id}/>
+        <div><strong>{file.name}</strong><small>{file.file_id === savedFile ? "Выбрана сейчас" : ""}</small></div>
+        <PendingSubmitButton pendingText="Сохраняем…" className={file.file_id === savedFile ? "ghost" : "primary"} type="submit">Работать с этой таблицей</PendingSubmitButton>
+      </form>)}</div>
+      {offered !== allWorkbooks && allWorkbooks.length > offered.length && <p className="form-help"><Link href={`/shipments/${id}/workbook?choose=1&file=all`}>Показать все «Вн расчеты» папки ({allWorkbooks.length})</Link></p>}
+      {savedFile && <p className="form-help"><Link href={`/shipments/${id}/workbook`}>Оставить выбранную таблицу</Link></p>}
+    </section>, title);
+  }
 
   // The sheet must still lie inside the bound folder before anything is read from it.
   let workbook: OrderWorkbook;
@@ -135,7 +152,7 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
   const defaultDate = shipment.planned_arrival_date && shipment.planned_arrival_date > today ? shipment.planned_arrival_date : today;
 
   return shell(<>
-    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Источник</p><h2>{chosen.name}</h2></div></div>
+    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Источник{chosen.file_id === savedFile ? " · выбрана для поставки" : ""}</p><h2>{chosen.name}</h2></div>{allWorkbooks.length > 1 && <div className="topbar-actions"><Link className="ghost button-link" href={`/shipments/${id}/workbook?choose=1`}>Выбрать другую таблицу</Link></div>}</div>
       <p className="form-help">Взяты: строки закупа листа «Расчеты» (артикул ARSEO, артикул завода, штрихкод, «Заказ, шт» и «Цена за ед, евро (INVOICE)»), даты над ними и лист «От клиента». Не взяты: продажные цены, «Экономика», «MasterData».</p>
       <dl className="form-grid">
         <div><dt>Дата погрузки на заводе</dt><dd>{date(workbook.loadingDate)} · в Nexus готовность: {date(shipment.planned_ready_date)}</dd></div>
@@ -157,7 +174,7 @@ export default async function OrderWorkbookPage({ params, searchParams }: { para
         return <div className="shipment-row" key={`${plan.line.row}`}>
           <div style={{ minWidth: 0 }}><strong>Строка {plan.line.row}: {plan.line.sku || plan.line.factorySku || plan.line.ean}</strong><small>{plan.line.name}</small></div>
           <div><strong>{kindLabel[plan.kind]}</strong><small>{plan.kind === "unknown" ? plan.reason : `${productName(plan.productId)} · по: ${plan.by}`}</small></div>
-          <div><strong>{num(plan.line.quantity)} шт · {num(plan.line.price)} €</strong><small>{plan.kind === "update" ? `в Nexus: ${num(plan.quantity)} шт · ${num(plan.price)}` : plan.kind === "split" ? `в Nexus всего: ${num(plan.quantity)} шт` : ""}{keepPrice ? " · цена в другой валюте не меняется" : ""}</small></div>
+          <div><strong>{num(plan.line.quantity)} шт · {formatPrice(plan.line.price)} €</strong><small>{plan.kind === "update" ? `в Nexus: ${num(plan.quantity)} шт · ${formatPrice(plan.price)}` : plan.kind === "split" ? `в Nexus всего: ${num(plan.quantity)} шт` : ""}{keepPrice ? " · цена в другой валюте не меняется" : ""}</small></div>
           {key && !locked && <div><label className="check-label"><input type="checkbox" name="apply" value={key} defaultChecked/> Применить</label>
             <input type="hidden" name={`quantity:${key}`} value={plan.line.quantity}/><input type="hidden" name={`price:${key}`} value={price ?? ""}/>
             {plan.kind === "update" && <><input type="hidden" name={`seen_quantity:${key}`} value={plan.quantity}/><input type="hidden" name={`seen_price:${key}`} value={plan.price ?? ""}/></>}</div>}

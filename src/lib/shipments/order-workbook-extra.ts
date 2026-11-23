@@ -2,7 +2,7 @@
 // Pure functions over sheet values. Customs and stickers are checks only; the distribution can become draft client
 // orders after the employee reviews them (prices then come from the price list, never from the sheet).
 import type { Cell } from "../reference-import/normalize.ts";
-import { workbookArticle, workbookNumber } from "./order-workbook.ts";
+import { formatPrice, workbookArticle, workbookNumber } from "./order-workbook.ts";
 
 const norm = (value: Cell | undefined) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 const text = (value: Cell | undefined) => String(value ?? "").replace(/\s+/g, " ").trim();
@@ -65,7 +65,7 @@ export function customsIssues(lines: readonly CustomsLine[], productOf: (line: C
     if (!item) { issues.push({ row: line.row, article: line.article, field: "Позиция поставки", sheet: `${line.quantity} шт`, nexus: "нет в поставке" }); continue; }
     if (Math.abs(item.quantity - line.quantity) > 0.0005) issues.push({ row: line.row, article: line.article, field: "Количество, шт", sheet: fmt(line.quantity), nexus: fmt(item.quantity) });
     if (line.price !== null && (item.price === null || Math.abs(item.price - line.price) > 0.00005))
-      issues.push({ row: line.row, article: line.article, field: "Цена в инвойсе", sheet: fmt(line.price), nexus: fmt(item.price) });
+      issues.push({ row: line.row, article: line.article, field: "Цена в инвойсе", sheet: formatPrice(line.price), nexus: formatPrice(item.price) });
   }
   return issues;
 }
