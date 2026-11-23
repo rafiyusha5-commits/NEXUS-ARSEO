@@ -17,6 +17,11 @@ export type OrderWorkbook = {
 const norm = (value: Cell | undefined) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 const text = (value: Cell | undefined) => String(value ?? "").replace(/\s+/g, " ").trim();
 
+/** A price as the sheet shows it: at least two decimals («1,70»), and every further decimal the cell holds (up to five). */
+export function formatPrice(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(value);
+}
+
 /** A number as Google Sheets returns it unformatted, or as text with spaces, a comma or a currency sign. */
 export function workbookNumber(value: Cell | undefined): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;

@@ -286,6 +286,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220400_order_workbook.sql" >/dev/null
 # Distribution orders grant their RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220500_distribution_orders.sql" >/dev/null
+# The workbook choice grants its RPC after the hardening re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611230100_shipment_workbook_choice.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
