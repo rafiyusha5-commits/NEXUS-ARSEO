@@ -44,3 +44,20 @@ export function appOrigin(env: Readonly<Record<string, string | undefined>>, hea
   if (!HOST.test(host) || !local) throw new Error("Для ссылок входа требуется APP_ORIGIN");
   return `http://${host.toLowerCase()}`;
 }
+
+// One-time links of Supabase Auth e-mails (invitation, password recovery) open /auth/callback with a token hash. The
+// e-mail templates of the project build them: «{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite…»
+// (docs/auth-email-links.md). An invitation sent by the server key cannot use the PKCE «code» flow.
+const EMAIL_OTP_TYPES = ["invite", "recovery", "signup", "email", "magiclink", "email_change"] as const;
+export type EmailOtpType = (typeof EMAIL_OTP_TYPES)[number];
+
+/** The link's verification: a token hash of a known type, or nothing. */
+export function emailLinkToken(tokenHash: string | null | undefined, type: string | null | undefined): { tokenHash: string; type: EmailOtpType } | null {
+  if (!tokenHash || !/^[A-Za-z0-9_-]{8,512}$/.test(tokenHash)) return null;
+  return EMAIL_OTP_TYPES.includes(type as EmailOtpType) ? { tokenHash, type: type as EmailOtpType } : null;
+}
+
+/** Where the link leads after the session is open: invitations and recovery always end with setting a password. */
+export function emailLinkNext(type: EmailOtpType, requested: string): string {
+  return type === "invite" || type === "recovery" ? "/update-password" : requested;
+}
