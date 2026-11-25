@@ -288,6 +288,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220500_distribution_orders.sql" >/dev/null
 # The workbook choice grants its RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611230100_shipment_workbook_choice.sql" >/dev/null
+# Receivables build each ledger once (202611250300): replaces the functions of 202609277600 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250300_receivables_ledger_once.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

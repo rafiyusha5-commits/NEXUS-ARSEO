@@ -575,3 +575,4 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
 .shipment-document-actions a{font-size:13px}
 @media(max-width:1200px){.doc-shipment-row{grid-template-columns:44px minmax(0,1fr) auto auto}}
 @media(max-width:700px){.doc-shipment-row{grid-template-columns:44px minmax(0,1fr)}.docs-folder-summary{margin-left:0;flex-basis:100%}}
+.list-pager{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px;color:var(--muted);font-size:12px}.list-pager span{margin-right:auto}

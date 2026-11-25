@@ -249,4 +249,70 @@ do $$ declare s jsonb := public.customer_statement('ef100000-0000-4000-8000-0000
 end $$;
 
 reset role;
+-- 202611250300: the list builds each customer's ledger once. Compared with the former definition (two ledgers per
+-- customer, kept here verbatim from 202609277600) on the data above plus a customer whose only entry is in the future:
+-- it is listed (it has a ledger) with an empty aging, as before.
+insert into public.counterparties(id,roles,legal_name,country,tax_id) values
+ ('ef100000-0000-4000-8000-000000000009',array['customer'],'ТОО «Будущая корректировка»','KZ','RECV-FUTURE');
+insert into public.customer_balance_adjustments(customer_id,currency_id,entry_date,amount,reason,created_by)
+values ('ef100000-0000-4000-8000-000000000009',(select id from public.currencies where code='KZT'),current_date+5,100,'Синтетическая будущая запись',
+        'ef000000-0000-4000-8000-000000000001');
+create function pg_temp.old_aging_json(p_customer_id uuid, p_today date) returns jsonb language sql stable as $f$
+  with l as (
+    select * from private.customer_ledger(p_customer_id) where entry_date <= p_today
+  ), credits as (
+    select l.currency_id, -sum(l.amount) as total from l where l.amount < 0 group by l.currency_id
+  ), debts as (
+    select l.currency_id, l.due_date, l.amount,
+           sum(l.amount) over (partition by l.currency_id order by l.due_date, l.entry_date, l.ref_id rows unbounded preceding) as running
+    from l where l.amount > 0
+  ), open_debts as (
+    select d.currency_id, d.due_date, greatest(0, least(d.amount, d.running - coalesce(c.total, 0))) as open_amount
+    from debts d left join credits c on c.currency_id = d.currency_id
+  ), balances as (
+    select l.currency_id, sum(l.amount) as balance from l group by l.currency_id
+  ), a as (
+    select b.currency_id, b.balance,
+           coalesce(sum(o.open_amount) filter (where o.due_date >= p_today), 0) as not_due,
+           coalesce(sum(o.open_amount) filter (where o.due_date < p_today), 0) as overdue,
+           coalesce(sum(o.open_amount) filter (where p_today - o.due_date between 1 and 30), 0) as overdue_1_30,
+           coalesce(sum(o.open_amount) filter (where p_today - o.due_date between 31 and 60), 0) as overdue_31_60,
+           coalesce(sum(o.open_amount) filter (where p_today - o.due_date between 61 and 90), 0) as overdue_61_90,
+           coalesce(sum(o.open_amount) filter (where p_today - o.due_date > 90), 0) as overdue_over_90,
+           max(p_today - o.due_date) filter (where o.open_amount > 0 and o.due_date < p_today) as max_days_overdue,
+           min(o.due_date) filter (where o.open_amount > 0) as oldest_due
+    from balances b left join open_debts o on o.currency_id = b.currency_id
+    group by b.currency_id, b.balance
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'currency', private.currency_code(a.currency_id), 'balance', a.balance, 'not_due', a.not_due, 'overdue', a.overdue,
+    'overdue_1_30', a.overdue_1_30, 'overdue_31_60', a.overdue_31_60, 'overdue_61_90', a.overdue_61_90,
+    'overdue_over_90', a.overdue_over_90, 'max_days_overdue', a.max_days_overdue, 'oldest_due', a.oldest_due)
+    order by private.currency_code(a.currency_id)), '[]'::jsonb)
+  from a
+$f$;
+create function pg_temp.old_receivables() returns jsonb language sql stable as $f$
+  select coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'customer_id', c.id, 'customer', coalesce(c.short_name, c.legal_name), 'tax_id', c.tax_id,
+      'credit_limit', t.credit_limit, 'limit_currency', private.currency_code(t.limit_currency_id),
+      'deferral_days', t.default_deferral_days, 'aging', pg_temp.old_aging_json(c.id, private.receivables_today()),
+      'last_act', (select jsonb_build_object('as_of', ra.as_of, 'difference', ra.act_balance - ra.nexus_balance,
+                                             'currency', private.currency_code(ra.currency_id))
+                   from public.customer_reconciliation_acts ra where ra.customer_id = c.id order by ra.as_of desc, ra.created_at desc limit 1))
+      order by coalesce(c.short_name, c.legal_name))
+    from public.counterparties c
+    left join public.customer_credit_terms t on t.customer_id = c.id
+    where 'customer' = any(c.roles) and exists (select 1 from private.customer_ledger(c.id))), '[]'::jsonb)
+$f$;
+do $$ declare l jsonb; old jsonb; begin
+ perform set_config('request.jwt.claim.sub','ef000000-0000-4000-8000-000000000001',true);
+ l := public.customer_receivables(); old := pg_temp.old_receivables();
+ assert l = old, format('the list differs from the former definition: %s vs %s', l, old);
+ assert jsonb_array_length(l) >= 3, 'the comparison covers several customers: '||l::text;
+ assert (select x->'aging' from jsonb_array_elements(l) x where x->>'customer_id'='ef100000-0000-4000-8000-000000000009')='[]'::jsonb,
+   'a customer with only a future entry is listed with an empty aging, as before';
+ assert private.aging_json('ef100000-0000-4000-8000-000000000002', private.receivables_today())
+        = pg_temp.old_aging_json('ef100000-0000-4000-8000-000000000002', private.receivables_today()), 'aging_json by customer is unchanged';
+end $$;
 rollback;
