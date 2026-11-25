@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { selectAll } from "@/lib/supabase/select-all";
 import type { DriveFile } from "@/lib/google/drive-readonly";
@@ -30,7 +30,7 @@ async function childFolders(id: string): Promise<{ folder: DriveFile; children: 
 }
 
 export default async function ShipmentFromDrivePage({ searchParams }: { searchParams: Promise<Params> }) {
-  const { profile, roles, supabase } = await requireUser(); const params = await searchParams;
+  const { profile, roles, supabase } = await requirePageUser(); const params = await searchParams;
   const permissions = await loadPermissions(supabase, FROM_DRIVE_PERMISSIONS);
   const shell = (body: React.ReactNode) => <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поступления и поставки</p><h1>Создать поставку из папки Drive</h1></div><div className="topbar-actions"><Link className="ghost button-link" href="/shipments">К поставкам</Link></div></header>

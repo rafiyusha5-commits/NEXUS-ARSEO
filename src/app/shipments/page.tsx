@@ -3,7 +3,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { folderHint } from "@/lib/agent/shipment-workflow";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { createShipment } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 import { loadPermissions } from "@/lib/permissions";
@@ -13,7 +13,7 @@ function localizedName(value:unknown){if(!value||typeof value!=="object")return 
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 
 export default async function ShipmentsPage({searchParams}:{searchParams:Promise<{error?:string;success?:string;status?:string;assistant?:string;folder?:string}>}){
-  const {profile,roles,supabase}=await requireUser(); const params=await searchParams;
+  const {profile,roles,supabase}=await requirePageUser(); const params=await searchParams;
   const preparationAccess = process.env.AGENT_OPERATIONS_ENABLED === "true"
     ? await loadPermissions(supabase, ["agent.use", "shipments.view"] as const) : null;
   let query=supabase.from("shipments").select("id,shipment_number,project_code,type,status,planned_arrival_date,created_at,supplier:counterparties!shipments_supplier_id_fkey(short_name,legal_name),route:routes(name),warehouse:warehouses(name),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").order("created_at",{ascending:false});

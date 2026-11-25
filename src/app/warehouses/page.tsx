@@ -2,11 +2,11 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { createLocation, createWarehouse } from "./actions";
 const zoneNames:Record<string,string>={receiving:"Приёмка",storage:"Хранение",picking:"Комплектация",quarantine:"Карантин",stickering:"Стикеровка",shipping:"Отгрузка"};
 export default async function WarehousesPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
- const {profile,roles,supabase}=await requireUser(); const params=await searchParams;
+ const {profile,roles,supabase}=await requirePageUser(); const params=await searchParams;
  const {data:warehouses,error}=await supabase.from("warehouses").select("id, code, name, city, country, address, is_main_hub, is_virtual, status, warehouse_locations(id, code, zone, status)").order("code");
  return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="warehouses"/><section className="workspace admin-workspace">
   <header className="topbar"><div><p className="eyebrow">Логистика</p><h1>Склады</h1></div><div className="topbar-actions"><Link className="ghost button-link" href="/inventory">Партии и FIFO</Link><span className="page-count">{warehouses?.length??0} складов</span></div></header>

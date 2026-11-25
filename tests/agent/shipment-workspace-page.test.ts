@@ -24,7 +24,8 @@ test("workspace uses session permissions, rejects hidden records and never mutat
       "@/components/documents/shipment-drive-folder-panel": { ShipmentDriveFolderPanel: () => jsx.jsx("p", { children: "EXISTING DRIVE PANEL" }) },
       "@/components/documents/shipment-source-documents-panel": { ShipmentSourceDocumentsPanel: () => jsx.jsx("p", { children: "EXISTING SOURCE PANEL" }) },
       "@/components/documents/shipment-document-check-panel": { ShipmentDocumentCheckPanel: () => jsx.jsx("p", { children: "EXISTING CHECK PANEL" }) },
-      "@/lib/auth/access": { requireUser: async () => ({ profile: {}, roles: [], supabase: { from(name: string) { assert.equal(name, "shipments"); return query; }, rpc() { throw Error("GET_MUST_NOT_WRITE"); } } }) },
+      "@/lib/auth/access": (() => { const context = { profile: {}, roles: [], supabase: { from(name: string) { assert.equal(name, "shipments"); return query; }, rpc() { throw Error("GET_MUST_NOT_WRITE"); } } }; const loadPermissions = async (_: unknown, keys: string[]) => Object.fromEntries(keys.map(key => [key, mode !== "denied" && !(mode === "no-documents" && key === "documents.view")]));
+        return { requireUser: async () => context, requirePageUser: async (keys: string[] = []) => ({ ...context, ...(keys.length ? { permissions: await loadPermissions(null, keys) } : {}) }) }; })(),
       "@/lib/permissions": { loadPermissions: async (_: unknown, keys: string[]) => Object.fromEntries(keys.map(key => [key, mode !== "denied" && !(mode === "no-documents" && key === "documents.view")])) },
       "@/lib/documents/rules": { isUuid }, "@/lib/agent/shipment-workflow": workflow,
     };

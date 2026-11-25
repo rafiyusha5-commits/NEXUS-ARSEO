@@ -27,7 +27,7 @@ async function documentBadge(tab: string, documents: number, letters: number) {
   const mod = { exports: {} as { default: (props: object) => Promise<Element> } };
   new Function("require", "module", "exports", code)((id: string) => {
     if (id === "react/jsx-runtime") return require(id);
-    if (id === "@/lib/auth/access") return { requireUser: async () => ({ profile: {}, roles: [], supabase: session }) };
+    if (id === "@/lib/auth/access") return { requireUser: async () => ({ profile: {}, roles: [], supabase: session }), requirePageUser: async () => ({ profile: {}, roles: [], supabase: session }) };
     if (id === "@/lib/supabase/select-all") return { selectAll: async () => ({ data: [] }) };
     if (id === "@/lib/sales/reservation-replacement") return { replacementPermissions: [], replacementUnits: {} };
     if (id === "@/components/operation-tabs") return { OperationTabs: tabsComponent };

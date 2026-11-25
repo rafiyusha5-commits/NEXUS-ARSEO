@@ -6,8 +6,7 @@ import { ShipmentWorkflowScope } from "@/components/assistant/shipment-workflow-
 import { ShipmentDriveFolderPanel } from "@/components/documents/shipment-drive-folder-panel";
 import { ShipmentSourceDocumentsPanel } from "@/components/documents/shipment-source-documents-panel";
 import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-document-check-panel";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { isUuid } from "@/lib/documents/rules";
 import { folderHint, workspacePath } from "@/lib/agent/shipment-workflow";
 
@@ -17,8 +16,7 @@ type Query = { step?: string; folder?: string; success?: string; error?: string;
 export default async function ShipmentWorkspace({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Query> }) {
   const { id } = await params;
   if (!isUuid(id)) notFound();
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.use", "shipments.view", "documents.view", "shipments.update", "documents.drive.view", "prices.purchase.view"] as const);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["agent.use", "shipments.view", "documents.view", "shipments.update", "documents.drive.view", "prices.purchase.view"] as const);
   if (!can["agent.use"] || !can["shipments.view"] || process.env.AGENT_OPERATIONS_ENABLED !== "true") redirect("/assistant");
   const { data: shipment, error } = await supabase.from("shipments").select("id,shipment_number,project_code,status,is_locked").eq("id", id).maybeSingle();
   if (error || !shipment) notFound();

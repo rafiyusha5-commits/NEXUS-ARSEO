@@ -4,7 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { BankStatementImport } from "@/components/finance/bank-statement-import";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { resolveBankLineAction } from "@/app/finance/receivables/actions";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { LINE_STATUS, MATCHED_HOW, money } from "@/lib/finance/receivables";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -20,7 +20,7 @@ const SELECT = "id,doc_number,doc_date,amount,payer_name,payer_bin,purpose,statu
 
 // Incoming payments from the bank statements: loading a statement, and matching what was not matched by BIN or order number.
 export default async function BankPaymentsPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const notice = await searchParams;
   const [permissions, { data: open, error }, { data: recent }, { data: imports }, { data: customers }, { data: currencies }] = await Promise.all([
     loadPermissions(supabase, ["receivables.manage"] as const),

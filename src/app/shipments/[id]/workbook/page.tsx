@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { isUuid } from "@/lib/documents/rules";
 import { loadPermissions } from "@/lib/permissions";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -27,7 +27,7 @@ const kindLabel: Record<LinePlan["kind"], string> = { add: "Новая пози�
 export default async function OrderWorkbookPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Params> }) {
   const { id } = await params; const query = await searchParams;
   if (!isUuid(id)) redirect("/shipments");
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const shell = (body: React.ReactNode, title = "Данные из «Вн расчетов»") => <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="shipments"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Поставка · Google Таблицы только чтение</p><h1>{title}</h1></div><div className="topbar-actions"><Link className="ghost button-link" href={`/shipments/${id}?tab=documents#drive-folder`}>К поставке</Link></div></header>
     {query.error && <div className="login-error admin-message">{query.error}</div>}{query.success && <div className="login-success admin-message">{query.success}</div>}

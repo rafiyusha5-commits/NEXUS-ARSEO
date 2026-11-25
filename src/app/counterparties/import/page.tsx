@@ -1,11 +1,11 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { CounterpartyImportForm } from "./counterparty-import-form";
 
 export default async function CounterpartyImportPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { profile, roles } = await requireUser();
+  const { profile, roles } = await requirePageUser();
   const params = await searchParams;
   return <main className="app-shell">
     <AppSidebar profile={profile} roles={roles} active="counterparties" />

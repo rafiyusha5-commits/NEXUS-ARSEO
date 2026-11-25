@@ -4,7 +4,7 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { selectAll } from "@/lib/supabase/select-all";
 import {AppSidebar} from "@/components/app-sidebar";
-import {requireUser} from "@/lib/auth/access";
+import {requirePageUser} from "@/lib/auth/access";
 import {businessToday} from "@/lib/dates/business-day";
 import {EXPENSE_STATUS_LABELS,describePlanComparison,expenseActions,expensesWithdrawnAfter,planComparison} from "@/lib/finance/expenses";
 import {addRate,allocateExpense,approveCost,calculateCost,cancelExpense,confirmExpense,createExpense,payExpense,reverseExpense} from "./actions";
@@ -18,7 +18,7 @@ type CostItem={cost_quantity?:number|string|null;cost_quantity_basis?:string|nul
 function productName(v:unknown){if(!v||typeof v!=="object")return "—";const r=v as Record<string,unknown>;return String((r.name as Record<string,unknown>|undefined)?.ru??r.internal_sku??"—");}
 
 export default async function FinancePage({searchParams}:{searchParams:Promise<{error?:string;success?:string;shipment?:string}>}){
- const {profile,roles,supabase}=await requireUser();const notice=await searchParams;
+ const {profile,roles,supabase}=await requirePageUser();const notice=await searchParams;
  const expensesQuery=supabase.from("expenses").select("*,shipment:shipments(shipment_number),currency:currencies!expenses_currency_id_fkey(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name),allocations:expense_allocations(allocated_amount)").order("incurred_at",{ascending:false});
  const calculationsQuery=supabase.from("cost_calculations").select("*,shipment:shipments(shipment_number),currency:currencies(code),items:cost_calculation_items(*,product:products(internal_sku,name))").order("calculated_at",{ascending:false});
  if(notice.shipment){expensesQuery.eq("shipment_id",notice.shipment);calculationsQuery.eq("shipment_id",notice.shipment);}

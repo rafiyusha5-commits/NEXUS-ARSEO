@@ -6,8 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { createLocation } from "../actions";
 
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
@@ -24,8 +23,7 @@ const shipmentStatuses:Record<string,string>={planning:"Планирование
 const saleStatuses:Record<string,string>={draft:"Черновик",reserved:"Зарезервирован",confirmed:"Подтверждён",shipped:"Отгружен",cancelled:"Отменён"};
 
 export default async function WarehousePage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{tab?:string;error?:string;success?:string}>}){
- const{id}=await params;const notices=await searchParams;const{profile,roles,supabase}=await requireUser();
- const permissions=await loadPermissions(supabase,["warehouses.create"] as const);
+ const{id}=await params;const notices=await searchParams;const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["warehouses.create"] as const);
  const{data:warehouse}=await supabase.from("warehouses").select("*,head:profiles!warehouses_head_user_id_fkey(full_name,job_title)").eq("id",id).maybeSingle();if(!warehouse)notFound();
  const[{data:locations},{data:stock},{data:movements},{data:shipments},{data:sales},{data:links}]=await Promise.all([
   supabase.from("warehouse_locations").select("*").eq("warehouse_id",id).order("zone").order("code"),

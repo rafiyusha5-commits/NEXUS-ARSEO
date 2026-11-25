@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { approvePurchasePlan,archivePurchasePlan,createPurchasePlan,createPurchasePlanVersion,createShipmentFromPlan,removePurchasePlanLine,reviewPurchasePlan,savePurchasePlanLine,submitPurchasePlan } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
@@ -16,7 +16,7 @@ type Plan={id:string;name:string;version:number;status:string;horizon_start:stri
 type Line={id:string;forecast_demand:number|string;stock_on_hand:number|string;stock_in_transit:number|string;stock_reserved:number|string;safety_stock:number|string;expiring_before_sale:number|string;suggested_quantity:number|string;rounding_uom:string;pack_multiple:number|string;rounded_quantity:number|string;approved_quantity:number|string;planned_order_date:string|null;shipment_id:string|null;comment:string|null;product:{internal_sku:string;name:unknown}|{internal_sku:string;name:unknown}[]|null};
 
 export default async function PurchasePlansPage({searchParams}:{searchParams:Promise<{plan?:string;success?:string;error?:string}>}){
- const{profile,roles,supabase}=await requireUser();const query=await searchParams;const codes=["purchase_plans.view","purchase_plans.detail","purchase_plans.create","purchase_plans.update","purchase_plans.review","purchase_plans.approve","purchase_plans.order","purchase_plans.archive"];const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
+ const{profile,roles,supabase}=await requirePageUser();const query=await searchParams;const codes=["purchase_plans.view","purchase_plans.detail","purchase_plans.create","purchase_plans.update","purchase_plans.review","purchase_plans.approve","purchase_plans.order","purchase_plans.archive"];const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
  if(!access.has("purchase_plans.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="purchase-plans"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Планирование</p><h1>План закупок</h1></div></header><div className="login-error admin-message">Нет доступа к планам закупок.</div></section></main>;
  const [{data:rawPlans,error},{data:forecasts},{data:suppliers}]=await Promise.all([
   supabase.from("purchase_plans").select("*,forecast:forecasts(name,version),supplier:counterparties(legal_name,short_name)").order("created_at",{ascending:false}),

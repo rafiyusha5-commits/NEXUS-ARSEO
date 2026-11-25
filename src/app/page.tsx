@@ -1,8 +1,7 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { calendarStatusLabel,type CalendarEvent } from "@/lib/calendar/rules";
 
 const shipmentLabels:Record<string,string>={planning:"Планирование",in_production:"У производителя",preparing_transport:"Подготовка перевозки",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Реализация",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
@@ -12,8 +11,7 @@ const plural=(n:number,[one,few,many]:[string,string,string])=>{const r10=n%10,r
 const date=(value:string)=>new Intl.DateTimeFormat("ru-RU",{day:"numeric",month:"short",timeZone:"Asia/Qyzylorda"}).format(new Date(value));
 
 export default async function Home() {
-  const { profile, roles, supabase } = await requireUser();
-  const can=await loadPermissions(supabase,["shipments.view","tasks.view","calendar.view"] as const);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["shipments.view","tasks.view","calendar.view"] as const);
   const now=new Date();const from=new Date(now);from.setDate(from.getDate()-7);const to=new Date(now);to.setDate(to.getDate()+31);
   const empty=Promise.resolve({data:[],error:null,count:0});
   const [shipmentResult,taskResult,overdueTaskResult,eventResult]=await Promise.all([

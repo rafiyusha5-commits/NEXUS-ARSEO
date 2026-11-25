@@ -4,7 +4,7 @@ import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL } from "@/lib/documents/files.ts";
 import { documentCategoryLabel, documentStatusLabel, formatDate, formatDateTime, languageLabel, linkEntityLabel } from "@/lib/documents/labels.ts";
 import { loadLinkOptions, type LinkOptionGroup } from "@/lib/documents/link-objects.ts";
@@ -88,7 +88,7 @@ function LinkSelect({ name, groups, defaultValue, placeholder }: { name: string;
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const permissions = await loadDocumentPermissions(supabase);
   const today = todayIso();
 

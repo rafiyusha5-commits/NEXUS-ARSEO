@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ListingCardEditForm } from "@/components/listing-card-edit-form";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { formatDate, formatDateTime, localizedName } from "@/lib/documents/labels.ts";
 import {
   CARD_UOMS,
@@ -14,7 +14,6 @@ import {
   cardTypeLabel,
   cardUomLabel,
 } from "@/lib/listing-cards/rules.ts";
-import { loadPermissions } from "@/lib/permissions.ts";
 import {
   addCardItemAction,
   cancelCardAction,
@@ -55,8 +54,7 @@ export default async function ListingCardPage({
   const { id } = await params;
   const notices = await searchParams;
   if (!UUID.test(id)) notFound();
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, PERMISSIONS);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(PERMISSIONS);
   if (!can["listing_cards.view"]) notFound();
 
   const { data } = await supabase

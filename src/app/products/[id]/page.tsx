@@ -6,8 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { packagingContentsLabel, sortPackagingLevels } from "@/lib/products/packaging";
 import { addProductIdentifier, addProductPackaging } from "../actions";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -33,8 +32,7 @@ const cardStatuses: Record<string, string> = { draft: "Черновик", submit
 export default async function ProductPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; error?: string; success?: string }> }) {
   const { id } = await params;
   const notices = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["products.update", "prices.purchase.view", "pricing.calculated.view"] as const);
+  const { profile, roles, supabase, permissions: permissions } = await requirePageUser(["products.update", "prices.purchase.view", "pricing.calculated.view"] as const);
   const { data: product } = await supabase.from("products").select("id,internal_sku,name,manufacturer_id,brand,category,country_of_origin,composition,nutrition_facts,hs_code,temperature_regime,temperature_range,shelf_life_days,base_uom,default_currency_id,requires_marking,requires_sticker,status,archived_at,created_at,updated_at,manufacturer:counterparties!products_manufacturer_id_fkey(id,legal_name,short_name,country),default_currency:currencies!products_default_currency_id_fkey(code)").eq("id", id).maybeSingle();
   if (!product) notFound();
   const { data: purchasePrices } = permissions["prices.purchase.view"]

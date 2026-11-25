@@ -17,8 +17,7 @@ import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-docu
 import { ShipmentDocumentsOverview } from "@/components/documents/shipment-documents-overview";
 import { LogistShipmentPanel } from "@/components/logist/logist-shipment-panel";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/load-summary";
 import { loadGenerationPreview } from "@/lib/templates/generation-service";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -41,8 +40,7 @@ const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—"
 const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"маш."};
 
 export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;check_error?:string;check_success?:string;tab?:string}>}){
-  const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
-  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen"] as const);
+  const {id}=await params; const notices=await searchParams; const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen"] as const);
   const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
     supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,closed_at,closer:profiles!shipments_closed_by_fkey(full_name),planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),

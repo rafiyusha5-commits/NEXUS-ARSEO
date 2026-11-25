@@ -3,7 +3,7 @@ import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 
 type Row = Record<string, unknown>;
 type Archive = { id: string; title: string; reason: string; created_at: string; records: Record<string, Row[]> };
@@ -18,7 +18,7 @@ const labels: Record<string,string> = {
   shipment_document_checks:"Результаты сверки", approvals:"Согласования", notifications:"Уведомления", audit_log:"Журнал действий",
 };
 export default async function ArchivePage({searchParams}:{searchParams:Promise<{id?:string}>}) {
-  const {profile,roles,supabase}=await requireUser();
+  const {profile,roles,supabase}=await requirePageUser();
   const params=await searchParams;
   const list=await supabase.rpc("list_operational_archives");
   const id=params.id && /^[0-9a-f-]{36}$/i.test(params.id)?params.id:undefined;

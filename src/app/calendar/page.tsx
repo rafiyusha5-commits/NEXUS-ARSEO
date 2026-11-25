@@ -2,8 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { calendarStatusLabel,eventDay,eventKindLabel,filterCalendarEvents,monthWindow,shiftMonth,validMonth,type CalendarEvent } from "@/lib/calendar/rules";
 import { cancelMilestone,completeMilestone,createMilestone } from "./actions";
 
@@ -15,7 +14,7 @@ const monthTitle=(month:string)=>new Intl.DateTimeFormat("ru-RU",{month:"long",y
 const localInput=(value:string)=>new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Qyzylorda",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}).format(new Date(value)).replace(" ","T");
 
 export default async function CalendarPage({searchParams}:{searchParams:Promise<Params>}){
- const params=await searchParams;const{profile,roles,supabase}=await requireUser();const can=await loadPermissions(supabase,["calendar.view","calendar.manage","shipments.view","shipments.update"] as const);
+ const params=await searchParams;const {profile,roles,supabase,permissions:can}=await requirePageUser(["calendar.view","calendar.manage","shipments.view","shipments.update"] as const);
  const month=validMonth(params.month);const window=monthWindow(month);
  if(!can["calendar.view"]||!can["shipments.view"])return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="calendar"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Поставки</p><h1>Календарь</h1></div></header><div className="login-error admin-message">Нет доступа к календарю поставок.</div></section></main>;
  const [{data,error},{data:shipments},{data:employees}]=await Promise.all([

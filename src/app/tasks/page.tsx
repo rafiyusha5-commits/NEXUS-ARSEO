@@ -2,10 +2,9 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { formatDateTime } from "@/lib/documents/labels.ts";
 import { publicErrorMessage } from "@/lib/errors/public-message";
-import { loadPermissions } from "@/lib/permissions.ts";
 import {
   TASK_PRIORITIES,
   TASK_VIEWS,
@@ -57,8 +56,7 @@ function tasksHref(view: TaskView, shipment: string) {
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, PERMISSIONS);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(PERMISSIONS);
   const view = parseTaskView(params.view);
   const shipmentFilter = UUID.test(params.shipment ?? "") ? params.shipment! : "";
   const taskFilter = UUID.test(params.task ?? "") ? params.task! : "";

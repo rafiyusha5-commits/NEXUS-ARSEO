@@ -4,14 +4,12 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { TelegramUpdatesTable } from "@/components/assistant/telegram-updates";
 import { TraceTable, type TraceRun } from "@/components/assistant/trace-table";
 import { loadedAt, type TelegramRunRow, type TelegramUpdateRow } from "@/lib/telegram/update-state.ts";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions.ts";
+import { requirePageUser } from "@/lib/auth/access";
 
 export const dynamic = "force-dynamic";
 
 export default async function AssistantTracesPage() {
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.view_traces"] as const);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["agent.view_traces"] as const);
   // RLS returns other employees' runs only to agent.view_traces holders; this check only hides the page.
   const [runsResult, budgetResult] = can["agent.view_traces"]
     ? await Promise.all([
