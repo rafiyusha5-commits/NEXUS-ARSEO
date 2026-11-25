@@ -50,7 +50,8 @@ do $$begin
  assert (select planned_ready_date from public.shipments where id='eb300000-0000-4000-8000-000000000001')='2026-12-07';
  assert (select ordered_quantity=10 and unit_price=1.5 and currency_id=(select id from public.currencies where code='EUR')
    from public.shipment_items where product_id='eb200000-0000-4000-8000-000000000003');
- assert (select ordered_quantity=900 and unit_price=2.25 from public.shipment_items where id='eb400000-0000-4000-8000-000000000001');
+ assert (select ordered_quantity=900 and unit_price=2.25 and currency_id=(select id from public.currencies where code='EUR')
+   from public.shipment_items where id='eb400000-0000-4000-8000-000000000001'),'the workbook price is in euro (202611250400)';
 end $$;
 set role authenticated;
 -- 4. Without shipments.update nothing is applied.
