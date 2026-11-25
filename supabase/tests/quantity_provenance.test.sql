@@ -73,6 +73,10 @@ select pg_temp.check_true(not has_function_privilege('service_role','public.ship
 select pg_temp.check_true(not (select prosecdef from pg_proc where oid='public.shipment_quantity_provenance(uuid)'::regprocedure),'RLS bypass function');
 -- Existing audit insert/update is used as evidence, with no purchase price projection.
 select set_config('request.jwt.claim.sub','eb000000-0000-4000-8000-000000000001',true);
+-- The projection carries audit record numbers. Audit 24.11.2026, Б5: the price check below matched «12345» anywhere in
+-- the text, so it failed whenever such a number happened to contain those digits. Make one do so on every run: the
+-- sequence only moves forward (setval is not rolled back, and lower values are never reused).
+select setval(pg_get_serial_sequence('public.audit_log','id'),912344) where (select last_value from public.audit_log_id_seq)<912344;
 insert into public.shipment_items(id,shipment_id,product_id,uom,ordered_quantity,unit_price)
 values('eb400000-0000-4000-8000-000000000010','eb300000-0000-4000-8000-000000000002','eb200000-0000-4000-8000-000000000002','piece',1000,12345.6789);
 update public.shipment_items set ordered_quantity=965 where id='eb400000-0000-4000-8000-000000000010';
@@ -80,7 +84,9 @@ set role authenticated;
 select pg_temp.check_true((select x#>>'{demandHistory,0,quantity}'='1000.000' or (x#>>'{demandHistory,0,quantity}')::numeric=1000
  from jsonb_array_elements(public.shipment_quantity_provenance('eb300000-0000-4000-8000-000000000002')->'items') x
  where x->>'id'='eb400000-0000-4000-8000-000000000010'),'original demand not taken from real audit');
-select pg_temp.check_true(public.shipment_quantity_provenance('eb300000-0000-4000-8000-000000000002')::text !~ '12345|unit_price','price in audit projection');
+select pg_temp.check_true(public.shipment_quantity_provenance('eb300000-0000-4000-8000-000000000002')::text !~ '12345\.[0-9]|unit_?price','price in audit projection');
+select pg_temp.check_true(public.shipment_quantity_provenance('eb300000-0000-4000-8000-000000000002')::text ~ '9123[0-9]{2}',
+ 'the audit record numbers above contain 12345, so the price check is not fooled by them');
 reset role;
 -- A scalar aggregate is not subject to PostgREST's 1000-row cap. No silent partial list.
 set session_replication_role=replica;
