@@ -7,8 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { addCounterpartyContact, addCounterpartyContract } from "../actions";
 import { CustomerPriceConditions, type CustomerPriceConditionsData } from "@/components/sales/customer-price-conditions";
 import { CustomerMargins, type CustomerMarginsData } from "@/components/sales/batch-margins";
@@ -31,8 +30,7 @@ const cardStatuses: Record<string, string> = { draft: "Черновик", submit
 export default async function CounterpartyPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; error?: string; success?: string }> }) {
   const { id } = await params;
   const notices = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["customers.create", "suppliers.create", "prices.purchase.view", "inventory.view"] as const);
+  const { profile, roles, supabase, permissions: permissions } = await requirePageUser(["customers.create", "suppliers.create", "prices.purchase.view", "inventory.view"] as const);
   const { data: party } = await supabase.from("counterparties").select("*,default_currency:currencies!counterparties_default_currency_id_fkey(code)").eq("id", id).maybeSingle();
   if (!party) notFound();
 

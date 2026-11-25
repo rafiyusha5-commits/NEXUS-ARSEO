@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { money, payableTotals, payeeHref, type PayableRow } from "@/lib/finance/payables";
 
 const day = (value: string | null) => value ? new Intl.DateTimeFormat("ru-RU").format(new Date(value)) : "—";
@@ -11,7 +11,7 @@ export default async function PayablesPage({ searchParams }: { searchParams: Pro
   const notice = await searchParams;
   // "Open a payee" (for an advance before any expense): only an id goes into the path.
   if (notice.open && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(notice.open)) redirect(`/finance/payables/${notice.open}`);
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const [{ data, error }, { data: payees }] = await Promise.all([
     supabase.rpc("payables_summary"),
     supabase.from("counterparties").select("id,short_name,legal_name").eq("status", "active").overlaps("roles", ["supplier", "manufacturer", "carrier", "broker", "printing_house", "other"]).order("legal_name").limit(1000),

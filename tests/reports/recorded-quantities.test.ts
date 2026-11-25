@@ -14,7 +14,7 @@ function load(relative: string) {
   const compiled = ts.transpileModule(readFileSync(new URL(relative, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const mod = { exports: {} as Record<string, (props: unknown, context?: unknown) => Promise<unknown>> };
   new Function("require", "module", "exports", compiled)((id: string) => {
-    if (id === "@/lib/auth/access") return { requireUser: async () => ({ profile: {}, roles: [], supabase: {} }) };
+    if (id === "@/lib/auth/access") return { requireUser: async () => ({ profile: {}, roles: [], supabase: {} }), requirePageUser: async () => ({ profile: {}, roles: [], supabase: {}, permissions: {} }) };
     if (id === "@/lib/permissions") return { loadPermissions: async () => ({}) };
     if (id === "@/lib/documents/load-actions") return { loadDocumentActions: async () => ({}) };
     if (id === "@/components/documents/document-actions") return { DocumentActions: () => null };

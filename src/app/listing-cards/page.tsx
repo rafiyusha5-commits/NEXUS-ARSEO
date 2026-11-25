@@ -2,10 +2,9 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ListingCardCreateForm } from "@/components/listing-card-create-form";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { formatDate, formatDateTime } from "@/lib/documents/labels.ts";
 import { CARD_STATUSES, cardStatusLabel } from "@/lib/listing-cards/rules.ts";
-import { loadPermissions } from "@/lib/permissions.ts";
 import { createCardAction } from "./actions";
 
 type SearchParams = { status?: string; counterparty?: string; all?: string; error?: string; success?: string };
@@ -22,8 +21,7 @@ const PERMISSIONS = ["listing_cards.view", "listing_cards.create"] as const;
 
 export default async function ListingCardsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, PERMISSIONS);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(PERMISSIONS);
 
   const statusFilter = (CARD_STATUSES as readonly string[]).includes(params.status ?? "") ? params.status! : "";
   const counterpartyFilter = UUID.test(params.counterparty ?? "") ? params.counterparty! : "";

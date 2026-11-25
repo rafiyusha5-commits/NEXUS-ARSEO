@@ -2,7 +2,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OpeningBalanceImport } from "@/components/finance/opening-balance-import";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { money, sortByRisk, totalsByCurrency, type ReceivableCustomer } from "@/lib/finance/receivables";
 
@@ -10,7 +10,7 @@ const almatyToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Alm
 
 // Who owes what: the debt of every customer by currency, split into not yet due and overdue by age.
 export default async function ReceivablesPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const notice = await searchParams;
   const [permissions, { data, error }, { count: unmatched }] = await Promise.all([
     loadPermissions(supabase, ["receivables.manage"] as const),

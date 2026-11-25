@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { expenseStatusLabel, expenseTypeLabel, money } from "@/lib/finance/payables";
 import { applyAdvance, recordAdvancePayment, recordExpensePayment, recordPaymentRefund, setExpenseDueDate } from "../actions";
 
@@ -25,7 +25,7 @@ export default async function PayeePage({ params, searchParams }: { params: Prom
   const { payee } = await params;
   const notice = await searchParams;
   if (payee !== "none" && !uuid.test(payee)) notFound();
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const [{ data, error }, { data: currencyRows }] = await Promise.all([
     supabase.rpc("payables_payee", { p_payee_id: payee === "none" ? null : payee }),
     supabase.from("currencies").select("id,code").eq("is_active", true).order("code"),

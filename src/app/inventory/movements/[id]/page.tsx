@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { addInventoryOperationLine,cancelInventoryOperation,postInventoryOperation,removeInventoryOperationLine } from "../actions";
 
 const operationLabels:Record<string,string>={transfer:"Перемещение",write_off:"Списание",adjustment:"Корректировка"};
@@ -20,7 +20,7 @@ function date(value:string|null|undefined){return value?new Intl.DateTimeFormat(
 function dateTime(value:string|null|undefined){return value?new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value)):"—";}
 
 export default async function InventoryOperationPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{tab?:string;error?:string;success?:string}>}){
- const{id}=await params;const notices=await searchParams;const{profile,roles,supabase}=await requireUser();
+ const{id}=await params;const notices=await searchParams;const{profile,roles,supabase}=await requirePageUser();
  const{data:document}=await supabase.from("inventory_operation_documents").select("*,from:warehouses!inventory_operation_documents_from_warehouse_id_fkey(id,code,name),to:warehouses!inventory_operation_documents_to_warehouse_id_fkey(id,code,name),creator:profiles!inventory_operation_documents_created_by_fkey(full_name),poster:profiles!inventory_operation_documents_posted_by_fkey(full_name),canceller:profiles!inventory_operation_documents_cancelled_by_fkey(full_name)").eq("id",id).maybeSingle();if(!document)notFound();
  const[{data:lines},{data:balances},{data:locations},{data:movements}]=await Promise.all([
   supabase.from("inventory_operation_lines").select("*,batch:inventory_batches(batch_number,expiry_date,status,product:products(id,internal_sku,name)),from_location:warehouse_locations!inventory_operation_lines_from_location_id_fkey(code),to_location:warehouse_locations!inventory_operation_lines_to_location_id_fkey(code)").eq("document_id",id).order("created_at"),

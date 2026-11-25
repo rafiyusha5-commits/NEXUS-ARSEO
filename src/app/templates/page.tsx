@@ -2,7 +2,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TemplateCreateForm } from "@/components/template-create-form";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL } from "@/lib/documents/files.ts";
 import { formatDateTime } from "@/lib/documents/labels.ts";
 import { sanitizeSearchTerm } from "@/lib/documents/rules.ts";
@@ -24,7 +24,7 @@ const one = <T,>(value: T | T[] | null | undefined) => (Array.isArray(value) ? v
 
 export default async function TemplatesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const can = await loadTemplatePermissions(supabase);
 
   const { data: types, error: typesError } = await supabase.from("document_types").select("id, name_ru, is_active").order("sort_order");

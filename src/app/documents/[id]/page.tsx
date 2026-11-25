@@ -5,7 +5,7 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL, formatFileSize } from "@/lib/documents/files.ts";
 import { documentStatusLabel, formatDate, formatDateTime, languageLabel, linkEntityLabel, linkRoleLabel } from "@/lib/documents/labels.ts";
 import { loadLinkOptions, resolveLinkTargets } from "@/lib/documents/link-objects.ts";
@@ -38,7 +38,7 @@ export default async function DocumentPage({
   const notices = await searchParams;
   if (!isUuid(id)) notFound();
 
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const permissions = await loadDocumentPermissions(supabase);
   if (!permissions.view) notFound();
 

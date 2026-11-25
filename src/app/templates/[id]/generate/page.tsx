@@ -3,7 +3,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { loadTemplatePermissions } from "@/lib/templates/supabase-gateway";
 import { loadGenerationPreview } from "@/lib/templates/generation-service";
@@ -19,7 +19,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const shown=(value:unknown)=>Array.isArray(value)?`${value.length} строк`:value===null||value===undefined||value===""?"—":String(value);
 
 export default async function GeneratePage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{shipment?:string;transport?:string;prices?:string;error?:string}>}){
- const{id}=await params;const query=await searchParams;if(!UUID.test(id))notFound();const{profile,roles,supabase}=await requireUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);if(!can.generate||!access["documents.create"]||!access["shipments.view"])notFound();
+ const{id}=await params;const query=await searchParams;if(!UUID.test(id))notFound();const{profile,roles,supabase}=await requirePageUser();const[can,access]=await Promise.all([loadTemplatePermissions(supabase),loadPermissions(supabase,["documents.create","shipments.view"] as const)]);if(!can.generate||!access["documents.create"]||!access["shipments.view"])notFound();
  const{data:template}=await supabase.from("document_templates").select("id,name,status,is_active,counterparty_id,flow_direction").eq("id",id).maybeSingle();if(!template)notFound();
  let shipmentsQuery=supabase.from("shipments").select("id,shipment_number,project_code,supplier_id,customer_id,status").not("status","in",'(closed,cancelled)').order("updated_at",{ascending:false}).limit(300);
  if(template.counterparty_id)shipmentsQuery=shipmentsQuery.eq(template.flow_direction==="input"?"supplier_id":"customer_id",template.counterparty_id);

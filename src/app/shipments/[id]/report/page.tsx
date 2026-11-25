@@ -4,8 +4,7 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadShipmentReport, localizedName, one, type ReportReceiptItem } from "@/lib/shipment-report";
 import { loadShipmentOutcome } from "@/lib/shipment-outcome";
 import { ShipmentOutcomeSections } from "@/components/reports/shipment-outcome-sections";
@@ -24,8 +23,7 @@ const duration = (start: string | null | undefined, end: string | null | undefin
 
 export default async function ShipmentReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["prices.purchase.view", "inventory.view", "products.view", "sales.view", "costing.view", "documents.view"] as const);
+  const { profile, roles, supabase, permissions: permissions } = await requirePageUser(["prices.purchase.view", "inventory.view", "products.view", "sales.view", "costing.view", "documents.view"] as const);
   const granted = new Set(Object.keys(permissions).filter((key) => permissions[key as keyof typeof permissions]));
   const report = await loadShipmentReport(supabase, id, granted);
   if (!report) notFound();

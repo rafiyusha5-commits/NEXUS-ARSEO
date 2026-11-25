@@ -4,7 +4,7 @@ import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import {AppSidebar} from "@/components/app-sidebar";
-import {requireUser} from "@/lib/auth/access";
+import {requirePageUser} from "@/lib/auth/access";
 import {addStickerVersion,changeStickerOrderStatus,createMarkingOrder,createStickerOrder,createStickerTemplate,decideStickerVersion,recordStickerApplication,submitStickerVersion,updateMarkingOrder} from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
@@ -16,7 +16,7 @@ type VersionRow={id:string;sticker_template_id:string;version_number:number;stat
 type StickerOrderItemRow={id:string;actual_units_to_label:number|null;units_to_label:number;calculated_quantity:number;ordered_quantity:number;received_quantity:number;applied_quantity:number;spoiled_quantity:number;applied_by_name:string|null;product:{internal_sku:string;name:unknown}|{internal_sku:string;name:unknown}[]|null};
 
 export default async function StickersPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
- const {profile,roles,supabase}=await requireUser();const notice=await searchParams;
+ const {profile,roles,supabase}=await requirePageUser();const notice=await searchParams;
  const [{data:templates,error},{data:versions},{data:orders},{data:marking},{data:products},{data:customers},{data:shipments},{data:printers},{data:documents}]=await Promise.all([
   supabase.from("sticker_templates").select("*,product:products(id,internal_sku,name),customer:counterparties(id,short_name,legal_name)").order("created_at",{ascending:false}),
   supabase.from("sticker_template_versions").select("*,document:documents(id,title,document_number)").order("created_at",{ascending:false}),

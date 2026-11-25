@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { issueFifo, receiveBatch, setBatchStatus } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
@@ -13,7 +13,7 @@ function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]
 function formatDate(value:string|null){return value?new Intl.DateTimeFormat("ru-RU").format(new Date(value)):"—";}
 
 export default async function InventoryPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
-  const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
+  const {profile,roles,supabase}=await requirePageUser();const notices=await searchParams;
   const [{data:stock,error},{data:shipmentItems},{data:warehouses},{data:locations},{data:products}]=await Promise.all([
     supabase.from("inventory_fifo_status").select("*").order("warehouse_code").order("internal_sku").order("fifo_rank"),
     supabase.from("shipment_items").select("id,uom,ordered_quantity,product:products(internal_sku,name),shipment:shipments(shipment_number,destination_warehouse_id,status)").order("created_at",{ascending:false}),

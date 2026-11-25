@@ -2,16 +2,14 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { selectAll } from "@/lib/supabase/select-all";
 import { folderHint, workspacePath } from "@/lib/agent/shipment-workflow";
 
 export const dynamic = "force-dynamic";
 
 export default async function PreparationEntry({ searchParams }: { searchParams: Promise<{ folder?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.use", "shipments.view"] as const);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["agent.use", "shipments.view"] as const);
   if (!can["agent.use"] || !can["shipments.view"] || process.env.AGENT_OPERATIONS_ENABLED !== "true") redirect("/assistant");
   const query = await searchParams;
   const folder = folderHint(query.folder);

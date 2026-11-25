@@ -2,7 +2,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { AppSidebar } from "@/components/app-sidebar";
 import { HistoricalPreparation } from "@/components/documents/historical-preparation";
 import { loadPermissions } from "@/lib/permissions";
@@ -15,7 +15,7 @@ import { preparationSourceValues, type PreparationChoice, type PreparationInput,
 import { saveHistoricalPreparation } from "./actions";
 
 export default async function HistoricalPreparationPage({ searchParams }: { searchParams: Promise<{ shipment?: string; draft?: string; saved?: string; error?: string }> }) {
-  const { supabase, profile, roles } = await requireUser();
+  const { supabase, profile, roles } = await requirePageUser();
   const params = await searchParams;
   const required = ["shipments.view", "shipments.update", "documents.view", "documents.drive.view", "prices.purchase.view"] as const;
   const permissions = await loadPermissions(supabase, required);

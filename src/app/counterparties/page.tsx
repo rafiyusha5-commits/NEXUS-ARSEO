@@ -2,12 +2,12 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createCounterparty } from "./actions";
 
 export default async function CounterpartiesPage({ searchParams }: { searchParams: Promise<{error?: string; success?: string}> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const params = await searchParams;
   const { data: buyers, error } = await supabase.from("counterparties")
     .select("id,legal_name,short_name,country,tax_id,min_remaining_shelf_life_pct,status")

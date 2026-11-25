@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { groupLabels, incompleteText, money, parseProfitParams, percent, type ProfitGroup, type ProfitReport } from "@/lib/analytics/profitability";
 
 const day = (value: string) => new Intl.DateTimeFormat("ru-RU").format(new Date(`${value}T00:00:00`));
@@ -9,7 +9,7 @@ const day = (value: string) => new Intl.DateTimeFormat("ru-RU").format(new Date(
 // prices.purchase.view; the database refuses otherwise.
 export default async function ProfitabilityPage({ searchParams }: { searchParams: Promise<{ group?: string; from?: string; to?: string }> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty" }).format(new Date());
   const { group, from, to } = parseProfitParams(params, today);
   const { data, error } = await supabase.rpc("profitability_report", { p_group: group, p_from: from, p_to: to });

@@ -3,7 +3,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { loadPermissions } from "@/lib/permissions";
 import { createInventoryOperation } from "./actions";
@@ -18,7 +18,7 @@ function date(value:string){return new Intl.DateTimeFormat("ru-RU").format(new D
 function dateTime(value:string){return new Intl.DateTimeFormat("ru-RU",{dateStyle:"short",timeStyle:"short"}).format(new Date(value));}
 
 export default async function InventoryMovementsPage({searchParams}:{searchParams:Promise<{tab?:string;error?:string;success?:string}>}){
- const{profile,roles,supabase}=await requireUser();const notices=await searchParams;
+ const{profile,roles,supabase}=await requirePageUser();const notices=await searchParams;
  const permissions=await loadPermissions(supabase,["inventory.move","inventory.write_off","inventory.control"] as const);
  const[{data:documents,error:documentError},{data:warehouses},{data:movements,error:movementError}]=await Promise.all([
   supabase.from("inventory_operation_documents").select("id,document_number,operation_type,status,document_date,reference,reason,created_at,posted_at,cancelled_at,from:warehouses!inventory_operation_documents_from_warehouse_id_fkey(code,name),to:warehouses!inventory_operation_documents_to_warehouse_id_fkey(code,name),lines:inventory_operation_lines(id)").order("created_at",{ascending:false}).limit(150),

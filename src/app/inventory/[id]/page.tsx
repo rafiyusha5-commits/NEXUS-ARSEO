@@ -6,8 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { setBatchStatus } from "../actions";
 import { BatchCostRecalculation, type BatchCostPreview } from "@/components/inventory/batch-cost-recalculation";
 import { businessDaysRemaining, calendarDaysBetween } from "@/lib/dates/business-day";
@@ -24,7 +23,7 @@ const movementNames:Record<string,string>={receipt:"Приход",transfer:"Пе
 const reservationStatuses:Record<string,string>={active:"Активен",fulfilled:"Исполнен",cancelled:"Отменён"};
 
 export default async function BatchPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{tab?:string;error?:string;success?:string}>}){
- const{id}=await params;const notices=await searchParams;const{profile,roles,supabase}=await requireUser();const permissions=await loadPermissions(supabase,["inventory.control","prices.purchase.view","costing.batch_recalculate"] as const);
+ const{id}=await params;const notices=await searchParams;const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["inventory.control","prices.purchase.view","costing.batch_recalculate"] as const);
  const{data:batch}=await supabase.from("inventory_batches").select("id,product_id,source_shipment_item_id,batch_number,manufacture_date,expiry_date,received_at,status,status_reason,status_changed_by,status_changed_at,notes,created_by,created_at,updated_at,product:products(id,internal_sku,name,brand,category,shelf_life_days),source_item:shipment_items(id,shipment_id,uom,ordered_quantity,received_quantity,shipment:shipments(id,shipment_number,status,planned_arrival_date,supplier:counterparties!shipments_supplier_id_fkey(id,legal_name,short_name)))").eq("id",id).maybeSingle();if(!batch)notFound();
  const{data:batchCosts}=permissions["prices.purchase.view"]?await supabase.rpc("my_batch_landed_costs",{p_product_id:batch.product_id}):{data:[]};
  const costRow=(batchCosts as {batch_id:string;unit_landed_cost:number|string|null;cost_uom:string|null;cost_currency_code:string|null;cost_basis:string|null}[]|null)?.find(row=>row.batch_id===id);

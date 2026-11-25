@@ -5,16 +5,14 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AssistantChat } from "@/components/assistant/assistant-chat";
 import { TraceTable, type TraceRun } from "@/components/assistant/trace-table";
 import { DISABLED_REASON_TEXT, loadAgentConfig } from "@/lib/agent/config";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions.ts";
+import { requirePageUser } from "@/lib/auth/access";
 
 export const dynamic = "force-dynamic";
 
 const RUN_COLUMNS = "id,status,channel,question_excerpt,error_code,tools,steps,tool_calls,input_tokens,output_tokens,actual_usd_micros,request_refunded,cost_status,created_at,finished_at";
 
 export default async function AssistantPage({ searchParams }: { searchParams: Promise<{ shipment?: string }> }) {
-  const { profile, roles, supabase, user } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.use", "agent.view_traces", "documents.drive.view"] as const);
+  const { profile, roles, supabase, user, permissions: can } = await requirePageUser(["agent.use", "agent.view_traces", "documents.drive.view"] as const);
   const config = loadAgentConfig();
   const selected = (await searchParams).shipment;
   const selectedShipment = selected && isUuid(selected) && can["agent.use"]

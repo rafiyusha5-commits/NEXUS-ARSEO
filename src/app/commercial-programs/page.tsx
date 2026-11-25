@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { applyProgramToForecast,approveCommercialProgram,archiveCommercialProgram,createCommercialProgram,createCommercialProgramVersion,createSaleFromProgram,removeCommercialProgramLine,reviewCommercialProgram,saveCommercialProgramLine,submitCommercialProgram } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
@@ -17,7 +17,7 @@ type Program={id:string;name:string;kind:string;version:number;status:string;cus
 type Line={id:string;planned_quantity:number|string;promo_uplift_quantity:number|string;uom:string;discount_pct:number|string|null;target_unit_price:number|string|null;remaining_shelf_life_pct:number|string|null;required_shelf_life_pct:number|string|null;inventory_balance_id:string|null;forecast_line_id:string|null;comment:string|null;product:{internal_sku:string;name:unknown}|{internal_sku:string;name:unknown}[]|null;currency:{code:string}|{code:string}[]|null;balance:{batch:{batch_number:string;expiry_date:string}|{batch_number:string;expiry_date:string}[]|null;warehouse:{code:string}|{code:string}[]|null}|null};
 
 export default async function CommercialProgramsPage({searchParams}:{searchParams:Promise<{program?:string;success?:string;error?:string}>}){
- const{profile,roles,supabase}=await requireUser();const query=await searchParams;const codes=["commercial_programs.view","commercial_programs.detail","commercial_programs.create","commercial_programs.update","commercial_programs.review","commercial_programs.approve","commercial_programs.apply","commercial_programs.order","commercial_programs.archive"];const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
+ const{profile,roles,supabase}=await requirePageUser();const query=await searchParams;const codes=["commercial_programs.view","commercial_programs.detail","commercial_programs.create","commercial_programs.update","commercial_programs.review","commercial_programs.approve","commercial_programs.apply","commercial_programs.order","commercial_programs.archive"];const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
  if(!access.has("commercial_programs.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="commercial-programs"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Планирование</p><h1>Промо и спецзаказы</h1></div></header><div className="login-error admin-message">Нет доступа к коммерческим программам.</div></section></main>;
  const [{data:rawPrograms,error},{data:customers}]=await Promise.all([
   supabase.from("commercial_programs").select("*,customer:counterparties(short_name,legal_name)").order("created_at",{ascending:false}),
