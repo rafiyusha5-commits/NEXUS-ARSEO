@@ -2,7 +2,7 @@ import { WorkflowHelp } from "@/components/workflow-help";
 import { linkedDocuments, LinkedDocuments } from "@/components/documents/linked-documents";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { RETURN_STATUS } from "@/lib/sales/returns";
 
 const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -10,7 +10,7 @@ const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? va
 
 // Registry of customer returns; goods waiting in quarantine come first.
 export default async function CustomerReturnsPage() {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const { data, error } = await supabase.from("customer_returns")
     .select("id,return_number,status,received_at,sale_id,sale:sales(sale_number),customer:counterparties(short_name,legal_name),items:customer_return_items(id,decision)")
     .order("received_at", { ascending: false }).limit(200);

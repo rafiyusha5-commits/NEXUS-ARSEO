@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ProductSearchFieldSelect } from "@/components/product-search-field-select";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { PRODUCT_CATEGORIES } from "@/lib/products/categories";
 import { matchesProductSearch, PRODUCT_SEARCH_FIELDS, type ProductSearchField } from "@/lib/products/search";
 import Link from "next/link";
@@ -29,13 +29,14 @@ function unique(values: (string | null | undefined)[]) {
 }
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string;q?:string;search_by?:string;manufacturer?:string;supplier?:string;brand?:string;category?:string}> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const params = await searchParams;
-  const [{data,error},{data: manufacturers},{data: suppliers}] = await Promise.all([
+  // Factories and suppliers are the same list (counterparties with the manufacturer role): read once.
+  const [{data,error},{data: manufacturers}] = await Promise.all([
     selectAll((from,to)=>supabase.from("products").select("id, internal_sku, name, brand, category, hs_code, shelf_life_days, requires_marking, requires_sticker, counterparties!products_manufacturer_id_fkey(id, legal_name), product_identifiers(identifier_type, value), product_packaging(uom, units_per_parent, gross_weight_kg, net_weight_kg), product_suppliers(status,supplier:counterparties!product_suppliers_supplier_id_fkey(id,legal_name))").order("internal_sku").order("id").range(from,to)),
     selectAll((from,to)=>supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name").order("id").range(from,to)),
-    selectAll((from,to)=>supabase.from("counterparties").select("id, legal_name").contains("roles", ["manufacturer"]).eq("status","active").order("legal_name").order("id").range(from,to)),
   ]);
+  const suppliers = manufacturers;
   const products = ((data ?? []) as ProductRow[]).sort((a,b) => {
     const ma=manufacturerOf(a)?.legal_name ?? ""; const mb=manufacturerOf(b)?.legal_name ?? "";
     return ma.localeCompare(mb,"ru") || (a.brand??"").localeCompare(b.brand??"","ru") || a.category.localeCompare(b.category,"ru") || (a.name.ru??"").localeCompare(b.name.ru??"","ru");

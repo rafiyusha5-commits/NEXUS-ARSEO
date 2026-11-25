@@ -3,9 +3,8 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LogistProposalList } from "@/components/logist/logist-proposal-list";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { KIND_LABEL, STATUS_LABEL, groupByShipment, parseProposals } from "@/lib/logist/proposals";
-import { loadPermissions } from "@/lib/permissions";
 import { runLogistAction } from "./actions";
 
 const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -14,8 +13,7 @@ const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", { dateStyle
 // employee accepts a proposal; accepting runs the same function as the employee's own button, with their rights.
 export default async function LogistPage({ searchParams }: { searchParams: Promise<{ logist_error?: string; logist_success?: string }> }) {
   const notices = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["shipments.view", "documents.view"] as const);
+  const { profile, roles, supabase, permissions: permissions } = await requirePageUser(["shipments.view", "documents.view"] as const);
   const allowed = permissions["shipments.view"] && permissions["documents.view"];
   const select = "id,shipment_id,kind,title,reason,status,created_at,decided_at,decision_note,shipment:shipments(shipment_number,project_code),decider:profiles!logist_proposals_decided_by_fkey(full_name)";
   const [{ data: pendingRows, error }, { data: decidedRows }] = allowed ? await Promise.all([

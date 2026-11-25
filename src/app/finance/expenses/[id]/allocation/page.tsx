@@ -4,7 +4,7 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { ruleViolationMessage } from "@/lib/errors/public-message";
 import { allocationUuid, type ExactAllocationContext } from "@/lib/finance/exact-allocation";
 import { ExactAllocationForm } from "./form";
@@ -12,7 +12,7 @@ import { ExactAllocationForm } from "./form";
 export default async function AllocationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ currency?: string; source?: string }> }) {
   const { id } = await params, query = await searchParams;
   if (!allocationUuid.test(id)) notFound();
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const [{ data: currencies }, { data: expense }, { data: permissions }] = await Promise.all([
     supabase.from("currencies").select("id,code").eq("is_active", true).order("code"),
     supabase.from("expenses").select("shipment_id,document_id").eq("id", id).maybeSingle(),

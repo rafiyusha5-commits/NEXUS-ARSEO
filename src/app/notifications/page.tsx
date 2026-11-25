@@ -4,10 +4,9 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import { DocumentActions } from "@/components/documents/document-actions";
 import type { DocumentActionInfo } from "@/lib/documents/action-index";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { formatDateTime } from "@/lib/documents/labels.ts";
-import { loadPermissions } from "@/lib/permissions.ts";
 import { URGENT_NOTIFICATION_TYPES, notificationLink, notificationTypeLabel } from "@/lib/notifications/rules.ts";
 import { markAllNotificationsReadAction, markNotificationReadAction, openNotificationAction } from "./actions";
 
@@ -52,9 +51,7 @@ function NotificationItem({ item, document }: { item: NotificationRow; document?
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-
-  const can = await loadPermissions(supabase, ["tasks.view", "sales.view"] as const);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["tasks.view", "sales.view"] as const);
 
   // Deadline notifications of this employee; idempotent, so a reload adds nothing. Without
   // tasks.view there are no task notifications to create, and RLS hides the existing ones.

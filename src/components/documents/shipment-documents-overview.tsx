@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { applicableRequirements, type DocumentRequirement } from "@/lib/documents/rules";
+import { loadShipmentDocumentCheck } from "@/lib/document-check/load";
 import { parseDocumentCheck, summarizeFindings } from "@/lib/document-check/rules";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { isOrderWorkbook } from "@/lib/shipments/order-workbook";
@@ -10,7 +11,9 @@ import { kitRows, todoCards, type KitDocument, type KitRequirement } from "@/lib
 // The top of the «Документы» tab (2026-11-23): what to do now and the document set by stage. Display only — every
 // action stays in the blocks below; the cards only count and link to them.
 export async function ShipmentDocumentsOverview({ shipmentId }: { shipmentId: string }) {
-  const supabase = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["documents.view", "shipments.view", "documents.drive.view"] as const);
   if (!permissions["documents.view"] || !permissions["shipments.view"]) return null;
 
@@ -18,7 +21,7 @@ export async function ShipmentDocumentsOverview({ shipmentId }: { shipmentId: st
     supabase.from("shipments").select("type,process_template_id,route_id,leading_stage:shipment_stages!shipments_leading_stage_id_fkey(sequence_order)").eq("id", shipmentId).maybeSingle(),
     supabase.from("shipment_transports").select("id").eq("shipment_id", shipmentId),
     supabase.from("shipment_source_extractions").select("status,reviewed_at").eq("shipment_id", shipmentId).neq("status", "superseded"),
-    supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId }),
+    loadShipmentDocumentCheck(supabase, shipmentId),
   ]);
   const transportIds = (transports ?? []).map(transport => transport.id as string);
   const linkFilter = transportIds.length

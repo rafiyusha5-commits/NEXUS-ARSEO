@@ -2,7 +2,7 @@ import { correctShipmentDates } from "@/app/shipments/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { loadPermissions } from "@/lib/permissions";
 import { businessDay } from "@/lib/shipments/date-corrections";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 
 const one = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] : value ?? undefined;
 const localName = (value: unknown) => value && typeof value === "object" ? String((value as Record<string, unknown>).ru ?? (value as Record<string, unknown>).en ?? "—") : "—";
@@ -22,7 +22,9 @@ function DayInput({ name, value, today, label }: { name: string; value: string; 
 // Real dates of a shipment that was executed before it was entered: what the stages, vehicles and receipts
 // recorded as "today" can be set to the actual days, with a reason and a history.
 export async function ShipmentActualDatesPanel({ shipmentId, shipmentStatus }: { shipmentId: string; shipmentStatus: string }) {
-  const supabase = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["shipments.backdate"] as const);
   if (!permissions["shipments.backdate"] || shipmentStatus === "cancelled") return null;
   const [{ data: runs }, { data: transports }, { data: receipts }, { data: corrections }] = await Promise.all([

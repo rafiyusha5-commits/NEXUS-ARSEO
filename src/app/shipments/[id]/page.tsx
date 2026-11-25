@@ -17,8 +17,7 @@ import { ShipmentDocumentCheckPanel } from "@/components/documents/shipment-docu
 import { ShipmentDocumentsOverview } from "@/components/documents/shipment-documents-overview";
 import { LogistShipmentPanel } from "@/components/logist/logist-shipment-panel";
 import { OperationTabs } from "@/components/operation-tabs";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { buildShipmentLoadSummary, sumShipmentLoadLines } from "@/lib/shipments/load-summary";
 import { loadGenerationPreview } from "@/lib/templates/generation-service";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -37,28 +36,40 @@ const stageStatus:Record<string,string>={pending:"Ожидает",in_progress:"�
 const expenseType:Record<string,string>={goods_cost:"Стоимость товара",transport:"Перевозка",logistics:"Логистика",broker_fee:"Брокер",customs_duty:"Пошлина",tax:"НДС",stickering:"Стикеровка",marking:"Маркировка",bank_fee:"Банк",promo:"Промо",return:"Возврат",other:"Прочее"};
 function name(value:unknown){if(!value||typeof value!=="object")return "—";const v=value as Record<string,unknown>;return String(v.ru??v.en??"—");}
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
+const SHIPMENT_TABS=["main","items","quantities","load","delivery","documents","expenses","stages","history"] as const;
+// Permission codes the panels of a tab ask for; the page asks for them together with its own, so the panels find the
+// answers ready (src/lib/permissions.ts). Each panel still asks, and checks, for itself.
+const PANEL_PERMISSIONS={
+  main:["shipments.view","documents.view"],
+  documents:["shipments.view","documents.view","documents.drive.view","tasks.create","source_documents.extract","source_documents.review","shipments.update","products.view","documents.update"],
+  stages:["shipments.backdate"],
+} as const;
 const loadNumber=(value:number|null,maximumFractionDigits=3)=>value===null?"—":value.toLocaleString("ru-RU",{maximumFractionDigits});
 const uomLabel:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"маш."};
 
 export default async function ShipmentPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{error?:string;success?:string;source_error?:string;source_success?:string;check_error?:string;check_success?:string;tab?:string}>}){
-  const {id}=await params; const notices=await searchParams; const {profile,roles,supabase}=await requireUser();
-  const permissions=await loadPermissions(supabase,["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen"] as const);
-  const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory}]=await Promise.all([
+  const {id}=await params; const notices=await searchParams; const tab=SHIPMENT_TABS.includes(notices.tab as typeof SHIPMENT_TABS[number])?notices.tab:"main";
+  const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["inventory.receive","templates.generate","documents.create","finance.view","prices.purchase.view","shipments.reopen",...PANEL_PERMISSIONS[tab as keyof typeof PANEL_PERMISSIONS]??[]] as const);
+  // Only the open tab is rendered (OperationTabs): what a single tab needs is read only for it, and everything that does
+  // not depend on another answer is read in one round trip (performance measurement 25.11.2026).
+  const none=Promise.resolve({data:[] as never[],error:null});
+  const [{data:shipment,error},{data:runs},{data:products},{data:items},{data:transports},{data:receipts},{data:expenses},{data:stageHistory},{data:itemPrices},{data:templates}]=await Promise.all([
     supabase.from("shipments").select("id,shipment_number,project_code,type,status,hold_reason,cancel_reason,is_locked,closed_at,closer:profiles!shipments_closed_by_fkey(full_name),planned_ready_date,planned_arrival_date,created_at,supplier_id,customer_id,supplier:counterparties!shipments_supplier_id_fkey(legal_name,short_name),customer:counterparties!shipments_customer_id_fkey(legal_name,short_name),route:routes(name),warehouse:warehouses(name),currency:currencies(id,code),responsible:profiles!shipments_responsible_user_id_fkey(full_name)").eq("id",id).maybeSingle(),
     supabase.from("shipment_stage_runs").select("id,status,is_required,status_reason,started_at,completed_at,performed_by_name,shipment_transport_id,stage:shipment_stages(code,name,sequence_order,requirement,status_category,scope),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
-    selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku").order("id").range(from,to)),
-    supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
+    tab==="items"?selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name,brand,product_suppliers(supplier_id,status)").eq("status","active").order("internal_sku").order("id").range(from,to)):none,
+    supabase.from("shipment_items").select("id,product_id,shipment_transport_id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,received_quantity,product:products(id,internal_sku,name,brand,packaging:product_packaging(uom,units_per_parent,gross_weight_kg,net_weight_kg)),transport:shipment_transports(sequence_no)").eq("shipment_id",id).order("created_at"),
     supabase.from("shipment_transports").select("id,sequence_no,status,planned_loading_date,planned_arrival_date,temperature_setpoint,notes,driver_name,driver_phone,driver_document,vehicle_plate,vehicle_make,trailer_plate,trailer_make,carrier_name,purchase_pallet_tare_kg,sale_pallet_tare_kg").eq("shipment_id",id).order("sequence_no"),
     supabase.from("shipment_transport_receipts").select("shipment_transport_id").eq("shipment_id",id),
     supabase.from("expenses").select("id,document_id,expense_type,amount,incurred_at,is_planned,status,currency:currencies(code),payee:counterparties!expenses_payee_counterparty_id_fkey(short_name,legal_name)").eq("shipment_id",id).order("incurred_at",{ascending:false}),
     supabase.from("shipment_stage_history").select("id,from_status,to_status,performed_by_name,reason,created_at,run:shipment_stage_runs(stage:shipment_stages(name),transport:shipment_transports(sequence_no)),user:profiles!shipment_stage_history_changed_by_fkey(full_name)").eq("shipment_id",id).order("created_at",{ascending:false}),
+    permissions["prices.purchase.view"]?supabase.rpc("my_shipment_item_purchase_prices",{p_shipment_id:id}):none,
+    tab==="documents"&&permissions["templates.generate"]&&permissions["documents.create"]?supabase.from("document_templates").select("id,name,flow_direction,counterparty_id,type:document_types(name_ru),current:document_template_versions(mime_type,is_current)").eq("status","approved").eq("is_active",true).eq("current.is_current",true).order("name"):none,
   ]);
   if(error||!shipment)notFound();
-  const {data:itemPrices}=permissions["prices.purchase.view"]?await supabase.rpc("my_shipment_item_purchase_prices",{p_shipment_id:id}):{data:[]};
   const priceByItem=new Map<string,number|string|null>((itemPrices??[]).map((row:{item_id:string;unit_price:number|string|null})=>[row.item_id,row.unit_price]));
   const visibleItems=(items??[]).map(item=>({...item,unit_price:priceByItem.get(item.id)??null}));
-  const loadProductIds=[...new Set(visibleItems.map(item=>item.product_id))];
-  const {data:loadPackaging}=loadProductIds.length?await supabase.from("product_packaging").select("product_id,uom,units_per_parent,gross_weight_kg,net_weight_kg").in("product_id",loadProductIds):{data:[]};
+  // Packaging comes with the items (one row per product, as the former separate read by product ids returned it).
+  const loadPackaging=[...new Map(visibleItems.flatMap(item=>{const product=one(item.product);return product?[[product.id,(product.packaging??[]).map(row=>({product_id:product.id,...row}))] as const]:[];})).values()].flat();
   const loadSummary=buildShipmentLoadSummary(visibleItems as Array<Record<string,unknown>>,(loadPackaging??[]) as Array<Record<string,unknown>>, {operation:cargoOperation(shipment.type),transports:transports??[]});
   const itemById=new Map(visibleItems.map(item=>[item.id,item]));
   const unallocatedLoadLines=loadSummary.lines.filter(line=>!line.transportId);
@@ -68,7 +79,6 @@ export default async function ShipmentPage({params,searchParams}:{params:Promise
   const warehouse=one(shipment.warehouse); const currency=one(shipment.currency); const responsible=one(shipment.responsible);
   const canEdit=!shipment.is_locked&&!['on_hold','cancelled','closed'].includes(shipment.status);
   const receivedTransports=new Set((receipts??[]).map((receipt)=>receipt.shipment_transport_id));
-  const {data:templates}=permissions["templates.generate"]&&permissions["documents.create"]?await supabase.from("document_templates").select("id,name,flow_direction,counterparty_id,type:document_types(name_ru),current:document_template_versions(mime_type,is_current)").eq("status","approved").eq("is_active",true).eq("current.is_current",true).order("name"):{data:[]};
   const generationTemplates=(templates??[]).filter(template=>{const current=one(template.current)?.mime_type;const partyMatches=!template.counterparty_id||(template.flow_direction==="input"?template.counterparty_id===shipment.supplier_id:template.counterparty_id===shipment.customer_id);return partyMatches&&["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(String(current));});
   let generationPreview:Awaited<ReturnType<typeof loadGenerationPreview>>|null=null;
   if(generationTemplates.length){try{generationPreview=await loadGenerationPreview(supabase,generationTemplates[0].id,id,false);}catch{generationPreview=null;}}

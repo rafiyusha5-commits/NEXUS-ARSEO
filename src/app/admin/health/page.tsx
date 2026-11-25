@@ -1,16 +1,14 @@
 import Link from "next/link";
 import { TelegramDeliveryHealth, type TelegramDeliveryOverview } from "@/components/assistant/telegram-notifications";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { getReadiness, monitoringEnvironment, backupEvidence, jobPolicy } from "@/lib/monitoring/runtime";
 import { componentLabels, labels, jobCode, type Component, type Code, type JobFacts } from "@/lib/monitoring/policy";
 
 type Incident = { id: string; component: Component; code: Code; correlation: string; first_at: string; last_at: string; recovered_at: string | null; occurrences: number };
 const date = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("ru-RU", { timeZone: "Asia/Almaty" }) : "Не подтверждено";
 export default async function HealthPage({ searchParams }: { searchParams: Promise<{ offset?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
-  const permission = await loadPermissions(supabase, ["system.health.view"]);
+  const { profile, roles, supabase, permissions: permission } = await requirePageUser(["system.health.view"]);
   const shell = (content: React.ReactNode) => <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="health"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Администрирование</p><h1>Состояние системы</h1></div></header>{content}</section></main>;
   if (!permission["system.health.view"]) return shell(<p className="login-error">Нет доступа к диагностике.</p>);
   const env = monitoringEnvironment();

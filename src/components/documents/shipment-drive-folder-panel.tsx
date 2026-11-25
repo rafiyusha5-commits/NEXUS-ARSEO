@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { ProcessingStatus } from "./processing-status";
 import { loadProcessingClock } from "@/lib/documents/processing-clock";
 import type { ProcessingReceipt } from "@/lib/documents/processing-status";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { shipmentDriveGateway } from "@/lib/google/shipment-gateway";
 import { shipmentDrive } from "@/lib/google/drive-server";
@@ -14,7 +14,9 @@ import { reconcileSource, type VisibleDocument } from "@/lib/google/folder-recon
 import { ShipmentDriveFolderView, type FolderBinding, type FolderFile } from "./shipment-drive-folder-view";
 
 export async function ShipmentDriveFolderPanel({ shipmentId, initialFolder }: { shipmentId: string; initialFolder?: string }) {
-  const session = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase: session } = await requireUser();
   const serverNow = await loadProcessingClock();
   const required = ["shipments.view", "shipments.update", "documents.view", "documents.drive.view", "prices.purchase.view"] as const;
   const permissions = await loadPermissions(session, [...required, "documents.create", "documents.update"] as const);

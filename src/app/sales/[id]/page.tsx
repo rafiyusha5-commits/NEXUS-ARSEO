@@ -11,7 +11,7 @@ import { ReservationReplacement } from "@/components/sales/reservation-replaceme
 import { replacementPermissions, replacementUnits } from "@/lib/sales/reservation-replacement";
 import { OperationTabs } from "@/components/operation-tabs";
 import { SaleCreditPanel, SaleCreditWarning } from "@/components/sales/sale-credit-panel";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { convertQuantity, piecesPerUnit } from "@/lib/products/packaging";
 import { selectAll } from "@/lib/supabase/select-all";
 import { OrderLinePrice, describePriceList, type PriceSnapshot } from "@/components/sales/order-line-price";
@@ -60,7 +60,7 @@ export default async function SalePage({
 }) {
   const { id } = await params;
   const notices = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const { data: sale } = await supabase
     .from("sales")
     .select("*,customer:counterparties(short_name,legal_name,min_remaining_shelf_life_pct),warehouse:warehouses(code,name),currency:currencies(code)")

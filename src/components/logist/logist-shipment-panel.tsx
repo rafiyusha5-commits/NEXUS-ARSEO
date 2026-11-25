@@ -3,12 +3,14 @@ import { runLogistAction } from "@/app/logist/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { loadPermissions } from "@/lib/permissions";
 import { parseProposals } from "@/lib/logist/proposals";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { LogistProposalList } from "./logist-proposal-list";
 
 // What Logist proposes for this shipment, on its main tab.
 export async function LogistShipmentPanel({ shipmentId }: { shipmentId: string }) {
-  const supabase = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["shipments.view", "documents.view"] as const);
   if (!permissions["shipments.view"] || !permissions["documents.view"]) return null;
   const { data, error } = await supabase.from("logist_proposals")

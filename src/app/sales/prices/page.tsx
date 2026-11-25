@@ -3,8 +3,7 @@ import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
 import { OperationTabs } from "@/components/operation-tabs";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { confirmPriceListImport, saveBrand, setPriceListPrice, setVatRate } from "./actions";
 import { BatchMargins, type BatchMarginsData } from "@/components/sales/batch-margins";
 import { productsWithoutPrices, selectedPriceProduct, type CatalogProduct } from "@/lib/sales/price-list-products";
@@ -33,8 +32,7 @@ const dateTime = (value: string) => new Intl.DateTimeFormat("ru-RU", { dateStyle
 // brands and VAT. Calculated prices, margins and costs of the calculator never appear here.
 export default async function PriceListPage({ searchParams }: { searchParams: Promise<{ tab?: string; error?: string; success?: string; product?: string; date?: string; import_from?: string }> }) {
   const notices = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
-  const permissions = await loadPermissions(supabase, ["pricing.list.manage", "prices.purchase.view", "inventory.view"] as const);
+  const { profile, roles, supabase, permissions: permissions } = await requirePageUser(["pricing.list.manage", "prices.purchase.view", "inventory.view"] as const);
   // Cost and margin are requested only with purchase-price access; the database refuses everybody else anyway.
   const canSeeMargin = permissions["prices.purchase.view"] && permissions["inventory.view"];
   const canManage = permissions["pricing.list.manage"];

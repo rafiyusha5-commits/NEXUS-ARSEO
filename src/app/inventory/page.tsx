@@ -2,9 +2,11 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { issueFifo, receiveBatch, setBatchStatus } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
+import { ListPager } from "@/components/list-pager";
+import { pageWindow } from "@/lib/pagination";
 
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"фура"};
 const shelfStates:Record<string,string>={normal:"Норма",warning:"Менее 90 дней",critical:"Менее 30 дней",expired:"Просрочено",quarantine:"Карантин",blocked:"Заблокировано"};
@@ -12,24 +14,29 @@ function name(value:unknown){if(!value||typeof value!=="object")return "—";con
 function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]:value??undefined;}
 function formatDate(value:string|null){return value?new Intl.DateTimeFormat("ru-RU").format(new Date(value)):"—";}
 
-export default async function InventoryPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
-  const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
-  const [{data:stock,error},{data:shipmentItems},{data:warehouses},{data:locations},{data:products}]=await Promise.all([
-    supabase.from("inventory_fifo_status").select("*").order("warehouse_code").order("internal_sku").order("fifo_rank"),
+export default async function InventoryPage({searchParams}:{searchParams:Promise<{error?:string;success?:string;page?:string}>}){
+  const {profile,roles,supabase}=await requirePageUser();const notices=await searchParams;
+  // The table shows one page of balances; the totals and the batch list of the state form need every balance, but only
+  // a few narrow columns (src/lib/pagination.ts: the former whole-table read was also cut after 1000 rows).
+  const current=pageWindow(notices.page);
+  const [{data:stock,error,count},{data:overview},{data:shipmentItems},{data:warehouses},{data:locations},{data:products}]=await Promise.all([
+    supabase.from("inventory_fifo_status").select("*",{count:"exact"}).order("warehouse_code").order("internal_sku").order("fifo_rank").order("balance_id").range(current.from,current.to),
+    selectAll((from,to)=>supabase.from("inventory_fifo_status").select("balance_id,batch_id,internal_sku,batch_number,warehouse_code,quantity_on_hand,shelf_life_state").order("warehouse_code").order("internal_sku").order("fifo_rank").order("balance_id").range(from,to)),
     supabase.from("shipment_items").select("id,uom,ordered_quantity,product:products(internal_sku,name),shipment:shipments(shipment_number,destination_warehouse_id,status)").order("created_at",{ascending:false}),
     supabase.from("warehouses").select("id,code,name,is_virtual,status").eq("status","active").eq("is_virtual",false).order("code"),
     supabase.from("warehouse_locations").select("id,warehouse_id,code,zone,status").eq("status","active").order("code"),
     selectAll((from,to)=>supabase.from("products").select("id,internal_sku,name").eq("status","active").order("internal_sku").order("id").range(from,to)),
   ]);
-  const total=(stock??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);
-  const expiring=(stock??[]).filter(row=>["warning","critical","expired"].includes(row.shelf_life_state)).length;
+  const total=(overview??[]).reduce((sum,row)=>sum+Number(row.quantity_on_hand??0),0);
+  const expiring=(overview??[]).filter(row=>["warning","critical","expired"].includes(row.shelf_life_state)).length;
+  const rowCount=count??overview?.length??0;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="inventory"/><section className="workspace admin-workspace">
     <header className="topbar"><div><p className="eyebrow">Складской учёт</p><h1>Партии и остатки</h1></div><div className="topbar-actions"><Link className="secondary compact" href="/inventory/movements">Движения</Link><Link className="secondary compact" href="/inventory/shelf-life">Контроль ОСГ</Link><span className="page-count">FIFO включён</span></div></header>
     <WorkflowHelp section="inventory"/>
     {notices.error&&<div className="login-error admin-message">{notices.error}</div>}{notices.success&&<div className="login-success admin-message">{notices.success}</div>}
     {error&&<div className="setup-notice">Не удалось загрузить данные раздела. Обновите страницу. Если ошибка повторится, сообщите администратору название раздела. После этого появятся регистрация партий и FIFO.</div>}
     <section className="shipment-summary-grid inventory-summary">
-      <article className="summary-card"><p>Активных строк остатков</p><strong>{stock?.length??0}</strong><small>По партиям, складам и зонам</small></article>
+      <article className="summary-card"><p>Активных строк остатков</p><strong>{rowCount}</strong><small>По партиям, складам и зонам</small></article>
       <article className="summary-card"><p>Количество</p><strong>{total.toLocaleString("ru-RU")}</strong><small>В единицах учёта партий</small></article>
       <article className="summary-card"><p>Требуют внимания</p><strong>{expiring}</strong><small>Истекающие или просроченные партии</small></article>
       <article className="summary-card"><p>Принцип отбора</p><strong>FIFO</strong><small>Сначала ближайший срок годности</small></article>
@@ -52,17 +59,18 @@ export default async function InventoryPage({searchParams}:{searchParams:Promise
         <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)}>Списать по FIFO</PendingSubmitButton>
       </form><p className="form-help">Система сама распределит количество по непросроченным партиям, начиная с ближайшего срока годности. При нехватке остатка операция отменится целиком.</p></section>
       <section className="panel admin-section"><p className="eyebrow">Контроль качества</p><h2>Изменить состояние партии</h2><form action={setBatchStatus} className="inventory-form issue-form">
-        <label>Партия<select name="batch_id" required defaultValue=""><option value="" disabled>Выберите партию</option>{stock?.map(row=><option value={row.batch_id} key={row.balance_id}>{row.internal_sku} · {row.batch_number} · {row.warehouse_code}</option>)}</select></label>
+        <label>Партия<select name="batch_id" required defaultValue=""><option value="" disabled>Выберите партию</option>{overview?.map(row=><option value={row.batch_id} key={row.balance_id}>{row.internal_sku} · {row.batch_number} · {row.warehouse_code}</option>)}</select></label>
         <label>Новое состояние<select name="status" required defaultValue="blocked"><option value="blocked">Заблокировано</option><option value="quarantine">Карантин</option><option value="available">Доступно к отбору</option></select></label>
         <label>Причина<input name="reason" placeholder="Обязательна для блокировки и карантина"/></label>
-        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)||!stock?.length}>Сохранить состояние</PendingSubmitButton>
+        <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit" disabled={Boolean(error)||!overview?.length}>Сохранить состояние</PendingSubmitButton>
       </form><p className="form-help">Заблокированные и карантинные партии автоматически исключаются из FIFO. Разблокировка выполняется только вручную.</p></section>
     </section>
-    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Контроль ОСГ</p><h2>Остатки по партиям</h2></div><span className="page-count">{stock?.length??0} строк</span></div>
+    <section className="panel admin-section"><div className="panel-heading"><div><p className="eyebrow">Контроль ОСГ</p><h2>Остатки по партиям</h2></div><span className="page-count">{rowCount} строк</span></div>
       <div className="inventory-table-wrap"><table className="inventory-table"><thead><tr><th>FIFO</th><th>Товар</th><th>Партия</th><th>Склад / зона</th><th>Остаток</th><th>Срок годности</th><th>ОСГ</th><th>Состояние</th></tr></thead><tbody>
         {stock?.map(row=><tr key={row.balance_id} className={`shelf-${row.shelf_life_state}`}><td><span className="fifo-rank">{row.fifo_rank}</span></td><td><strong>{row.internal_sku}</strong><small>{name(row.product_name)}</small></td><td><Link className="inventory-batch-link" href={`/inventory/${row.batch_id}`}><strong>{row.batch_number}</strong><small>Получено {formatDate(row.received_at)} · открыть →</small></Link></td><td><Link className="inventory-batch-link" href={`/warehouses/${row.warehouse_id}`}><strong>{row.warehouse_code}</strong><small>{row.location_code||"Без зоны"}</small></Link></td><td><strong>{Number(row.quantity_available).toLocaleString("ru-RU")} {units[row.uom]??row.uom}</strong><small>Всего: {Number(row.quantity_on_hand).toLocaleString("ru-RU")}</small></td><td><strong>{formatDate(row.expiry_date)}</strong><small>{row.days_remaining} дней</small></td><td><strong>{row.shelf_life_percent===null?"—":`${row.shelf_life_percent}%`}</strong></td><td><span className="status">{shelfStates[row.shelf_life_state]??row.shelf_life_state}</span>{row.status_reason&&<small>{row.status_reason}</small>}</td></tr>)}
-        {!stock?.length&&!error&&<tr><td colSpan={8}><div className="empty-state">Остатков пока нет. Зарегистрируйте первую принятую партию.</div></td></tr>}
+        {!stock?.length&&!error&&!rowCount&&<tr><td colSpan={8}><div className="empty-state">Остатков пока нет. Зарегистрируйте первую принятую партию.</div></td></tr>}
       </tbody></table></div>
+      <ListPager pathname="/inventory" params={notices} current={current} total={rowCount} shown={stock?.length??0}/>
     </section>
   </section></main>;
 }

@@ -4,8 +4,7 @@ import { ReceivingItem } from "@/components/shipments/receiving-item";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions";
+import { requirePageUser } from "@/lib/auth/access";
 import { receiveShipmentTransport } from "../../actions";
 
 const transportStatus:Record<string,string>={planned:"Запланирован",loading:"На загрузке",in_transit:"В пути",at_customs:"На таможне",arrived:"Прибыл",unloaded:"Разгружен",cancelled:"Отменён"};
@@ -20,8 +19,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
   const {id}=await params;
   const query=await searchParams;
   if(!query.transport)redirect(`/shipments/${id}`);
-  const {profile,roles,supabase}=await requireUser();
-  const permissions=await loadPermissions(supabase,["inventory.receive"] as const);
+  const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["inventory.receive"] as const);
   const {data:shipment,error}=await supabase.from("shipments").select("id,shipment_number,status,is_locked,destination_warehouse_id,warehouse:warehouses(name,code)").eq("id",id).maybeSingle();
   if(error||!shipment)notFound();
   const [{data:transport},{data:items},{data:locations},{data:receipt}]=await Promise.all([

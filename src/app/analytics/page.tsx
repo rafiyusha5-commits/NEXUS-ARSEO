@@ -1,7 +1,7 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { parseOperationalSummary } from "@/lib/analytics/summary";
 
 const shipmentLabels: Record<string,string>={planning:"Планирование",in_production:"Производство",preparing_transport:"Подготовка транспорта",in_transit:"В пути",customs:"Таможня",receiving:"Приёмка",sales:"Продажи",closed:"Закрыта",on_hold:"Приостановлена",cancelled:"Отменена"};
@@ -11,7 +11,7 @@ const date=(value:string|null|undefined)=>value?new Intl.DateTimeFormat("ru-RU")
 function productName(value:unknown){if(!value||typeof value!=="object")return"Товар";const name=value as Record<string,unknown>;return String(name.ru??name.en??name.kz??"Товар");}
 
 export default async function AnalyticsPage(){
- const{profile,roles,supabase}=await requireUser();
+ const{profile,roles,supabase}=await requirePageUser();
  const codes=["reports.view","shipments.view","sales.view","inventory.view","tasks.view","integrations.view"];
  const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:codes});const access=new Set((permissions??[])as string[]);
  if(!access.has("reports.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="analytics"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Аналитика</p><h1>Операционные показатели</h1></div></header><div className="login-error admin-message">Нет доступа к отчётам.</div></section></main>;

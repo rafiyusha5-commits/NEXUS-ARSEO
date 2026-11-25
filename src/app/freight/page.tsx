@@ -3,7 +3,7 @@ import Link from "next/link";
 import {AppSidebar} from "@/components/app-sidebar";
 import {DocumentActions} from "@/components/documents/document-actions";
 import {loadDocumentActions} from "@/lib/documents/load-actions";
-import {requireUser} from "@/lib/auth/access";
+import {requirePageUser} from "@/lib/auth/access";
 import {loadPermissions} from "@/lib/permissions";
 import {ruleViolationMessage} from "@/lib/errors/public-message";
 import {display,fieldValue,fields,kinds,modes,sourceFields,type Kind,type Row,type Option} from "@/lib/freight/model";
@@ -11,7 +11,7 @@ import {DirectoryForm,Snapshot,TripForm} from "./forms";
 import "./style.css";
 
 export default async function FreightPage({searchParams}: {searchParams:Promise<Record<string,string|undefined>>}) {
-  const {profile,roles,supabase}=await requireUser(),params=await searchParams;
+  const {profile,roles,supabase}=await requirePageUser(),params=await searchParams;
   const kind=params.kind??"carrier",mode=(params.mode&&params.mode in modes?params.mode:"purchase") as keyof typeof modes;
   const grants=await loadPermissions(supabase,["carriers.directory.manage","freight.context.manage","drivers.documents.view"]);
   const permission=new Set(Object.entries(grants).filter(([,allowed])=>allowed).map(([code])=>code));

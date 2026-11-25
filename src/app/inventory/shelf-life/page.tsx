@@ -1,7 +1,7 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import {
   CUSTOMER_STATE_LABEL, DEFAULT_REQUIRED_PCT, HORIZON_OPTIONS, RISK_STATE_LABEL, customerAdvice, describeRequirement,
@@ -11,7 +11,7 @@ import {
 // Agent «Контроль ОСГ»: batches whose remaining shelf life falls below customer requirements. The list is
 // calculated by the database for the signed-in employee; the agent itself changes nothing.
 export default async function ShelfLifeRiskPage({ searchParams }: { searchParams: Promise<{ horizon?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const horizon = parseHorizon((await searchParams).horizon);
   const permissions = await loadPermissions(supabase, ["inventory.view", "products.view", "sales.view"] as const);
   const allowed = permissions["inventory.view"] && permissions["products.view"];

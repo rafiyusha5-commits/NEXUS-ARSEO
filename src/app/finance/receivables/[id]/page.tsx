@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { ENTRY_KIND, money, type CustomerStatement } from "@/lib/finance/receivables";
 import { addAdjustmentAction, recordActAction, setCreditTermsAction } from "../actions";
@@ -18,7 +18,7 @@ export default async function CustomerReceivablePage({ params, searchParams }: {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
   const notice = await searchParams;
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const [permissions, { data, error }, { data: currencies }] = await Promise.all([
     loadPermissions(supabase, ["receivables.manage"] as const),
     supabase.rpc("customer_statement", { p_customer_id: id }),

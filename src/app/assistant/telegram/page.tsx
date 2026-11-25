@@ -5,16 +5,14 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { TelegramLink } from "@/components/assistant/telegram-link";
 import { TelegramUpdatesTable } from "@/components/assistant/telegram-updates";
 import { loadedAt, type TelegramRunRow, type TelegramUpdateRow } from "@/lib/telegram/update-state.ts";
-import { requireUser } from "@/lib/auth/access";
-import { loadPermissions } from "@/lib/permissions.ts";
+import { requirePageUser } from "@/lib/auth/access";
 import { telegramConfig } from "@/lib/telegram/config.ts";
 import { confirmTelegramLink, unlinkTelegram } from "./actions";
 import { TelegramNotifications, type TelegramNotificationSettings } from "@/components/assistant/telegram-notifications";
 
 export const dynamic = "force-dynamic";
 export default async function TelegramPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { profile, roles, user, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, ["agent.use"] as const);
+  const { profile, roles, user, supabase, permissions: can } = await requirePageUser(["agent.use"] as const);
   const config = telegramConfig();
   const query = await searchParams;
   const result = can["agent.use"] ? await supabase.from("telegram_links").select("chat_id,display_name,pending_chat_id,pending_name,pending_until").eq("user_id", user.id).maybeSingle() : null;

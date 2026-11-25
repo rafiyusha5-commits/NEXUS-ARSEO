@@ -2,13 +2,13 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { publicErrorMessage } from "@/lib/errors/public-message";
 import { createSupplier } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
 export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{error?:string;success?:string}> }) {
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const params = await searchParams;
   const [{data:suppliers,error},{data:links}] = await Promise.all([
     selectAll((from,to)=>supabase.from("counterparties").select("id,legal_name,short_name,country,tax_id,status").contains("roles",["manufacturer"]).order("legal_name").order("id").range(from,to)),

@@ -5,7 +5,7 @@ import { loadDocumentActions } from "@/lib/documents/load-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { DOCUMENT_FILE_ACCEPT, DOCUMENT_FILE_TYPES_LABEL, MAX_DOCUMENT_FILE_SIZE_LABEL, formatFileSize } from "@/lib/documents/files.ts";
 import { formatDateTime } from "@/lib/documents/labels.ts";
@@ -49,7 +49,7 @@ export default async function TemplatePage({
   const { id } = await params;
   const notices = await searchParams;
   if (!UUID.test(id)) notFound();
-  const { profile, roles, supabase } = await requireUser();
+  const { profile, roles, supabase } = await requirePageUser();
   const [can, generationAccess] = await Promise.all([loadTemplatePermissions(supabase), loadPermissions(supabase, ["documents.create", "shipments.view"] as const)]);
   if (!can.view) notFound();
 

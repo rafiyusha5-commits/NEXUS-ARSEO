@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { businessToday } from "@/lib/dates/business-day";
 import { createCustomerOrder } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
@@ -13,7 +13,7 @@ function one<T>(value:T|T[]|null|undefined){return Array.isArray(value)?value[0]
 const statusLabel:Record<string,string>={draft:"Черновик",reserved:"Зарезервирован",confirmed:"Подтверждён",shipped:"Отгружен",cancelled:"Отменён"};
 
 export default async function SalesPage({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}){
-  const {profile,roles,supabase}=await requireUser();const notices=await searchParams;
+  const {profile,roles,supabase}=await requirePageUser();const notices=await searchParams;
   const {data:canBackdate}=await supabase.rpc("can_record_historical_sale");
   // Confirmed orders of this employee that can no longer ship become notifications (idempotent).
   await supabase.rpc("refresh_my_order_notifications");

@@ -1,7 +1,7 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions.ts";
 import { DRIVE_PERMISSIONS } from "@/lib/google/drive-readonly.ts";
 import { createSupabaseAgentData } from "@/lib/agent/server/supabase-data.ts";
@@ -12,8 +12,7 @@ import { CONTENT_STATUS } from "@/lib/google/catalog-text.ts";
 import type { DriveFile } from "@/lib/google/drive-readonly.ts";
 export const dynamic = "force-dynamic";
 export default async function ArchivePage({ searchParams }: { searchParams: Promise<{ q?: string; offset?: string }> }) {
-  const { profile, roles, supabase } = await requireUser();
-  const can = await loadPermissions(supabase, [...DRIVE_PERMISSIONS, "agent.use", "documents.drive.text.view", "prices.purchase.view"]);
+  const { profile, roles, supabase, permissions: can } = await requirePageUser([...DRIVE_PERMISSIONS, "agent.use", "documents.drive.text.view", "prices.purchase.view"]);
   const allowed = ([...DRIVE_PERMISSIONS, "agent.use"] as const).every(code => can[code]);
   const query = await searchParams;
   const q = (query.q ?? "").trim().slice(0, 120); const offset = Math.max(0, Math.min(1000, Number(query.offset) || 0));

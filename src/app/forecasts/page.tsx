@@ -2,7 +2,7 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
 import { AppSidebar } from "@/components/app-sidebar";
-import { requireUser } from "@/lib/auth/access";
+import { requirePageUser } from "@/lib/auth/access";
 import { approveForecast,archiveForecast,createForecast,createForecastVersion,removeForecastLine,reviewForecast,saveForecastLine,submitForecast } from "./actions";
 import { selectAll } from "@/lib/supabase/select-all";
 
@@ -16,7 +16,7 @@ type Forecast={id:string;name:string;scenario:string;version:number;horizon_star
 type Line={id:string;period_start:string;base_quantity:number|string;promo_uplift_quantity:number|string;final_quantity:number|string;comment:string|null;product:{internal_sku:string;name:unknown}|{internal_sku:string;name:unknown}[]|null;customer:{legal_name:string;short_name:string|null}|{legal_name:string;short_name:string|null}[]|null;warehouse:{code:string;name:unknown}|{code:string;name:unknown}[]|null};
 
 export default async function ForecastsPage({searchParams}:{searchParams:Promise<{forecast?:string;success?:string;error?:string}>}){
- const{profile,roles,supabase}=await requireUser();const query=await searchParams;
+ const{profile,roles,supabase}=await requirePageUser();const query=await searchParams;
  const{data:permissions}=await supabase.rpc("my_permissions",{p_codes:["forecasts.view","forecasts.detail","forecasts.create","forecasts.update","forecasts.review","forecasts.approve","forecasts.archive"]});const access=new Set((permissions??[])as string[]);
  if(!access.has("forecasts.view"))return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="forecasts"/><section className="workspace admin-workspace"><header className="topbar"><div><p className="eyebrow">Планирование</p><h1>Прогноз продаж</h1></div></header><div className="login-error admin-message">Нет доступа к прогнозам.</div></section></main>;
  const{data:rawForecasts,error}=await supabase.from("forecasts").select("*").order("created_at",{ascending:false});const forecasts=(rawForecasts??[])as Forecast[];

@@ -38,6 +38,7 @@ function load(relative: string): Record<string, unknown> {
     if (id === "@/lib/documents/processing-status") return status;
     if (id === "@/lib/documents/processing-clock") return { loadProcessingClock: async () => now };
     if (id === "@/lib/supabase/server") return { createClient: async () => ({ from: query }) };
+    if (id === "@/lib/auth/access") return { requireUser: async () => ({ supabase: { from: query } }) };
     if (id === "@/lib/permissions") return { loadPermissions: async () => ({ "documents.view": allowed }) };
     if (id === "@/lib/document-extraction/review-definitions") return { reviewDefinitions: () => [], hasReviewTables: () => false };
     if (id === "@/lib/document-extraction/rules") return { SOURCE_FIELD_DEFINITIONS: [], VEHICLE_SCOPED_FIELDS: [] };
