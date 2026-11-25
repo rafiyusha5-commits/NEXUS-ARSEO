@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { documentStatusLabel, formatDate } from "@/lib/documents/labels.ts";
 import {
   type DocumentRequirement,
@@ -44,8 +44,16 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews, hideMissing 
   hideMissing?: boolean;
 }) {
   if (!isUuid(shipmentId)) return null;
-  const supabase = await createClient();
-  const permissions = await loadDocumentPermissions(supabase);
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
+  // The shipment and its vehicles are read together with the permissions (RLS limits both); they are used only with
+  // the right to view documents.
+  const [permissions, { data: shipment }, { data: transports }] = await Promise.all([
+    loadDocumentPermissions(supabase),
+    supabase.from("shipments").select("type, process_template_id, route_id").eq("id", shipmentId).maybeSingle(),
+    supabase.from("shipment_transports").select("id").eq("shipment_id", shipmentId),
+  ]);
 
   const heading = (
     <div className="panel-heading">
@@ -65,10 +73,6 @@ export async function ShipmentDocumentsPanel({ shipmentId, reviews, hideMissing 
     );
   }
 
-  const [{ data: shipment }, { data: transports }] = await Promise.all([
-    supabase.from("shipments").select("type, process_template_id, route_id").eq("id", shipmentId).maybeSingle(),
-    supabase.from("shipment_transports").select("id").eq("shipment_id", shipmentId),
-  ]);
   const transportIds = (transports ?? []).map((transport) => transport.id as string);
 
   const linkFilter = transportIds.length

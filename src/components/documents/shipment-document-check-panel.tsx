@@ -1,20 +1,23 @@
 import { DocumentActions } from "@/components/documents/document-actions";
 import { loadDocumentActions } from "@/lib/documents/load-actions";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { CHECK_STATE_LABEL, FIELD_LABELS, describeValues, parseDocumentCheck, summarizeFindings, type CheckFinding } from "@/lib/document-check/rules";
 import { createDocumentCheckTaskAction, runDocumentCheckAction } from "@/app/shipments/document-check-actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { loadShipmentDocumentCheck } from "@/lib/document-check/load";
 
 const sourceLabel: Record<string, string> = { recognition: "после распознавания или по кнопке", manual: "по кнопке", daily: "ежедневная проверка" };
 
 // Agent «Сверка» (shipment documents against the card). The findings are calculated by the database for the signed-in
 // employee each time the card opens; the agent itself changes nothing in the shipment.
 export async function ShipmentDocumentCheckPanel({ shipmentId, notice }: { shipmentId: string; notice?: { kind: "error" | "success"; message: string } }) {
-  const supabase = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
   const permissions = await loadPermissions(supabase, ["shipments.view", "documents.view", "tasks.create"] as const);
   if (!permissions["shipments.view"] || !permissions["documents.view"]) return null;
-  const { data, error } = await supabase.rpc("shipment_document_check", { p_shipment_id: shipmentId });
+  const { data, error } = await loadShipmentDocumentCheck(supabase, shipmentId);
   const check = parseDocumentCheck(data);
   const summary = summarizeFindings(check.findings);
   const documentActions = await loadDocumentActions(supabase, check.findings.map(finding => finding.documentId));
