@@ -290,6 +290,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611230100_shipment_workbook_choice.sql" >/dev/null
 # The order workbook with the euro currency rule (202611250400) replaces 202611220400 re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250400_order_workbook_currency.sql" >/dev/null
+# Receivables build each ledger once (202611250300): replaces the functions of 202609277600 re-applied above.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250300_receivables_ledger_once.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
