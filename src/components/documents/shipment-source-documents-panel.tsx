@@ -16,7 +16,7 @@ import { isSupplierLots } from "@/lib/document-extraction/yilmaz";
 import { isPackingEvidence } from "@/lib/document-extraction/packing-evidence";
 import type { buildShipmentDocumentReadiness } from "@/lib/templates/readiness";
 import { confirmedCommoditySource, currentCommoditySource, isCommodityInvoice } from "@/lib/document-extraction/commodity-evidence";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/access";
 import { loadPermissions } from "@/lib/permissions";
 import { assignSourceTransportAction, confirmShipmentSourceAction, extractShipmentSourcesAction, retryShipmentSourceOcrAction } from "@/app/shipments/source-document-actions";
 import { describeTransport } from "@/lib/shipments/transport-form";
@@ -40,10 +40,15 @@ const sourceLabel: Record<string, string> = {
 };
 
 export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readiness, workspace = false, showDocumentList = false, hideMissing = false }: { shipmentId: string; workspace?: boolean; showDocumentList?: boolean; hideMissing?: boolean; notice?: { kind: "error" | "success"; message: string }; readiness?: ReturnType<typeof buildShipmentDocumentReadiness> | null }) {
-  const supabase = await createClient();
+  // The render's own client (requireUser is memoized per render): permissions the page already asked for are
+  // answered without another round trip (src/lib/permissions.ts).
+  const { supabase } = await requireUser();
   const serverNow = await loadProcessingClock();
   const permissions = await loadPermissions(supabase, ["source_documents.extract", "source_documents.review", "documents.create", "documents.view", "shipments.update", "products.view"] as const);
   if (!permissions["documents.view"]) return showDocumentList ? <ShipmentDocumentsPanel shipmentId={shipmentId}/> : null;
+  // Customs matches depend only on the permission: read together with the rest, not after it. A Supabase query starts
+  // only when awaited or then-ed, so Promise.resolve starts it here.
+  const matchesRequest=permissions["products.view"] ? Promise.resolve(supabase.from("shipment_customs_matches").select("*,source:shipment_source_extractions!shipment_customs_matches_extraction_id_fkey!inner(shipment_id)",{count:"exact"}).eq("source.shipment_id",shipmentId).order("created_at",{ascending:false}).order("id",{ascending:false})) : Promise.resolve({data:[],error:null,count:0});
   const [{ data, error, count: sourceCount }, { data: types }, { data: transportRows, error: transportsError, count: transportCount }, { data: itemRows, error: itemsError, count: itemCount }, { data: quantityHistory, error: historyError, count: historyCount }, { data: shipmentContext }, { data: contextHistory, error: contextError, count: contextCount }] = await Promise.all([
     supabase.from("shipment_source_extractions")
       .select("id,document_id,document_version_id,shipment_transport_id,source_kind,status,extracted_data,field_evidence,confirmed_data,conflicts,error_message,updated_at,reviewed_at,extraction_method,ocr_provider,ocr_provider_version,ocr_confidence,ocr_page_count,processing_ms,processing_started_at,ocr_lease_until,attempt_count,document:documents(title,original_filename,archived_at,status,current_version,versions:document_versions!document_versions_document_id_fkey(id,is_current,version_number),links:document_links(entity_type,entity_id,removed_at))", { count: "exact" })
@@ -57,7 +62,7 @@ export async function ShipmentSourceDocumentsPanel({ shipmentId, notice, readine
     supabase.from("shipments").select("shipment_number,type").eq("id", shipmentId).maybeSingle(),
     supabase.from("shipment_source_context_history").select("id,extraction_id,old_transport_id,new_transport_id,reason,changed_at,changed_by,extraction:shipment_source_extractions!inner(shipment_id)", { count: "exact" }).eq("extraction.shipment_id", shipmentId).order("changed_at", { ascending: false }),
   ]);
-  const {data:matchRows,error:matchesError,count:matchesCount}=permissions["products.view"] ? await supabase.from("shipment_customs_matches").select("*,source:shipment_source_extractions!shipment_customs_matches_extraction_id_fkey!inner(shipment_id)",{count:"exact"}).eq("source.shipment_id",shipmentId).order("created_at",{ascending:false}).order("id",{ascending:false}) : {data:[],error:null,count:0};
+  const {data:matchRows,error:matchesError,count:matchesCount}=await matchesRequest;
   const matchesComplete=!matchesError && matchesCount===(matchRows??[]).length;
   const matches=(matchesComplete?matchRows:[]) as CustomsMatch[];
   const one = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
