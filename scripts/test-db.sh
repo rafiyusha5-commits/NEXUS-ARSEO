@@ -298,6 +298,8 @@ echo "re-applying document migrations (idempotency check)"
 # Losses (202611280100): the hardening re-applied above resets the grants of its RPCs; the reasons, the posting check and
 # the reports are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
+# The executive dashboard grants its RPCs after the hardening; it reads the reports of 202611280100/0200. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280400_executive_dashboard.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

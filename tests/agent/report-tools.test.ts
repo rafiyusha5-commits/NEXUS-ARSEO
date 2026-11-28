@@ -92,6 +92,16 @@ describe("assistant reports (get_report)", () => {
     assert.match(String(result.rows[2].values.record_details), /currency: KZT[\s\S]*gap: да/);
   });
 
+  it("reads the executive dashboard with its own right and the month as a fixed argument", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    const dashboard = { month: "2026-11-01", tiles: [{ tile: "cash", status: "ok", nearest: { currency: "EUR", date: "2026-12-12" } }, { tile: "shipments", status: "error" }] };
+    const result = await tool.run(ctx(data(dashboard, calls)), { report: "executive_dashboard" });
+    assert.deepEqual(calls[0], { rpc: "executive_dashboard", args: { p_month: null } });
+    assert.deepEqual(result.rows.map(row => row.values.report_part), ["итог", "tiles", "tiles"]);
+    assert.match(String(result.rows[2].values.record_details), /status: error/);
+    assert.deepEqual(REPORTS.find(report => report.key === "executive_dashboard")!.permissions, ["dashboard.executive.view"]);
+  });
+
   it("passes the period and group of profitability as fixed argument names", async () => {
     const calls: { rpc: string; args: Record<string, unknown> }[] = [];
     await tool.run(ctx(data({ groups: [] }, calls)), { report: "profitability", group: "customer", date: "2026-11-01", date_to: "2026-11-21" });

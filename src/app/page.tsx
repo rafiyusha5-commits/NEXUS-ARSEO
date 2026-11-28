@@ -1,5 +1,6 @@
 import { WorkflowHelp } from "@/components/workflow-help";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requirePageUser } from "@/lib/auth/access";
 import { calendarStatusLabel,type CalendarEvent } from "@/lib/calendar/rules";
@@ -10,8 +11,12 @@ const one=<T,>(value:T|T[]|null|undefined):T|undefined=>Array.isArray(value)?val
 const plural=(n:number,[one,few,many]:[string,string,string])=>{const r10=n%10,r100=n%100;return `${n} ${r10===1&&r100!==11?one:r10>=2&&r10<=4&&(r100<12||r100>14)?few:many}`};
 const date=(value:string)=>new Intl.DateTimeFormat("ru-RU",{day:"numeric",month:"short",timeZone:"Asia/Qyzylorda"}).format(new Date(value));
 
-export default async function Home() {
-  const { profile, roles, supabase, permissions: can } = await requirePageUser(["shipments.view","tasks.view","calendar.view"] as const);
+// The administrator and the directors start on the executive dashboard (owner decision Д2, 202611280400); the day summary
+// stays one link away (?view=overview).
+export default async function Home({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const { view } = await searchParams;
+  const { profile, roles, supabase, permissions: can } = await requirePageUser(["shipments.view","tasks.view","calendar.view","dashboard.executive.view"] as const);
+  if (can["dashboard.executive.view"] && view !== "overview") redirect("/dashboard");
   const now=new Date();const from=new Date(now);from.setDate(from.getDate()-7);const to=new Date(now);to.setDate(to.getDate()+31);
   const empty=Promise.resolve({data:[],error:null,count:0});
   const [shipmentResult,taskResult,overdueTaskResult,eventResult]=await Promise.all([

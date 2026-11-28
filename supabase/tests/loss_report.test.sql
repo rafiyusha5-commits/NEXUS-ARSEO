@@ -310,4 +310,32 @@ do $$ begin
  assert (select quantity_on_hand from public.inventory_balances where id=pg_temp.balance('E1-B1'))=97, 'B1 stock';
 end $$;
 
+-- 202611280400: the shelf life tile of the executive dashboard is loss_risk and loss_report of the month.
+select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000001',true);
+set local role authenticated;
+do $$
+declare
+  m date := date_trunc('month', current_date)::date;
+  t jsonb := public.executive_dashboard_tile('shelf_life');
+  b jsonb := public.loss_risk('bucket')->'buckets';
+  r jsonb := public.loss_report('reason', m, (m + interval '1 month')::date - 1)->'totals';
+  p jsonb := public.loss_report('reason', (m - interval '1 month')::date, m - 1)->'totals';
+begin
+  assert t->>'status'='ok' and (t->>'amounts')::boolean;
+  assert t->'risk'->>'expired_kzt' is not distinct from b->'expired'->>'cost_kzt' and t->'risk'->>'critical_kzt' is not distinct from b->'critical'->>'cost_kzt'
+     and t->'risk'->>'warning_kzt' is not distinct from b->'warning'->>'cost_kzt','risk = loss_risk by bucket';
+  assert t->'losses'->>'cost_kzt' is not distinct from r->>'cost_kzt' and t->'losses'->>'pieces' is not distinct from r->>'pieces'
+     and t->'previous'->>'cost_kzt' is not distinct from p->>'cost_kzt','losses = loss_report of the month and the month before';
+  assert (b->'expired'->>'cost_kzt')::numeric>0,'the scenario has stock at risk';
+  assert (t->'risk'->>'urgent_kzt')::numeric=(b->'expired'->>'cost_kzt')::numeric+coalesce((b->'critical'->>'cost_kzt')::numeric,0);
+end $$;
+select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000002',true);
+do $$declare t jsonb := public.executive_dashboard_tile('shelf_life');begin
+  assert not (t->>'amounts')::boolean and t->'risk'->>'expired_kzt' is null and t->'losses'->>'cost_kzt' is null
+     and (t->'risk'->>'expired_pieces')::numeric>0,'without purchase prices: pieces, no money';
+end $$;
+select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000004',true);
+do $$begin assert public.executive_dashboard_tile('shelf_life') is null,'without reports: no tile';end $$;
+reset role;
+
 rollback;

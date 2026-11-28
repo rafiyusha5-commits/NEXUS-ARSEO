@@ -114,6 +114,7 @@ select cron.schedule('nexus-cash-gap-control', '50 1 * * *', $$select public.run
 | `expense_payment_plans(получатель)` | `finance.view` | плановые даты расходов получателя и последнее изменение |
 | `set_cash_gap_alert_days(дни)` | `finance.manage` | срок предупреждения о разрыве |
 | `run_cash_gap_control()` | `service_role` | ежедневная проверка разрыва |
+| `cash_payables_due(дни)` | `finance.view` | только выплаты календаря на ближайшие дни (до 31), по валютам — для дашборда (`202611280400`) |
 
 Функция `private.cash_calendar_data(шаг, периоды, дебиторка, товар)` строит календарь для заданных прав — её же
 использует дашборд руководителя (блок Д).

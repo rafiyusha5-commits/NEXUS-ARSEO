@@ -394,5 +394,42 @@ begin
 end $$;
 reset role;
 
+-- 202611280400: the payables, cash and receivables tiles of the executive dashboard are these reports on the same data.
+select set_config('request.jwt.claim.sub','ca000000-0000-4000-8000-000000000001',true);
+set local role authenticated;
+do $$
+declare
+  s jsonb := public.payables_summary(); d jsonb := public.cash_calendar('day',14); w jsonb := public.cash_calendar('week',13);
+  t jsonb; cur text; e jsonb;
+begin
+  t := public.executive_dashboard_tile('payables');
+  for cur in select unnest(array['KZT','EUR']) loop
+    e := (select x from jsonb_array_elements(t->'currencies') x where x->>'currency'=cur);
+    assert (e->>'overdue')::numeric=(select coalesce(sum((y->>'overdue_amount')::numeric),0) from jsonb_array_elements(s) y where y->>'currency'=cur),
+      format('overdue %s = the register',cur);
+    assert (e->>'due_14')::numeric=(select coalesce(sum((p->>'out_payables')::numeric),0) from jsonb_array_elements(d->'currencies') c
+                                     cross join jsonb_array_elements(c->'periods') p where c->>'currency'=cur),format('due in 14 days %s = the calendar',cur);
+  end loop;
+  -- Hand values: KZT overdue E3 50 000, due E1 300 000 (T+3) + E2 1 200 000 (T+12); EUR due E6 500 (E5 on T+14 is the 15th day).
+  e := (select x from jsonb_array_elements(t->'currencies') x where x->>'currency'='KZT');
+  assert (e->>'overdue')::numeric=50000 and (e->>'due_14')::numeric=1500000;
+  e := (select x from jsonb_array_elements(t->'currencies') x where x->>'currency'='EUR');
+  assert (e->>'overdue')::numeric=0 and (e->>'due_14')::numeric=500 and (e->>'due_14_kzt')::numeric=250000 and (t->>'goods')::boolean;
+  t := public.executive_dashboard_tile('cash');
+  assert (t->'nearest'->>'currency')='EUR' and (t->'nearest'->>'date')=(select c->>'first_gap' from jsonb_array_elements(w->'currencies') c where c->>'currency'='EUR'),
+    'the nearest gap = the calendar (KZT has an account without a balance now: no gap claimed there)';
+  assert (t->>'incomplete')::boolean and not (select (x->>'balance_known')::boolean from jsonb_array_elements(t->'currencies') x where x->>'currency'='KZT');
+  t := public.executive_dashboard_tile('receivables');
+  assert (select (x->>'overdue')::numeric from jsonb_array_elements(t->'currencies') x where x->>'currency'='KZT')
+       =(select sum((a->>'overdue')::numeric) from jsonb_array_elements(public.customer_receivables()) c cross join jsonb_array_elements(c->'aging') a
+          where a->>'currency'='KZT'),'overdue receivables = the register';
+  assert (t->>'customers')::integer=1 and t->'top'->0->>'customer'='Должник' and (t->'top'->0->>'kzt')::numeric=200000;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub','ca000000-0000-4000-8000-000000000002',true);
+set local role authenticated;
+select pg_temp.fails($q$select public.executive_dashboard_tile('cash')$q$,'Нет доступа к дашборду руководителя');
+reset role;
+
 rollback;
 \echo 'cash_calendar: all checks passed'

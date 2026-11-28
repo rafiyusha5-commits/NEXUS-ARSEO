@@ -105,6 +105,7 @@ select 'authenticated', unnest(array[
   'public.profitability_report', 'public.profitability_lines',
   'public.set_inventory_loss_reason', 'public.add_inventory_loss_line', 'public.loss_report', 'public.loss_report_lines',
   'public.loss_risk', 'public.loss_trend', 'public.unclassified_loss_lines',
+  'public.dashboard_rate_kzt', 'public.executive_dashboard_tile', 'public.executive_dashboard', 'public.cash_payables_due',
   'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.record_advance_payment', 'public.apply_advance', 'public.record_payment_refund',
   'public.save_cash_account', 'public.set_cash_account_active', 'public.cash_account_list', 'public.record_cash_balance', 'public.set_cash_gap_alert_days',

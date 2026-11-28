@@ -12,6 +12,7 @@ type NavigationItem = { label: string; href: string; key: string; managerOnly?: 
 const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Главная", items: [
     { label: "Обзор", href: "/", key: "overview" },
+    { label: "Дашборд руководителя", href: "/dashboard", key: "dashboard" },
     { label: "Задачи", href: "/tasks", key: "tasks" },
     { label: "Уведомления", href: "/notifications", key: "notifications" },
     { label: "Ассистент", href: "/assistant", key: "assistant" },
