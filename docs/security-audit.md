@@ -5,7 +5,7 @@
 ### Последующее усиление приложения и production
 
 - 03.10.2026 в production Supabase отключена самостоятельная регистрация (`Allow new users to sign up`). Существующие пользователи, вход, восстановление пароля и приглашения администратора продолжают работать.
-- Все маршруты приложения получают HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` и `Permissions-Policy` из `next.config.ts`.
+- Все маршруты приложения получают HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` и `Permissions-Policy` из `next.config.ts`. Камера разрешена только самому Nexus (`camera=(self)`, склад с телефона, `202611280500`); геолокация и микрофон закрыты.
 - CSP (с 21.11.2026, К11) строится на каждый запрос в `src/proxy.ts` с новым nonce: `script-src 'self' 'nonce-…'
   'strict-dynamic'` без `unsafe-inline` (в разработке добавляется `unsafe-eval` для среды Next.js). Next.js ставит nonce
   на свои скрипты сам; корневой макет читает заголовки запроса, поэтому каждая страница рендерится на запрос.
