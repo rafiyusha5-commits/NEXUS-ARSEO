@@ -37,6 +37,8 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Склад", items: [
     { label: "Остатки и партии", href: "/inventory", key: "inventory" },
     { label: "Перемещения и списания", href: "/inventory/movements", key: "inventory-movements" },
+    { label: "Инвентаризация", href: "/inventory/counts", key: "inventory-counts" },
+    { label: "Склад с телефона", href: "/m", key: "mobile" },
     { label: "Контроль ОСГ", href: "/inventory/shelf-life", key: "shelf-life" },
     { label: "Склады и зоны", href: "/warehouses", key: "warehouses" },
     { label: "Стикеры и маркировка", href: "/stickers", key: "stickers" },
@@ -60,6 +62,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
     { label: "Аналитика", href: "/analytics", key: "analytics" },
     { label: "Прибыльность", href: "/analytics/profitability", key: "profitability" },
+    { label: "Потери по срокам", href: "/analytics/losses", key: "losses" },
   ] },
   { label: "Администрирование", items: [
     { label: "Состояние системы", href: "/admin/health", key: "health" },

@@ -8,6 +8,7 @@ import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
 import { readReceivingLines } from "@/lib/shipments/receiving-lines";
+import { receiptLabelWarnings, type ShipmentExpected } from "@/lib/shipments/expected-batches";
 import { readDateChanges } from "@/lib/shipments/date-corrections";
 import { palletWeightColumn, validPalletWeight } from "@/lib/shipments/pallet-weight";
 
@@ -170,12 +171,14 @@ export async function receiveShipmentTransport(formData:FormData){
   if(!transport) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Автомобиль не найден в поставке")}`);
   const locationId=uuid(formData,"location_id",false);
   const performedByName=text(formData,"performed_by_name")||profile.full_name;
-  const {error}=await supabase.rpc("receive_shipment_transport",{
+  // With batches of the packing list filled in, the database needs the confirmation that the expiries were compared with the boxes.
+  const {error}=await supabase.rpc("receive_shipment_transport_checked",{
     p_transport_id:transportId,
     p_location_id:locationId,
     p_lines:lines,
     p_performed_by_name:performedByName,
     p_notes:text(formData,"notes")||null,
+    p_expiry_checked:text(formData,"expiry_checked")==="on",
   });
   if(error){
     redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось провести приёмку автомобиля."))}`);
@@ -186,7 +189,10 @@ export async function receiveShipmentTransport(formData:FormData){
   revalidatePath("/inventory/movements");
   revalidatePath("/shipments");
   revalidatePath("/");
-  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent("Автомобиль принят. Партии и остатки зарегистрированы.")}`);
+  // Labels printed in advance that the receipt did not bind (202611280700) are named, so they are reprinted now.
+  const {data:expected}=await supabase.rpc("shipment_expected_batches",{p_shipment_id:shipmentId});
+  const labels=expected&&transportId?receiptLabelWarnings(expected as ShipmentExpected,transportId):"";
+  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Автомобиль принят. Партии и остатки зарегистрированы.${labels?` ${labels}`:""}`)}`);
 }
 
 // Real dates of an executed shipment (shipments.backdate): only changed days are sent, with a mandatory reason.
