@@ -302,6 +302,8 @@ echo "re-applying document migrations (idempotency check)"
 # Mobile operations (202611280600) replace the document RPCs of 3800 and 8400 re-applied above and grant their own after
 # the hardening. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280600_mobile_operations.sql" >/dev/null
+# Batches expected by the packing list (202611280700) replace the scanning RPCs of 0500 re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280700_expected_batches.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

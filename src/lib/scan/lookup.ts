@@ -11,7 +11,22 @@ export type ScanResult =
   | { kind: "product"; code: string; products: ScanProduct[] }
   | { kind: "location"; code: string; location: { id: string; code: string; zone: string; status: string; warehouse_id: string; warehouse: string }; stock: StockRow[] }
   | { kind: "batch"; code: string; batch: { id: string; batch: string; expiry_date: string | null; status: string; product_id: string; sku: string; product: string }; stock: StockRow[] }
+  | { kind: "expected"; code: string; expected: ExpectedLabel }
   | { kind: "unknown"; code: string; can_bind: boolean };
+
+/** A label printed in advance from the packing list (202611280700) whose batch is not (or not rightly) received yet. */
+export type ExpectedState = "expected" | "missing" | "mismatch" | "not_received" | "removed" | "cancelled" | "received";
+export type ExpectedLabel = { id: string; state: ExpectedState; batch: string; expiry_date: string | null; quantity: string | null; note: string | null;
+  product_id: string; sku: string; product: string; shipment: string | null; transport_no: number | null };
+export const expectedStateText: Record<ExpectedState, string> = {
+  expected: "Партия ещё не принята: наклейка привяжется к ней при приёмке",
+  missing: "Машина принята, а этой партии в приёмке нет (или номер введён иначе): наклейка не привязана",
+  mismatch: "При приёмке данные партии не совпали с упаковочным листом: наклейка не привязана",
+  not_received: "Партия не принята: наклейка не привязана",
+  removed: "Позиция удалена из поставки: наклейка недействительна",
+  cancelled: "Партия по листу отменена: наклейка недействительна",
+  received: "Партия принята",
+};
 
 export const viaLabel: Record<string, string> = { scanner: "сканер", manual: "ввод вручную", camera: "камера" };
 export const uomName: Record<string, string> = { piece: "штука", box: "коробка", layer: "слой", pallet: "паллета", truck: "машина" };

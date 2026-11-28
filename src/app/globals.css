@@ -602,3 +602,4 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
 .mobile-receive-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mobile-receive-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .mobile-receive-grid input{width:100%;min-width:0}.mobile-recount{padding-top:10px;border-top:1px solid #f0efee}
 .mobile-receive button,.mobile-form>button{min-height:48px}
+.expected-batch-cancelled{opacity:.55}.expected-batches td small{display:block;color:var(--muted)}.expected-batches td input[type=number]{width:72px;padding:4px 8px;border:1px solid #d6d3d1;border-radius:8px;font:inherit}

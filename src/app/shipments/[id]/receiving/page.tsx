@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { requirePageUser } from "@/lib/auth/access";
 import { receiveShipmentTransport } from "../../actions";
+import { receivingRows, type ShipmentExpected } from "@/lib/shipments/expected-batches";
 
 const transportStatus:Record<string,string>={planned:"Запланирован",loading:"На загрузке",in_transit:"В пути",at_customs:"На таможне",arrived:"Прибыл",unloaded:"Разгружен",cancelled:"Отменён"};
 const units:Record<string,string>={piece:"шт.",box:"кор.",layer:"слой",pallet:"пал.",truck:"авто"};
@@ -22,12 +23,15 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
   const {profile,roles,supabase,permissions:permissions}=await requirePageUser(["inventory.receive"] as const);
   const {data:shipment,error}=await supabase.from("shipments").select("id,shipment_number,status,is_locked,destination_warehouse_id,warehouse:warehouses(name,code)").eq("id",id).maybeSingle();
   if(error||!shipment)notFound();
-  const [{data:transport},{data:items},{data:locations},{data:receipt}]=await Promise.all([
+  const [{data:transport},{data:items},{data:locations},{data:receipt},{data:expectedData}]=await Promise.all([
     supabase.from("shipment_transports").select("id,shipment_id,sequence_no,status,planned_arrival_date,actual_arrival_date,notes").eq("id",query.transport).eq("shipment_id",id).maybeSingle(),
     supabase.from("shipment_items").select("id,uom,ordered_quantity,confirmed_quantity,shipped_quantity,product:products(internal_sku,name,brand)").eq("shipment_id",id).eq("shipment_transport_id",query.transport).order("created_at"),
     supabase.from("warehouse_locations").select("id,code,zone").eq("warehouse_id",shipment.destination_warehouse_id).eq("status","active").order("zone").order("code"),
     supabase.from("shipment_transport_receipts").select("id,received_at,performed_by_name").eq("shipment_transport_id",query.transport).maybeSingle(),
+    supabase.rpc("shipment_expected_batches",{p_shipment_id:id}),
   ]);
+  // Batches of the packing list (202611280700): their rows are filled in advance.
+  const expectedBatches=new Map(((expectedData as ShipmentExpected|null)?.items??[]).map(item=>[item.item_id,item.batches]));
   if(!transport)notFound();
   const warehouse=one(shipment.warehouse);
   const canReceive=permissions["inventory.receive"]&&transport.status==="arrived"&&!receipt&&!shipment.is_locked&&!['on_hold','cancelled','closed'].includes(shipment.status);
@@ -47,7 +51,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
       <input type="hidden" name="shipment_id" value={shipment.id}/><input type="hidden" name="transport_id" value={transport.id}/>
       <div className="panel-heading"><div><p className="eyebrow">Фактические данные</p><h2>Товары и партии</h2></div><span className="page-count">одна транзакция</span></div>
       <p className="form-help">При недостаче, излишке или повреждении обязательно укажите причину. В остаток попадает только принятое количество.</p>
-      <div className="receiving-items">{items.map((item)=>{const product=one(item.product);const expected=Number(item.shipped_quantity??item.confirmed_quantity??item.ordered_quantity);return <ReceivingItem key={item.id} itemId={item.id} expected={expected} unit={units[item.uom]??item.uom} title={`${product?.internal_sku} · ${name(product?.name)}`}/>;})}</div>
+      <div className="receiving-items">{items.map((item)=>{const product=one(item.product);const expected=Number(item.shipped_quantity??item.confirmed_quantity??item.ordered_quantity);return <ReceivingItem key={item.id} itemId={item.id} expected={expected} unit={units[item.uom]??item.uom} title={`${product?.internal_sku} · ${name(product?.name)}`} batches={receivingRows(expected,expectedBatches.get(item.id)??[])}/>;})}</div>
       <div className="receiving-footer">
         <label>Зона склада<select name="location_id" defaultValue=""><option value="">Без зоны</option>{locations?.map((location)=><option value={location.id} key={location.id}>{location.code} · {location.zone}</option>)}</select></label>
         <label>Исполнитель<input name="performed_by_name" defaultValue={profile.full_name} required/></label>

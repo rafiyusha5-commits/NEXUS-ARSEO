@@ -1,6 +1,6 @@
 // The result of a lookup by code (202611280500): rendering only, shared by the mobile page and its browser test.
 import { ScanFeedback } from "@/components/scan-feedback";
-import { daysLeft, quantity, shortDate, uomName, viaLabel, type ScanResult, type StockRow } from "@/lib/scan/lookup";
+import { daysLeft, expectedStateText, quantity, shortDate, uomName, viaLabel, type ScanResult, type StockRow } from "@/lib/scan/lookup";
 
 type Params = { batch?: string; expiry?: string; qty?: string; via?: string };
 
@@ -8,7 +8,7 @@ export function ScanResultView({ result, today, params, bindAction }: { result: 
   bindAction: (data: FormData) => void | Promise<void> }) {
   const code = result.code;
   return <>
-      <ScanFeedback ok={result.kind !== "unknown"} signature={`${code}:${params.via ?? ""}`}/>
+      <ScanFeedback ok={result.kind !== "unknown" && (result.kind !== "expected" || result.expected.state === "expected")} signature={`${code}:${params.via ?? ""}`}/>
       <p className="mobile-hint">Код {result.code}{params.via ? ` · ${viaLabel[params.via] ?? params.via}` : ""}{params.batch ? ` · партия ${params.batch}` : ""}{params.expiry ? ` · годен до ${shortDate(params.expiry)}` : ""}{params.qty ? ` · ${params.qty} шт. в коде` : ""}</p>
       {result.kind === "product" && result.products.map(product => <section className="mobile-card" key={`${product.product_id}-${product.uom}`}>
         <strong className="mobile-big">{product.product}</strong>
@@ -25,6 +25,13 @@ export function ScanResultView({ result, today, params, bindAction }: { result: 
         <strong className="mobile-big">{result.batch.product}</strong>
         <small>{result.batch.sku} · партия {result.batch.batch} · годен до {shortDate(result.batch.expiry_date)}</small>
         <Stock rows={result.stock} today={today}/>
+      </section>}
+      {result.kind === "expected" && <section className={`mobile-card${result.expected.state === "expected" ? "" : " mobile-card-warning"}`}>
+        <strong className="mobile-big">{result.expected.sku} · партия {result.expected.batch}</strong>
+        <small>{result.expected.product}{result.expected.expiry_date ? ` · годен до ${shortDate(result.expected.expiry_date)}` : ""}{result.expected.quantity ? ` · по листу ${quantity(result.expected.quantity)}` : ""}</small>
+        {result.expected.shipment && <small>Поставка {result.expected.shipment}{result.expected.transport_no ? `, машина №${result.expected.transport_no}` : ""}</small>}
+        <p className={result.expected.state === "expected" ? "mobile-hint" : "load-warning-text"}>{expectedStateText[result.expected.state]}</p>
+        {result.expected.note && <small>{result.expected.note}</small>}
       </section>}
       {result.kind === "unknown" && <section className="mobile-card mobile-card-warning">
         <strong className="mobile-big">Код не найден</strong>

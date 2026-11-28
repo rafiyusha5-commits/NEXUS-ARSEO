@@ -111,6 +111,7 @@ select 'authenticated', unnest(array[
   'public.inventory_count_list', 'public.set_inventory_count_tolerance',
   'public.ensure_scan_labels', 'public.record_label_print', 'public.scan_lookup', 'public.bind_scan_code',
   'public.move_between_locations', 'public.order_pick_list', 'public.confirm_pick', 'public.ship_picked_order',
+  'public.shipment_expected_batches', 'public.add_expected_batch', 'public.cancel_expected_batch',
   'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.record_advance_payment', 'public.apply_advance', 'public.record_payment_refund',
   'public.reprice_customer_order_item', 'public.set_customer_order_item_price',

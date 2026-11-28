@@ -34,6 +34,12 @@ export type PickMatch =
 /** What a scan means for the pick list: the line to confirm, a line already picked, a batch that is not reserved. */
 export function matchPick(list: PickList, result: ScanResult | null, batchNumber?: string | null): PickMatch {
   if (!result || result.kind === "unknown" || result.kind === "location") return { kind: "not_found" };
+  // A label printed in advance whose batch is not received under it: nothing of it is in stock, so nothing is reserved.
+  if (result.kind === "expected") {
+    const product = result.expected.product_id;
+    return { kind: "foreign", batch: result.expected.batch,
+      expected: list.lines.find(line => remaining(line) > 0 && line.product_id === product) ?? nextPick(list) };
+  }
   const batches = scannedBatches(result, batchNumber);
   if (!batches.length) {
     if (result.kind === "product" && !batchNumber) return { kind: "need_batch", product: result.products[0]?.product ?? result.code };

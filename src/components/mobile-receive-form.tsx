@@ -2,17 +2,19 @@
 
 // Receiving a truck from a phone (202611280600): the existing receive_shipment_transport with its form fields. A scan of a
 // GS1 code on a box fills the batch and the expiry into the line of its product (a second batch of the same product gets
-// its own line); a plain barcode finds the line. Nothing is written until «Завершить приёмку».
+// its own line); a plain barcode finds the line. The batches of the packing list come filled in (202611280700) and a
+// label printed in advance finds its row. Nothing is written until «Завершить приёмку».
 import { useState } from "react";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { ScanFeedback } from "@/components/scan-feedback";
 import { ScanField } from "@/components/scan-field";
 import { gs1ErrorText, looksLikeGs1, parseGs1 } from "@/lib/scan/gs1";
 import { matchReceiving } from "@/lib/scan/operations";
+import type { ReceivingRow } from "@/lib/shipments/expected-batches";
 
-export type ReceiveItem = { item_id: string; title: string; expected: number; unit: string; codes: string[] };
+export type ReceiveItem = { item_id: string; title: string; expected: number; unit: string; codes: string[]; batches?: ReceivingRow[] };
 export type ReceiveLocation = { id: string; code: string; zone: string };
-type Row = { key: number; expected: string; accepted: string; damaged: string; batch: string; manufactured: string; expiry: string; reason: string };
+type Row = { key: number; expected: string; accepted: string; damaged: string; batch: string; manufactured: string; expiry: string; reason: string; code?: string | null };
 type Action = (data: FormData) => void | Promise<void>;
 
 const shortDate = (value: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
@@ -20,9 +22,11 @@ const shortDate = (value: string) => new Intl.DateTimeFormat("ru-RU", { timeZone
 export function MobileReceiveForm({ shipmentId, transportId, items, locations, performer, action }: {
   shipmentId: string; transportId: string; items: ReceiveItem[]; locations: ReceiveLocation[]; performer: string; action: Action;
 }) {
-  const [rows, setRows] = useState<Record<string, Row[]>>(() => Object.fromEntries(items.map(item =>
-    [item.item_id, [{ key: 0, expected: String(item.expected), accepted: String(item.expected), damaged: "0", batch: "", manufactured: "", expiry: "", reason: "" }]])));
-  const [next, setNext] = useState(1);
+  const [rows, setRows] = useState<Record<string, Row[]>>(() => Object.fromEntries(items.map(item => [item.item_id, item.batches?.length
+    ? item.batches.map((batch, index) => ({ key: index, expected: batch.expected, accepted: batch.expected, damaged: "0", batch: batch.batch,
+        manufactured: batch.manufactured, expiry: batch.expiry, reason: "", code: batch.code }))
+    : [{ key: 0, expected: String(item.expected), accepted: String(item.expected), damaged: "0", batch: "", manufactured: "", expiry: "", reason: "" }]])));
+  const [next, setNext] = useState(() => Math.max(1, ...items.map(item => item.batches?.length ?? 0)));
   const [notice, setNotice] = useState<{ ok: boolean; text: string; at: number; item?: string } | null>(null);
 
   const update = (itemId: string, key: number, patch: Partial<Row>) =>
@@ -30,6 +34,16 @@ export function MobileReceiveForm({ shipmentId, transportId, items, locations, p
 
   const onCode = (raw: string) => {
     const at = Date.now();
+    if (/^NX-/i.test(raw)) {
+      const code = raw.toUpperCase();
+      const owner = items.find(item => rows[item.item_id].some(row => row.code === code));
+      const index = owner ? rows[owner.item_id].findIndex(row => row.code === code) : -1;
+      if (!owner) { setNotice({ ok: false, text: "Наклейка не из упаковочного листа этой машины", at }); return; }
+      const row = rows[owner.item_id][index];
+      setNotice({ ok: true, text: `${owner.title}: партия ${row.batch} — строка ${index + 1}, проверьте количество и срок`, at, item: owner.item_id });
+      focus(owner.item_id);
+      return;
+    }
     const gs1 = looksLikeGs1(raw) ? parseGs1(raw) : null;
     if (gs1 && !gs1.ok) { setNotice({ ok: false, text: gs1ErrorText[gs1.error], at }); return; }
     const code = gs1?.ok && gs1.gtin ? gs1.gtin : raw;
@@ -69,7 +83,7 @@ export function MobileReceiveForm({ shipmentId, transportId, items, locations, p
         <legend className="mobile-big">{item.title}</legend>
         <small>Ожидается {item.expected.toLocaleString("ru-RU")} {item.unit}</small>
         {rows[item.item_id].map((row, index) => <div key={row.key} className="mobile-receive-row">
-          {rows[item.item_id].length > 1 && <strong>Партия {index + 1}</strong>}
+          {(rows[item.item_id].length > 1 || row.code) && <strong>Партия {index + 1}{row.code ? ` · наклейка ${row.code}` : ""}</strong>}
           <input type="hidden" name="item_id" value={item.item_id}/>
           <div className="mobile-receive-grid">
             <label>По документу<input name="expected_quantity" inputMode="decimal" required value={row.expected} onChange={event => update(item.item_id, row.key, { expected: event.target.value })}/></label>

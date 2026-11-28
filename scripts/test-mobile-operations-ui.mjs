@@ -42,11 +42,11 @@ try {
     await input.click(); await page.keyboard.type(code, { delay: 4 }); await page.keyboard.press('Enter');
   };
   const submitted = page => page.evaluate(() => window.submitted.map(entries => entries));
-  const screenshots = { android: ['pick', 'pick-foreign', 'pick-done', 'move', 'count', 'receive'], iphone: ['pick', 'receive'] };
+  const screenshots = { android: ['pick', 'pick-foreign', 'pick-done', 'move', 'count', 'receive', 'receive-expected', 'scan-expected'], iphone: ['pick', 'receive'] };
   for (const [name, device] of [['android', devices['Pixel 7']], ['iphone', devices['iPhone 14']]]) {
     const options = { ...device }; delete options.defaultBrowserType;
     const context = await browser.newContext({ ...options, deviceScaleFactor: Number(process.env.NEXUS_SCREENSHOT_SCALE ?? 1) });
-    for (const view of ['pick', 'pick-foreign', 'pick-batch', 'pick-done', 'move', 'count', 'receive']) {
+    for (const view of ['pick', 'pick-foreign', 'pick-batch', 'pick-done', 'move', 'count', 'receive', 'receive-expected', 'scan-expected']) {
       const page = await context.newPage();
       const errors = []; page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', r => r.request().url().startsWith(url) ? r.continue() : r.abort());
@@ -126,6 +126,32 @@ try {
         assert.deepEqual(all('expiry_date'), ['2028-01-31', '2028-02-29', '2027-06-15']);
         assert.deepEqual(all('expected_quantity'), ['200', '40', '120']);
       }
+      if (view === 'receive-expected') {
+        const item = page.locator('#receive-i1');
+        assert.match(await item.innerText(), /Партия 1 · наклейка NX-4WQ7M2KD[\s\S]*Партия 2 · наклейка NX-9HT3B6RE/, 'one row per batch of the packing list');
+        assert.equal(await item.getByLabel('Номер партии').first().inputValue(), '2611-01-07');
+        assert.equal(await item.getByLabel('Годен до').first().inputValue(), '2027-11-30');
+        assert.equal(await item.getByLabel('Принято').nth(1).inputValue(), '800');
+        await scan(page, 'Сканируйте коробку: партия и срок подставятся', 'NX-9HT3B6RE');
+        assert.match(await page.getByRole('status').innerText(), /партия 2611-01-08 — строка 2, проверьте количество и срок/);
+        await scan(page, 'Сканируйте коробку: партия и срок подставятся', 'NX-0000ZZZZ');
+        assert.match(await page.getByRole('status').innerText(), /Наклейка не из упаковочного листа этой машины/);
+        await item.getByLabel('Принято').first().fill('1190');
+        await item.getByLabel('Причина расхождения').first().fill('Недостача 10');
+        await item.getByLabel('Годен до').nth(1).fill('2027-12-15');
+        await page.getByRole('button', { name: 'Завершить приёмку' }).click();
+        await page.waitForFunction(() => window.submitted.length === 1);
+        const form = (await submitted(page))[0];
+        const all = key => form.filter(([field]) => field === key).map(([, value]) => value);
+        assert.deepEqual(all('batch_number'), ['2611-01-07', '2611-01-08']);
+        assert.deepEqual(all('expected_quantity'), ['1200', '800']);
+        assert.deepEqual(all('accepted_quantity'), ['1190', '800']);
+        assert.deepEqual(all('expiry_date'), ['2027-11-30', '2027-12-15']);
+      }
+      if (view === 'scan-expected') {
+        const card = await page.locator('.mobile-card').innerText();
+        assert.match(card, /NUT-13 · партия 2611-01-07[\s\S]*по листу 1[\s\u00a0]200[\s\S]*Поставка NAR-2026-0118, машина №2[\s\S]*не совпали с упаковочным листом: наклейка не привязана[\s\S]*Срок по упаковочному листу 30\.11\.2027/);
+      }
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name}/${view}: no horizontal scroll`);
       for (const button of await page.locator('button.scan-button:visible').all()) {
         assert.ok((await button.boundingBox()).height >= 44, `${name}/${view}: buttons large enough for a thumb`);
@@ -140,7 +166,31 @@ try {
     }
     await context.close();
   }
-  console.log('PASS mobile operations UI (Pixel 7, iPhone 14): reserved batch only, ship when picked, move, blind count, GS1 receiving');
+  // The page of a shipment with the batches of its packing list (202611280700), on a desktop screen.
+  {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: Number(process.env.NEXUS_SCREENSHOT_SCALE ?? 1) });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.route('**/*', r => r.request().url().startsWith(url) ? r.continue() : r.abort());
+    await page.goto(`${url}/?view=shipment-batches`); await page.getByRole('heading', { name: 'Партии из упаковочного листа' }).waitFor();
+    const text = await page.locator('main').innerText();
+    assert.match(text, /Партия 2611-01-09 · HAZELNUT KERNELS 13-15/);
+    assert.match(text, /A-5502[\s\S]*не совпала с листом[\s\S]*Срок по упаковочному листу 30\.11\.2027/);
+    assert.equal(await page.getByLabel('Позиция поставки').inputValue(), 'i1', 'the only truck not received is chosen');
+    assert.equal(await page.getByRole('checkbox', { name: 'Печатать наклейку партии 2611-01-99' }).count(), 0, 'a cancelled batch is not printed');
+    assert.equal(await page.getByRole('checkbox', { name: 'Печатать наклейку партии 2611-01-08' }).isChecked(), true, 'not yet printed: offered');
+    assert.equal(await page.getByRole('checkbox', { name: 'Печатать наклейку партии 2611-01-07' }).isChecked(), false, 'printed already: not offered again');
+    assert.equal(await page.getByLabel('Наклеек партии 2611-01-08').inputValue(), '4');
+    const form = await page.evaluate(() => [...new FormData(document.getElementById('print-labels')).entries()].map(([key, value]) => [key, String(value)]));
+    assert.deepEqual(form.filter(([key]) => key === 'ids').map(([, value]) => value), ['e2'], 'the checkboxes in the tables belong to the print form');
+    assert.ok(form.some(([key, value]) => key === 'copies_e2' && value === '4'));
+    assert.equal(await page.locator('#item-i2 form.reference-form').count(), 0, 'no batch is added to a truck already received');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'desktop: no horizontal scroll');
+    if (process.argv[3]) await page.screenshot({ path: join(resolve(process.argv[3]), 'shipment-batches-1440.png'), fullPage: true });
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+  console.log('PASS mobile operations UI (Pixel 7, iPhone 14, desktop): reserved batch only, ship when picked, move, blind count, GS1 receiving, packing list labels');
 } finally {
   await browser?.close(); server?.close(); await rm(output, { recursive: true, force: true });
 }
