@@ -25,6 +25,11 @@ describe("Telegram notifications: text", () => {
     assert.equal(text, `Заказ нельзя отгрузить.\nhttps://nexus.example.kz/sales/${ID}?tab=shipping`);
     assert.doesNotMatch(text, /\d[\d\s]*[,.]\d{2}|KZT|EUR|₸|сумм|цен[аы]\b/i, "no amounts or prices");
   });
+  it("a cash gap: the calendar link, no currency and no amount", () => {
+    const text = composeTelegramMessage(group([{ type: "cash_gap", entity_type: "cash_calendar", entity_id: null }]), "https://nexus.example.kz");
+    assert.equal(text, "Проверьте платёжный календарь.\nhttps://nexus.example.kz/finance/cash");
+    assert.doesNotMatch(text, /\d[\d\s]*[,.]\d{2}|KZT|EUR|USD|₸|сумм/i);
+  });
   it("several: one summary; a stale backlog: one line with the number of unread", () => {
     const summary = composeTelegramMessage(group(Array.from({ length: 7 }, () => ({}))), null);
     assert.match(summary, /^Уведомлений Nexus: 7\./);

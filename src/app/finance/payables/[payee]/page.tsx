@@ -5,7 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { requirePageUser } from "@/lib/auth/access";
 import { expenseStatusLabel, expenseTypeLabel, money } from "@/lib/finance/payables";
-import { applyAdvance, recordAdvancePayment, recordExpensePayment, recordPaymentRefund, setExpenseDueDate } from "../actions";
+import { applyAdvance, recordAdvancePayment, recordExpensePayment, recordPaymentRefund, setExpenseDueDate, setExpensePlannedPaymentDate } from "../actions";
 
 type Payment = { amount: string; paid_on: string; author: string | null; document: string | null; note: string | null; legacy: boolean; advance?: boolean; created_at: string };
 type Refund = { amount: string; received_on: string; note: string | null; author: string | null };
@@ -14,6 +14,8 @@ type Advance = { id: string; currency: string; currency_id: string; amount: stri
 type Overpayment = Advance & { reversed: Array<{ expense_id: string; type: string; expense_amount: string; paid: string; reversed_at: string | null; reason: string | null }> };
 type Expense = { id: string; type: string; status: string; currency: string; amount: string; paid: string; rest: string; incurred_at: string;
   due_date: string | null; overdue_days: number | null; shipment: string | null; shipment_id: string | null; currency_id?: string; payments: Payment[] };
+// Planned payment date of an expense and its last change (202611280200).
+type PaymentPlan = { expense_id: string; planned_payment_date: string | null; changed_at: string | null; changed_by: string | null; reason: string | null };
 type Card = { payee: string | null; payment_terms: string | null; can_pay: boolean; can_manage: boolean; can_goods?: boolean; expenses: Expense[]; advances?: Advance[]; overpayments?: Overpayment[] };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,10 +28,12 @@ export default async function PayeePage({ params, searchParams }: { params: Prom
   const notice = await searchParams;
   if (payee !== "none" && !uuid.test(payee)) notFound();
   const { profile, roles, supabase } = await requirePageUser();
-  const [{ data, error }, { data: currencyRows }] = await Promise.all([
+  const [{ data, error }, { data: currencyRows }, { data: planRows }] = await Promise.all([
     supabase.rpc("payables_payee", { p_payee_id: payee === "none" ? null : payee }),
     supabase.from("currencies").select("id,code").eq("is_active", true).order("code"),
+    supabase.rpc("expense_payment_plans", { p_payee_id: payee === "none" ? null : payee }),
   ]);
+  const plans = new Map(((planRows ?? []) as PaymentPlan[]).map(plan => [plan.expense_id, plan]));
   const currencies = (currencyRows ?? []) as Array<{ id: string; code: string }>;
   const card = data as Card | null;
   const open = (card?.expenses ?? []).filter(expense => Number(expense.rest) > 0);
@@ -66,6 +70,13 @@ export default async function PayeePage({ params, searchParams }: { params: Prom
       <input type="hidden" name="expense_id" value={expense.id}/><input type="hidden" name="payee" value={payee}/>
       <label>Срок оплаты<input type="date" name="due_date" defaultValue={expense.due_date ?? ""}/></label>
       <PendingSubmitButton pendingText="Сохраняем…" className="secondary" type="submit">Сохранить срок</PendingSubmitButton>
+    </form>}
+    {plans.get(expense.id)?.planned_payment_date && Number(expense.rest) > 0 && <p className="form-help">Планируем оплатить {day(plans.get(expense.id)!.planned_payment_date)}{plans.get(expense.id)!.changed_by ? ` · ${plans.get(expense.id)!.changed_by}` : ""}{plans.get(expense.id)!.reason ? ` · ${plans.get(expense.id)!.reason}` : ""}. Платёжный календарь ставит оплату на эту дату, а не на срок.</p>}
+    {card?.can_manage && Number(expense.rest) > 0 && ["confirmed", "allocated"].includes(expense.status) && <form action={setExpensePlannedPaymentDate} className="inline-action">
+      <input type="hidden" name="expense_id" value={expense.id}/><input type="hidden" name="payee" value={payee}/>
+      <label>Планируем оплатить<input type="date" name="planned_payment_date" defaultValue={plans.get(expense.id)?.planned_payment_date ?? ""}/></label>
+      <label>Причина<input name="reason" required minLength={3} maxLength={500} placeholder="Например: договорились о переносе"/></label>
+      <PendingSubmitButton pendingText="Сохраняем…" className="secondary" type="submit">Сохранить план</PendingSubmitButton>
     </form>}
   </article>;
   return <main className="app-shell"><AppSidebar profile={profile} roles={roles} active="payables"/><section className="workspace admin-workspace">

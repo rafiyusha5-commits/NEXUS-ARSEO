@@ -50,6 +50,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Расходы и себестоимость", href: "/finance", key: "finance" },
     { label: "Дебиторка", href: "/finance/receivables", key: "receivables" },
     { label: "Кредиторка", href: "/finance/payables", key: "payables" },
+    { label: "Платёжный календарь", href: "/finance/cash", key: "cash" },
     { label: "Поступления из банка", href: "/finance/bank", key: "bank" },
   ] },
   { label: "Документы", items: [

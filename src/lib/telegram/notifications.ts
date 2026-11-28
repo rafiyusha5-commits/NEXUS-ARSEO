@@ -17,6 +17,7 @@ export const TELEGRAM_NOTIFICATION_TEXT: Record<string, string> = {
   low_shelf_life: "Партия под риском по сроку годности",
   approval_request: "Нужно ваше согласование",
   price_review: "Проверьте цену в прайсе",
+  cash_gap: "Проверьте платёжный календарь",
 };
 
 /** Absolute link only when the public address of Nexus is configured; otherwise the section name. */

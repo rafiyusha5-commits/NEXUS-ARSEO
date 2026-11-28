@@ -1,6 +1,6 @@
 // Read-only reports of Nexus for the assistant (2026-11-21): the same database functions the screens use — price
-// list, customer conditions and margins, payables, receivables, profitability, document check, daily summary, shelf
-// life risks. Each function checks the employee's permissions itself; the report list, function names and argument
+// list, customer conditions and margins, payables, payment calendar, receivables, profitability, document check, daily
+// summary, shelf life risks. Each function checks the employee's permissions itself; the report list, function names and argument
 // names are fixed here and never come from the model. The result is flattened into rows of label–value text.
 import { maskDataText, maskOutgoing } from "./masking.ts";
 import type { AgentTool, ParamSchema, ShipmentRow, ToolField, ToolRow } from "./types.ts";
@@ -40,6 +40,8 @@ export const REPORTS: readonly ReportDefinition[] = [
     args: () => ({}), needs: "query — получатель" },
   { key: "payables_payee", title: "Кредиторка получателя: расходы, оплаты, авансы, переплаты", rpc: "payables_payee", permissions: ["finance.view"], anyPermissions: [],
     args: p => required({ p_payee_id: id(p, "counterparty_id") }, ["p_payee_id"]), needs: "counterparty_id — получатель" },
+  { key: "cash_calendar", title: "Платёжный календарь: остаток, поступления и выплаты по неделям, кассовый разрыв", rpc: "cash_calendar", permissions: ["finance.view"], anyPermissions: [],
+    args: () => ({ p_step: "week", p_periods: 13 }), needs: "query — валюта" },
   { key: "receivables", title: "Дебиторская задолженность клиентов", rpc: "customer_receivables", permissions: ["receivables.view"], anyPermissions: [],
     args: () => ({}), needs: "query — клиент" },
   { key: "customer_statement", title: "Выписка клиента: отгрузки, оплаты, сальдо", rpc: "customer_statement", permissions: ["receivables.view"], anyPermissions: [],
