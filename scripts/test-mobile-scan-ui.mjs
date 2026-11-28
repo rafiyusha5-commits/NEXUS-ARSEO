@@ -36,7 +36,7 @@ try {
   const url = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ headless: true });
   for (const [name, device] of [['android', devices['Pixel 7']], ['iphone', devices['iPhone 14']]]) {
-    const { defaultBrowserType: _ignored, ...options } = device;
+    const options = { ...device }; delete options.defaultBrowserType;
     const context = await browser.newContext({ ...options, deviceScaleFactor: Number(process.env.NEXUS_SCREENSHOT_SCALE ?? 1) });
     for (const view of ['product', 'location', 'unknown']) {
       const page = await context.newPage();

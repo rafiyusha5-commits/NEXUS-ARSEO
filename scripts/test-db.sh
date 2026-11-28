@@ -299,6 +299,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280300_inventory_counts.sql" >/dev/null
 # Scanning grants its RPCs after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280500_scan_codes.sql" >/dev/null
+# Mobile operations (202611280600) replace the document RPCs of 3800 and 8400 re-applied above and grant their own after
+# the hardening. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280600_mobile_operations.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

@@ -596,3 +596,9 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
 .mobile-form{display:grid;gap:10px}.mobile-form label{display:grid;gap:6px;font-weight:600;font-size:14px}.mobile-form input,.mobile-form select{min-height:48px;padding:10px 12px;border:1px solid #d6d3d1;border-radius:12px;font:inherit;font-size:16px;background:#fff}
 .mobile-form .check-label{display:flex;gap:10px;align-items:center;font-weight:500}.mobile-form .check-label input{min-height:auto;width:22px;height:22px}
 .mobile-checklist{display:grid;gap:4px;max-height:50vh;overflow-y:auto;padding:4px 2px}
+.mobile-card-ok{border-color:#a7dcc9;background:#f2fbf7}.mobile-next{border-width:2px;border-color:var(--primary,#009B77)}.mobile-next-qty{font-size:18px;font-weight:700}
+.mobile-line-done{opacity:.55}.mobile-pick-button{justify-self:start;margin-top:6px;min-height:44px;display:inline-flex;align-items:center}
+.mobile-receive{margin:0}.mobile-receive legend{padding:0 4px}.mobile-receive-row{display:grid;gap:10px;padding-top:10px;border-top:1px solid #f0efee}
+.mobile-receive-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mobile-receive-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mobile-receive-grid input{width:100%;min-width:0}.mobile-recount{padding-top:10px;border-top:1px solid #f0efee}
+.mobile-receive button,.mobile-form>button{min-height:48px}

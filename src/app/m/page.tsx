@@ -10,8 +10,11 @@ export default async function MobileHome() {
     <ScanField/>
     <nav className="mobile-menu" aria-label="Операции склада">
       <Link className="mobile-tile" href="/m/scan"><strong>Поиск по коду</strong><small>что, где, сколько свободно, срок</small></Link>
+      <Link className="mobile-tile" href="/m/receive"><strong>Приёмка</strong><small>прибывшие машины: партия и срок из GS1-кода</small></Link>
+      <Link className="mobile-tile" href="/m/pick"><strong>Отбор заказа</strong><small>по местам, со сверкой партии с резервом</small></Link>
+      <Link className="mobile-tile" href="/m/move"><strong>Перемещение</strong><small>между местами склада, документом сразу</small></Link>
+      <Link className="mobile-tile" href="/m/count"><strong>Инвентаризация</strong><small>подсчёт мест сканером (слепой подсчёт)</small></Link>
       <Link className="mobile-tile" href="/m/labels"><strong>Этикетки</strong><small>места и партии: A4 или термопринтер</small></Link>
-      <Link className="mobile-tile" href="/inventory/counts"><strong>Инвентаризация</strong><small>пересчёт мест (слепой подсчёт)</small></Link>
     </nav>
   </>;
 }

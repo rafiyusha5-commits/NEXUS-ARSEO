@@ -2,10 +2,15 @@
 // quantity; the source of input (scanner, typing, camera) is kept.
 import { looksLikeGs1, parseGs1 } from "./gs1.ts";
 
-/** The lookup address for a scanned or typed code: GS1 parsed into its parts, the source of input kept. */
+/** The lookup address for a scanned or typed code: GS1 parsed into its parts, the source of input kept. A target with its
+ *  own query (an operation in progress: the order, the place being counted) keeps it; the parts of the last scan replace
+ *  those of the previous one. */
 export function scanHref(raw: string, via: "scanner" | "manual" | "camera", target = "/m/scan") {
   const code = raw.trim();
-  const params = new URLSearchParams({ via });
+  const [path, query = ""] = target.split("?", 2);
+  const params = new URLSearchParams(query);
+  for (const key of ["via", "code", "batch", "expiry", "qty", "gs1_error", "error", "success"]) params.delete(key);
+  params.set("via", via);
   const gs1 = looksLikeGs1(code) ? parseGs1(code) : null;
   if (gs1?.ok && gs1.gtin) {
     params.set("code", gs1.gtin);
@@ -16,5 +21,5 @@ export function scanHref(raw: string, via: "scanner" | "manual" | "camera", targ
     params.set("code", code);
     if (gs1 && !gs1.ok) params.set("gs1_error", gs1.error);
   }
-  return `${target}?${params.toString()}`;
+  return `${path}?${params.toString()}`;
 }

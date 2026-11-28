@@ -12,7 +12,9 @@ type Detector = { detect(source: HTMLVideoElement): Promise<Array<{ rawValue: st
 type DetectorConstructor = new (options: { formats: string[] }) => Detector;
 const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "data_matrix", "qr_code"];
 
-export function ScanField({ target = "/m/scan", label = "Код: отсканируйте или введите" }: { target?: string; label?: string }) {
+/** `onCode` handles the code in place (a form being filled: receiving) instead of opening `target`. */
+export function ScanField({ target = "/m/scan", label = "Код: отсканируйте или введите", placeholder = "Штрихкод, этикетка Nexus или код GS1", onCode }: {
+  target?: string; label?: string; placeholder?: string; onCode?: (raw: string, via: "scanner" | "manual" | "camera") => void }) {
   const router = useRouter();
   const strokes = useRef<KeyStroke[]>([]);
   const video = useRef<HTMLVideoElement>(null);
@@ -26,7 +28,8 @@ export function ScanField({ target = "/m/scan", label = "Код: отскани�
   const open = (raw: string, via: "scanner" | "manual" | "camera") => {
     if (!raw.trim()) return;
     stopCamera.current();
-    router.push(scanHref(raw, via, target));
+    if (onCode) onCode(raw.trim(), via);
+    else router.push(scanHref(raw, via, target));
   };
 
   const startCamera = async () => {
@@ -76,7 +79,7 @@ export function ScanField({ target = "/m/scan", label = "Код: отскани�
     <form onSubmit={event => { event.preventDefault(); open(value, inputSource([...strokes.current, { key: "Enter", at: performance.now() }])); strokes.current = []; setValue(""); }}>
       <label className="scan-label" htmlFor="scan-input">{label}</label>
       <input id="scan-input" className="scan-input" value={value} autoFocus autoComplete="off" autoCapitalize="characters" spellCheck={false}
-        enterKeyHint="search" inputMode="text" placeholder="Штрихкод, этикетка Nexus или код GS1"
+        enterKeyHint="search" inputMode="text" placeholder={placeholder}
         onChange={event => setValue(event.target.value)}
         onKeyDown={event => {
           if (event.key === "Enter") return;
