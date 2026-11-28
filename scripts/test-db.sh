@@ -295,6 +295,8 @@ echo "re-applying document migrations (idempotency check)"
 # Losses (202611280100): the hardening re-applied above resets the grants of its RPCs; the reasons, the posting check and
 # the reports are idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
+# Inventory counts grant their RPCs after the hardening and use the loss reasons of 202611280100. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280300_inventory_counts.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -307,6 +309,8 @@ echo "test: Telegram delivery under concurrency"
 node "$ROOT/scripts/test-telegram-notifications-concurrency.mjs" "${PSQL[@]}"
 echo "test: partial payments under concurrency"
 node "$ROOT/scripts/test-payables-concurrency.mjs" "${PSQL[@]}"
+echo "test: inventory counts under concurrency"
+node "$ROOT/scripts/test-inventory-count-concurrency.mjs" "${PSQL[@]}"
 echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 

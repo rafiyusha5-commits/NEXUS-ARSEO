@@ -59,6 +59,9 @@ export const REPORTS: readonly ReportDefinition[] = [
     needs: "group (reason, product, brand, warehouse, shipment, month); date и date_to — период" },
   { key: "loss_risk", title: "Товар под риском по сроку годности в деньгах", rpc: "loss_risk", permissions: ["reports.view", "inventory.view"], anyPermissions: [],
     args: p => ({ p_group: typeof p.group === "string" ? p.group : "bucket" }), needs: "group (bucket, warehouse, brand, supplier), по умолчанию bucket" },
+  { key: "inventory_counts", title: "Инвентаризации: журнал пересчётов и их статусы", rpc: "inventory_count_list", permissions: [],
+    anyPermissions: ["inventory.view", "inventory.count.manage", "inventory.count.record", "inventory.count.approve"],
+    args: () => ({ p_limit: 100 }), needs: "query — номер или склад" },
   { key: "shelf_life_risks", title: "Сроки годности под риском", rpc: "shelf_life_risks", permissions: ["inventory.view", "products.view"], anyPermissions: [],
     args: p => ({ p_horizon_days: typeof p.days === "number" ? p.days : 30 }), needs: "days — горизонт в днях (по умолчанию 30)" },
 ];

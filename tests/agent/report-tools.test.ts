@@ -81,6 +81,14 @@ describe("assistant reports (get_report)", () => {
     assert.equal(statement.rows.length, 0);
   });
 
+  it("reads the journal of inventory counts with the rights of their screens, nothing to change", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    await tool.run(ctx(data({ counts: [{ number: "ИНВ-000001", status: "review", warehouse: "Алматы" }] }, calls)), { report: "inventory_counts" });
+    assert.deepEqual(calls[0], { rpc: "inventory_count_list", args: { p_limit: 100 } });
+    const of = (key: string) => REPORTS.find(report => report.key === key)!;
+    assert.deepEqual(of("inventory_counts").anyPermissions, ["inventory.view", "inventory.count.manage", "inventory.count.record", "inventory.count.approve"]);
+  });
+
   it("passes the period and group of profitability as fixed argument names", async () => {
     const calls: { rpc: string; args: Record<string, unknown> }[] = [];
     await tool.run(ctx(data({ groups: [] }, calls)), { report: "profitability", group: "customer", date: "2026-11-01", date_to: "2026-11-21" });
