@@ -207,9 +207,29 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'desktop: no horizontal scroll');
     if (process.argv[3]) await page.screenshot({ path: join(resolve(process.argv[3]), 'shipment-batches-1440.png'), fullPage: true });
     assert.deepEqual(errors, []);
+    // Regrade by expiry on the batch page (202611280800).
+    const regrade = await context.newPage();
+    regrade.on('pageerror', e => errors.push(e.message));
+    await regrade.route('**/*', r => r.request().url().startsWith(url) ? r.continue() : r.abort());
+    await regrade.goto(`${url}/?view=batch-regrade`); await regrade.getByRole('heading', { name: 'Пересорт по сроку' }).waitFor();
+    const options = await regrade.getByLabel('Где лежит часть с другим сроком').locator('option').allInnerTexts();
+    assert.deepEqual(options.slice(1), ['ALM · A-01-03 · свободно 800 шт.'], 'only free stock is offered; the reserved place is not');
+    assert.match(await regrade.locator('#expiry-regrade table').innerText(),
+      /ПСР-000002[\s\S]*до 30\.11\.2027 → до 31\.05\.2027[\s\S]*120 шт\.[\s\S]*проведён[\s\S]*ПСР-000001[\s\S]*новая партия[\s\S]*отменён[\s\S]*Ошиблись коробкой/);
+    assert.equal(await regrade.locator('details summary', { hasText: 'Отменить' }).count(), 1, 'only a posted regrade is cancelled');
+    await regrade.getByLabel('Сколько').fill('120');
+    await regrade.getByLabel('Правильный срок годности').fill('2027-05-31');
+    await regrade.getByLabel('Причина', { exact: true }).fill('Ещё 12 коробок');
+    await regrade.getByRole('button', { name: 'Перенести в партию с правильным сроком' }).click();
+    await regrade.waitForFunction(() => window.submitted.length === 1);
+    assert.deepEqual(Object.fromEntries((await submitted(regrade))[0]),
+      { batch_id: 'b1', balance_id: 'bal1', quantity: '120', expiry_date: '2027-05-31', reason: 'Ещё 12 коробок' });
+    assert.ok(await regrade.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'regrade: no horizontal scroll');
+    if (process.argv[3]) await regrade.screenshot({ path: join(resolve(process.argv[3]), 'batch-regrade-1440.png'), fullPage: true });
+    assert.deepEqual(errors, []);
     await context.close();
   }
-  console.log('PASS mobile operations UI (Pixel 7, iPhone 14, desktop): reserved batch only, ship when picked, move, blind count, GS1 receiving, packing list labels');
+  console.log('PASS mobile operations UI (Pixel 7, iPhone 14, desktop): reserved batch only, ship when picked, move, blind count, GS1 receiving, packing list labels, regrade by expiry');
 } finally {
   await browser?.close(); server?.close(); await rm(output, { recursive: true, force: true });
 }

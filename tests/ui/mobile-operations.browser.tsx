@@ -6,6 +6,7 @@ import { PickOrderView } from "../../src/components/mobile-pick";
 import { MobileReceiveForm } from "../../src/components/mobile-receive-form";
 import { ScanResultView } from "../../src/components/scan-result";
 import { ExpectedBatchesView } from "../../src/components/shipments/expected-batches-view";
+import { ExpiryRegradePanel } from "../../src/components/inventory/expiry-regrade-panel";
 import type { ExpectedBatch, ShipmentExpected } from "../../src/lib/shipments/expected-batches";
 import type { CountSheet } from "../../src/lib/inventory/counts";
 import { matchPick, type PickList } from "../../src/lib/scan/operations";
@@ -65,6 +66,15 @@ function Body() {
   if (view === "count") return <MobileCountView sheet={sheet} place={{ id: "l1", code: "A-01-03" }} code="14601234567890" recordAction={record}
     products={[{ id: "p1", sku: "SCAN-1", product: "Шоколад молочный 90 г", uoms: ["piece", "box"], batch_id: "b1", uom: "box",
       batches: [{ id: "b1", batch: "LOT-77", expiry_date: "2027-03-30" }, { id: "b8", batch: "LOT-88", expiry_date: "2027-09-25" }] }]}/>;
+  if (view === "batch-regrade") return <><h1>2611-01-07 · NUT-13</h1><ExpiryRegradePanel batchId="b1" expiry="2027-11-30" regradeAction={record} cancelAction={record}
+    balances={[{ id: "bal1", warehouse: "ALM", location: "A-01-03", uom: "piece", on_hand: 1200, reserved: 400 }, { id: "bal2", warehouse: "ALM", location: "R-01", uom: "piece", on_hand: 50, reserved: 50 }]}
+    data={{ can_regrade: true, regrades: [
+      { id: "g2", number: "ПСР-000002", status: "posted", quantity: "120", uom: "piece", from_batch_id: "b1", from_expiry: "2027-11-30", to_batch_id: "b2", to_expiry: "2027-05-31",
+        new_batch: false, warehouse: "Алматы", location: "A-01-03", reason: "Ещё 12 коробок со сроком 31.05.2027", created_by: "Синтетический кладовщик", created_at: "2026-11-28T15:10:00Z",
+        cancelled_at: null, cancel_reason: null, direction: "out" },
+      { id: "g1", number: "ПСР-000001", status: "cancelled", quantity: "10", uom: "piece", from_batch_id: "b1", from_expiry: "2027-11-30", to_batch_id: "b2", to_expiry: "2027-05-31",
+        new_batch: true, warehouse: "Алматы", location: "A-01-03", reason: "Пересорт по сроку от поставщика", created_by: "Синтетический кладовщик", created_at: "2026-11-28T14:00:00Z",
+        cancelled_at: "2026-11-28T14:05:00Z", cancel_reason: "Ошиблись коробкой", direction: "out" }] }}/></>;
   if (view === "shipment-batches") return <><h1>NAR-2026-0118</h1><ExpectedBatchesView shipment={shipmentBatches} addAction={record} cancelAction={record}
     lots={[{ lot: "2611-01-09", description: "HAZELNUT KERNELS 13-15", quantity: 400, expiry: "2027-12-31", packages: 2, documents: ["Packing list 7781", "Certificate 2611"] }]}/></>;
   if (view === "scan-expected") return <><h1 className="mobile-title">Поиск по коду</h1><ScanResultView today="2026-11-28" params={{ via: "scanner" }} bindAction={record}
@@ -82,7 +92,7 @@ function Body() {
       items={[{ item_id: "i1", title: "SCAN-1 · Шоколад молочный 90 г", expected: 240, unit: "шт.", codes: ["4601234567893", "04601234567800"] },
               { item_id: "i2", title: "SCAN-2 · Вафли ореховые 150 г", expected: 120, unit: "шт.", codes: ["4607000000014"] }]}/></>;
 }
-createRoot(document.getElementById("root")!).render(view === "shipment-batches"
+createRoot(document.getElementById("root")!).render(view === "shipment-batches" || view === "batch-regrade"
   ? <main className="app-shell"><aside className="sidebar"><strong>Nexus</strong></aside><section className="workspace admin-workspace"><Body/><pre id="pushes"></pre></section></main>
   : <div className="mobile-shell"><header className="mobile-header"><a className="mobile-brand" href="/m">Nexus · Склад</a></header>
   <main className="mobile-main"><Body/><pre id="pushes" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}></pre></main></div>);
