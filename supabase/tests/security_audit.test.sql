@@ -103,6 +103,8 @@ select 'authenticated', unnest(array[
   'public.price_list_batch_margins', 'public.customer_margin_overview', 'public.set_customer_margin_threshold',
   'public.record_expense_payment', 'public.set_expense_due_date', 'public.payables_summary', 'public.payables_payee',
   'public.profitability_report', 'public.profitability_lines',
+  'public.set_inventory_loss_reason', 'public.add_inventory_loss_line', 'public.loss_report', 'public.loss_report_lines',
+  'public.loss_risk', 'public.loss_trend', 'public.unclassified_loss_lines',
   'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.record_advance_payment', 'public.apply_advance', 'public.record_payment_refund',
   'public.reprice_customer_order_item', 'public.set_customer_order_item_price',

@@ -292,6 +292,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250400_order_workbook_currency.sql" >/dev/null
 # Receivables build each ledger once (202611250300): replaces the functions of 202609277600 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250300_receivables_ledger_once.sql" >/dev/null
+# Losses (202611280100): the hardening re-applied above resets the grants of its RPCs; the reasons, the posting check and
+# the reports are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

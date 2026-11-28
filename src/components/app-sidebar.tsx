@@ -60,6 +60,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
     { label: "Аналитика", href: "/analytics", key: "analytics" },
     { label: "Прибыльность", href: "/analytics/profitability", key: "profitability" },
+    { label: "Потери по срокам", href: "/analytics/losses", key: "losses" },
   ] },
   { label: "Администрирование", items: [
     { label: "Состояние системы", href: "/admin/health", key: "health" },
