@@ -286,6 +286,9 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220400_order_workbook.sql" >/dev/null
 # Distribution orders grant their RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220500_distribution_orders.sql" >/dev/null
+# The payment calendar re-defines the notification types and Telegram rules of 202611220300/202611170600 re-applied
+# above and grants its RPCs after the hardening. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280200_cash_calendar.sql" >/dev/null
 # The workbook choice grants its RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611230100_shipment_workbook_choice.sql" >/dev/null
 # The order workbook with the euro currency rule (202611250400) replaces 202611220400 re-applied above. Idempotent.

@@ -36,6 +36,7 @@ describe("assistant reports (get_report)", () => {
     assert.deepEqual(of("profitability").permissions, ["prices.purchase.view", "reports.view"]);
     assert.deepEqual(of("receivables").permissions, ["receivables.view"]);
     assert.deepEqual(of("payables").permissions, ["finance.view"]);
+    assert.deepEqual(of("cash_calendar").permissions, ["finance.view"]);
   });
 
   it("reports losses with their screen rights and passes the group as a fixed argument", async () => {
@@ -79,6 +80,16 @@ describe("assistant reports (get_report)", () => {
     const statement = await tool.run(ctx(data({ rows: [] }, calls)), { report: "customer_statement", customer_id: CUSTOMER });
     assert.deepEqual(calls[0], { rpc: "customer_statement", args: { p_customer_id: CUSTOMER } });
     assert.equal(statement.rows.length, 0);
+  });
+
+  it("reads the payment calendar by weeks: one row per currency and per week, nothing to change", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    const calendar = { step: "week", receivables: true, goods: false, currencies: [{ currency: "KZT", first_gap: "2026-12-07", periods: [{ start: "2026-11-23", closing: "-200000.00" }] }],
+      flat_periods: [{ currency: "KZT", start: "2026-11-23", out_payables: "300000.00", closing: "-200000.00", gap: true }] };
+    const result = await tool.run(ctx(data(calendar, calls)), { report: "cash_calendar" });
+    assert.deepEqual(calls, [{ rpc: "cash_calendar", args: { p_step: "week", p_periods: 13 } }]);
+    assert.deepEqual(result.rows.map(row => row.values.report_part), ["итог", "currencies", "flat_periods"]);
+    assert.match(String(result.rows[2].values.record_details), /currency: KZT[\s\S]*gap: да/);
   });
 
   it("passes the period and group of profitability as fixed argument names", async () => {
