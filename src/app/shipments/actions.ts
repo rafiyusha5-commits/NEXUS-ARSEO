@@ -171,12 +171,14 @@ export async function receiveShipmentTransport(formData:FormData){
   if(!transport) redirect(`/shipments/${shipmentId}?error=${encodeURIComponent("Автомобиль не найден в поставке")}`);
   const locationId=uuid(formData,"location_id",false);
   const performedByName=text(formData,"performed_by_name")||profile.full_name;
-  const {error}=await supabase.rpc("receive_shipment_transport",{
+  // With batches of the packing list filled in, the database needs the confirmation that the expiries were compared with the boxes.
+  const {error}=await supabase.rpc("receive_shipment_transport_checked",{
     p_transport_id:transportId,
     p_location_id:locationId,
     p_lines:lines,
     p_performed_by_name:performedByName,
     p_notes:text(formData,"notes")||null,
+    p_expiry_checked:text(formData,"expiry_checked")==="on",
   });
   if(error){
     redirect(`/shipments/${shipmentId}/receiving?transport=${transportId}&error=${encodeURIComponent(ruleViolationMessage(error,"Не удалось провести приёмку автомобиля."))}`);

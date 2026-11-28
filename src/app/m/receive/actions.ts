@@ -21,9 +21,11 @@ export async function receiveTransportMobile(data: FormData) {
   let lines: ReturnType<typeof readReceivingLines> = [];
   try { lines = readReceivingLines(data); } catch (error) { back(error instanceof Error ? error.message : "Проверьте партии приёмки"); }
   const location = text(data, "location_id");
-  const { error } = await supabase.rpc("receive_shipment_transport", {
+  // With batches of the packing list filled in, the database needs the confirmation that the expiries were compared with the boxes.
+  const { error } = await supabase.rpc("receive_shipment_transport_checked", {
     p_transport_id: transportId, p_location_id: uuidPattern.test(location) ? location : null, p_lines: lines,
     p_performed_by_name: text(data, "performed_by_name") || profile.full_name, p_notes: text(data, "notes") || null,
+    p_expiry_checked: text(data, "expiry_checked") === "on",
   });
   if (error) back(ruleViolationMessage(error, "Не удалось провести приёмку автомобиля."));
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/inventory"); revalidatePath("/inventory/movements");

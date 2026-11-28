@@ -117,6 +117,8 @@ export function MobileReceiveForm({ shipmentId, transportId, items, locations, p
         <option key={location.id} value={location.id}>{location.code} · {location.zone}</option>)}</select></label>
       <label>Исполнитель<input name="performed_by_name" defaultValue={performer} required/></label>
       <label>Примечание<input name="notes" placeholder="Пломба, температура, акт…"/></label>
+      {items.some(item => item.batches?.length) && <label className="check-label"><input type="checkbox" name="expiry_checked" required/>
+        Сроки годности сверены с маркировкой на коробках, а не взяты из упаковочного листа</label>}
       <PendingSubmitButton pendingText="Проводим приёмку…" className="primary scan-button" type="submit">Завершить приёмку</PendingSubmitButton>
       <p className="mobile-hint">Все позиции автомобиля принимаются одним действием. При недостаче, излишке или повреждении укажите причину. В остаток попадает только принятое количество.</p>
     </form>

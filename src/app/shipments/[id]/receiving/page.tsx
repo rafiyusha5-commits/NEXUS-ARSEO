@@ -56,6 +56,7 @@ export default async function ShipmentReceivingPage({params,searchParams}:{
         <label>Зона склада<select name="location_id" defaultValue=""><option value="">Без зоны</option>{locations?.map((location)=><option value={location.id} key={location.id}>{location.code} · {location.zone}</option>)}</select></label>
         <label>Исполнитель<input name="performed_by_name" defaultValue={profile.full_name} required/></label>
         <label className="receiving-notes">Примечание<input name="notes" placeholder="Состояние пломбы, температура, акт…"/></label>
+        {items.some(item=>(expectedBatches.get(item.id)??[]).some(batch=>batch.state==="expected"))&&<label className="check-label receiving-expiry-check"><input type="checkbox" name="expiry_checked" required/> Сроки годности сверены с маркировкой на коробках, а не взяты из упаковочного листа</label>}
         <PendingSubmitButton pendingText="Выполняем…" className="primary" type="submit">Завершить приёмку</PendingSubmitButton>
       </div>
     </form>}

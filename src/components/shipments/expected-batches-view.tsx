@@ -52,6 +52,7 @@ export function ExpectedBatchesView({ shipment, lots, message, addAction, cancel
             <td>{batch.quantity ? quantity(batch.quantity) : "—"}</td>
             <td>{canPrint ? <input name={`copies_${batch.id}`} form="print-labels" type="number" min={1} max={100} defaultValue={batch.packages ?? 1} aria-label={`Наклеек партии ${batch.batch}`}/> : "—"}</td>
             <td>{expectedStateLabel[batch.state]}{batch.note ? <small>{batch.note}</small> : null}
+              {batch.expiry_checked_by && <small>сроки сверил при приёмке: {batch.expiry_checked_by}</small>}
               {batch.other_expiries.length > 0 && <small className="load-warning-text">Пересорт по сроку: пришла ещё со сроком {batch.other_expiries.map(shortDate).join(", ")} —
                 на эти коробки наклейки из листа не клеить</small>}</td>
             <td>{batch.label_code ?? "—"}{batch.label_code && <small>{batch.printed ? "напечатана" : "не печаталась"}</small>}</td>

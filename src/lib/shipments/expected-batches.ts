@@ -7,7 +7,7 @@ import type { ExpectedState } from "../scan/lookup.ts";
 export type ExpectedBatch = {
   id: string; batch: string; expiry_date: string | null; manufacture_date: string | null; quantity: string | null; packages: number | null;
   source: "manual" | "packing_list"; source_note: string | null; state: ExpectedState; note: string | null; batch_id: string | null;
-  label_code: string | null; printed: boolean; other_expiries: string[];
+  label_code: string | null; printed: boolean; other_expiries: string[]; expiry_checked_by?: string | null; expiry_checked_at?: string | null;
 };
 export type ExpectedItem = {
   item_id: string; product_id: string; sku: string; product: string; uom: string; quantity: string; transport_id: string | null;

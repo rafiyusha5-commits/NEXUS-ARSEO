@@ -151,15 +151,24 @@ end $$;
 -- 4. The receipt: LOT-A as listed; LOT-B with another expiry; LOT-Z not accepted at all; lot-c in other letters and
 --    without an expiry in the list; LOT-Q not in the receipt.
 select public.change_shipment_transport_status(pg_temp.id('truck'),'arrived');
-select public.receive_shipment_transport(pg_temp.id('truck'),'eb300000-0000-4000-8000-000000000001',jsonb_build_array(
+-- Batches of the packing list are filled in: the receipt needs the confirmation that the expiries were compared with
+-- the boxes — refused without it, by the old way too, and nothing is written.
+create function pg_temp.lines() returns jsonb language sql stable as $l$select jsonb_build_array(
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',60,'accepted_quantity',60,'damaged_quantity',0,'batch_number','LOT-A','expiry_date',(current_date+400)::text),
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',30,'accepted_quantity',30,'damaged_quantity',0,'batch_number','LOT-B','expiry_date',(current_date+351)::text),
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',10,'accepted_quantity',0,'damaged_quantity',0,'batch_number','LOT-Z','expiry_date',(current_date+300)::text,'discrepancy_reason','Не пришла'),
   -- LOT-S came with two expiries, the one of the packing list second: the label still binds to it.
   jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',20,'accepted_quantity',20,'damaged_quantity',0,'batch_number','LOT-S','expiry_date',(current_date+460)::text),
   jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',10,'accepted_quantity',10,'damaged_quantity',0,'batch_number','LOT-S','expiry_date',(current_date+450)::text),
-  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',20,'accepted_quantity',20,'damaged_quantity',0,'batch_number','lot-c','expiry_date',(current_date+500)::text)),
-  'Prelabel Receiver',null);
+  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',20,'accepted_quantity',20,'damaged_quantity',0,'batch_number','lot-c','expiry_date',(current_date+500)::text))
+$l$;
+grant execute on function pg_temp.lines() to authenticated;
+select pg_temp.fails($q$select public.receive_shipment_transport(pg_temp.id('truck'),'eb300000-0000-4000-8000-000000000001',pg_temp.lines(),'Prelabel Receiver',null)$q$,
+                     'сроки сверены с маркировкой');
+select pg_temp.fails($q$select public.receive_shipment_transport_checked(pg_temp.id('truck'),'eb300000-0000-4000-8000-000000000001',pg_temp.lines(),'Prelabel Receiver',null,false)$q$,
+                     'сроки сверены с маркировкой');
+do $$begin assert not (select bool_or((i->>'received')::boolean) from jsonb_array_elements(public.shipment_expected_batches(pg_temp.id('shipment'))->'items') i),'nothing received';end $$;
+select public.receive_shipment_transport_checked(pg_temp.id('truck'),'eb300000-0000-4000-8000-000000000001',pg_temp.lines(),'Prelabel Receiver',null,true);
 select pg_temp.fails($q$select public.add_expected_batch(pg_temp.id('item1'),'LOT-LATE',null,null,null,null,'manual',null)$q$,'уже принята');
 select pg_temp.fails($q$select public.cancel_expected_batch(pg_temp.id('A'),'поздно')$q$,'только ожидаемую');
 do $$
@@ -177,6 +186,8 @@ begin
    'mixed expiries: the label binds to the part with the expiry of the packing list, whatever the order of the lines';
  assert s->'LOT-S'->'other_expiries'=jsonb_build_array(current_date+460),'the part with another expiry is named: it has no label of the list';
  assert s->'LOT-A'->'other_expiries'='[]'::jsonb;
+ assert s->'LOT-A'->>'expiry_checked_by'='Prelabel Director' and s->'LOT-A'->>'expiry_checked_at' is not null,'who confirmed the expiries is kept';
+ assert s->'LOT-R'->>'expiry_checked_by' is null,'only the batches of the truck received';
  assert s->'LOT-R'->>'state'='expected','the item on no truck yet stays expected';
 end $$;
 

@@ -28,6 +28,9 @@ create table if not exists public.expected_batches (
   cancelled_at timestamptz,
   created_by uuid not null references public.profiles(id) on delete restrict,
   created_at timestamptz not null default clock_timestamp(),
+  -- Who confirmed at the receipt that the expiries filled in from the packing list were compared with the boxes.
+  expiry_checked_by uuid references public.profiles(id) on delete restrict,
+  expiry_checked_at timestamptz,
   check (manufacture_date is null or expiry_date is null or manufacture_date <= expiry_date),
   check ((status = 'received') = (batch_id is not null)),
   check ((status = 'cancelled') = (cancelled_at is not null and cancel_reason is not null))
@@ -40,6 +43,7 @@ create index if not exists expected_batches_batch_idx on public.expected_batches
 create index if not exists expected_batches_receipt_item_idx on public.expected_batches(receipt_item_id);
 create index if not exists expected_batches_created_by_idx on public.expected_batches(created_by);
 create index if not exists expected_batches_cancelled_by_idx on public.expected_batches(cancelled_by);
+create index if not exists expected_batches_expiry_checked_by_idx on public.expected_batches(expiry_checked_by);
 alter table public.expected_batches enable row level security;
 revoke all on public.expected_batches from public, anon, authenticated, service_role;
 
@@ -118,6 +122,48 @@ drop trigger if exists shipment_receipt_items_bind_expected on public.shipment_t
 create trigger shipment_receipt_items_bind_expected after insert on public.shipment_transport_receipt_items
   for each row execute function private.bind_expected_batches();
 
+-- A truck whose items have batches of the packing list is received only with the confirmation that the expiries were
+-- compared with the markings on the boxes (owner decision of 2026-11-28: the dates of the list are not taken unseen).
+-- The confirmation is given through receive_shipment_transport_checked for this very truck; any other way of receiving
+-- it is refused.
+create or replace function private.guard_receipt_expiry_check() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.expected_batches e join public.shipment_items i on i.id = e.shipment_item_id
+              where i.shipment_transport_id = new.shipment_transport_id and e.status = 'expected')
+     and current_setting('nexus.receipt_expiry_checked', true) is distinct from new.shipment_transport_id::text then
+    raise exception 'Отметьте, что сроки сверены с маркировкой на коробках: партии подставлены из упаковочного листа';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_receipt_expiry_check() from public, anon, authenticated, service_role;
+drop trigger if exists shipment_receipts_expiry_check on public.shipment_transport_receipts;
+create trigger shipment_receipts_expiry_check before insert on public.shipment_transport_receipts
+  for each row execute function private.guard_receipt_expiry_check();
+
+-- The receipt of a truck with the confirmation: the existing receive_shipment_transport (its rights and checks), the
+-- confirmation recorded on the batches of the packing list of the truck.
+create or replace function public.receive_shipment_transport_checked(p_transport_id uuid, p_location_id uuid, p_lines jsonb,
+                                                                     p_performed_by_name text, p_notes text, p_expiry_checked boolean)
+returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare v_receipt uuid;
+begin
+  if coalesce(p_expiry_checked, false) then
+    perform set_config('nexus.receipt_expiry_checked', p_transport_id::text, true);
+  end if;
+  v_receipt := public.receive_shipment_transport(p_transport_id, p_location_id, p_lines, p_performed_by_name, p_notes);
+  perform set_config('nexus.receipt_expiry_checked', '', true);
+  if coalesce(p_expiry_checked, false) then
+    update public.expected_batches e set expiry_checked_by = auth.uid(), expiry_checked_at = clock_timestamp()
+      from public.shipment_items i
+     where i.id = e.shipment_item_id and i.shipment_transport_id = p_transport_id and e.status <> 'cancelled' and e.expiry_checked_by is null;
+  end if;
+  return v_receipt;
+end $$;
+revoke all on function public.receive_shipment_transport_checked(uuid, uuid, jsonb, text, text, boolean) from public, anon, authenticated, service_role;
+grant execute on function public.receive_shipment_transport_checked(uuid, uuid, jsonb, text, text, boolean) to authenticated;
+
 -- The expected batches of a shipment by its items, with the labels and what the receipt did with each.
 create or replace function public.shipment_expected_batches(p_shipment_id uuid)
 returns jsonb
@@ -149,6 +195,7 @@ begin
                                                            and upper(btrim(ri.batch_number)) = upper(btrim(e.batch_number))
                                                            and ri.inventory_batch_id is distinct from e.batch_id), '[]'::jsonb),
                             'label_code', (select l.code from public.scan_labels l where l.expected_batch_id = e.id),
+                            'expiry_checked_by', (select full_name from public.profiles where id = e.expiry_checked_by), 'expiry_checked_at', e.expiry_checked_at,
                             'printed', exists (select 1 from public.scan_labels l join public.scan_label_prints x on x.label_id = l.id
                                                 where l.expected_batch_id = e.id))
                             order by e.status = 'cancelled', e.expiry_date nulls last, e.batch_number)

@@ -148,6 +148,13 @@ try {
         await item.getByLabel('Принято').first().fill('1190');
         await item.getByLabel('Причина расхождения').first().fill('Недостача 10');
         await item.getByLabel('Годен до').nth(1).fill('2027-12-15');
+        // Batches filled in from the packing list: no receipt without the confirmation that the expiries were compared.
+        const confirm = page.getByLabel(/Сроки годности сверены с маркировкой на коробках/);
+        assert.equal(await confirm.getAttribute('required'), '');
+        await page.getByRole('button', { name: 'Завершить приёмку' }).click();
+        await page.waitForTimeout(200);
+        assert.equal(await page.evaluate(() => window.submitted.length), 0, 'the browser keeps the form until the expiries are confirmed');
+        await confirm.check();
         await page.getByRole('button', { name: 'Завершить приёмку' }).click();
         await page.waitForFunction(() => window.submitted.length === 1);
         const form = (await submitted(page))[0];
@@ -156,7 +163,9 @@ try {
         assert.deepEqual(all('expected_quantity'), ['1200', '800']);
         assert.deepEqual(all('accepted_quantity'), ['1190', '800']);
         assert.deepEqual(all('expiry_date'), ['2027-11-30', '2027-12-15']);
+        assert.deepEqual(all('expiry_checked'), ['on']);
       }
+      if (view === 'receive') assert.equal(await page.getByLabel(/Сроки годности сверены/).count(), 0, 'nothing filled in from a list: no confirmation asked');
       if (view === 'scan-expected') {
         const card = await page.locator('.mobile-card').innerText();
         assert.match(card, /NUT-13 · партия 2611-01-07[\s\S]*по листу 1[\s\u00a0]200[\s\S]*Поставка NAR-2026-0118, машина №2[\s\S]*не совпали с упаковочным листом: наклейка не привязана[\s\S]*Срок по упаковочному листу 30\.11\.2027/);
