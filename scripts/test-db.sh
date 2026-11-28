@@ -292,6 +292,16 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250400_order_workbook_currency.sql" >/dev/null
 # Receivables build each ledger once (202611250300): replaces the functions of 202609277600 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250300_receivables_ledger_once.sql" >/dev/null
+# Losses (202611280100): the hardening re-applied above resets the grants of its RPCs; the reasons, the posting check and
+# the reports are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
+# Inventory counts grant their RPCs after the hardening and use the loss reasons of 202611280100. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280300_inventory_counts.sql" >/dev/null
+# Scanning grants its RPCs after the hardening re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280500_scan_codes.sql" >/dev/null
+# Mobile operations (202611280600) replace the document RPCs of 3800 and 8400 re-applied above and grant their own after
+# the hardening. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280600_mobile_operations.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
@@ -304,6 +314,8 @@ echo "test: Telegram delivery under concurrency"
 node "$ROOT/scripts/test-telegram-notifications-concurrency.mjs" "${PSQL[@]}"
 echo "test: partial payments under concurrency"
 node "$ROOT/scripts/test-payables-concurrency.mjs" "${PSQL[@]}"
+echo "test: inventory counts under concurrency"
+node "$ROOT/scripts/test-inventory-count-concurrency.mjs" "${PSQL[@]}"
 echo "test: cost calculation and approval under concurrent source edits"
 node "$ROOT/scripts/test-cost-concurrency.mjs" "${PSQL[@]}"
 

@@ -60,9 +60,9 @@ end $$;
 set role authenticated;
 select set_config('request.jwt.claim.sub','d9000000-0000-4000-8000-000000000001',false);
 update dop set doc=public.create_inventory_operation_document('write_off',current_date,wh,null,'Акт','Утилизация',null);
-select public.add_inventory_operation_line(doc,'d9400000-0000-4000-8000-000000000002',null,6,null,null) from dop;
-select public.add_inventory_operation_line(doc,'d9400000-0000-4000-8000-000000000003',null,1,null,null) from dop;
-select public.add_inventory_operation_line(doc,'d9400000-0000-4000-8000-000000000001',null,2,null,null) from dop;
+select public.add_inventory_loss_line(doc,'d9400000-0000-4000-8000-000000000002',6,null,'damaged',null) from dop;
+select public.add_inventory_loss_line(doc,'d9400000-0000-4000-8000-000000000003',1,null,'damaged',null) from dop;
+select public.add_inventory_loss_line(doc,'d9400000-0000-4000-8000-000000000001',2,null,'damaged',null) from dop;
 select pg_temp.fails($$select public.add_inventory_operation_line((select doc from dop),'d9400000-0000-4000-8000-000000000004',null,1,null,null)$$,
  'Партия недоступна для операции');
 select public.post_inventory_operation_document(doc) from dop;
