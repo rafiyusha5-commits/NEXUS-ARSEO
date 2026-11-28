@@ -577,3 +577,30 @@ a:is([download], [href^="/documents/"][href*="/download"], [href^="/portal/docum
 @media(max-width:1200px){.doc-shipment-row{grid-template-columns:44px minmax(0,1fr) auto auto}}
 @media(max-width:700px){.doc-shipment-row{grid-template-columns:44px minmax(0,1fr)}.docs-folder-summary{margin-left:0;flex-basis:100%}}
 .list-pager{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px;color:var(--muted);font-size:12px}.list-pager span{margin-right:auto}
+/* Mobile warehouse (202611280500): one column, large touch targets, no horizontal scroll. */
+.mobile-shell{min-height:100vh;max-width:640px;margin:0 auto;padding:0 14px 28px;overflow-x:hidden}
+.mobile-header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;background:var(--background,#f7f6f4);border-bottom:1px solid var(--line)}
+.mobile-brand{font-weight:800;color:var(--ink);text-decoration:none;font-size:16px}.mobile-desktop{font-size:12px;color:var(--muted)}
+.mobile-main{display:grid;gap:14px;padding-top:14px}.mobile-title{font-size:24px;line-height:1.2;margin:0}
+.mobile-offline,.mobile-hint{color:var(--muted);font-size:12px;line-height:1.45}
+.scan-field form{display:grid;gap:10px}.scan-label{font-weight:700;font-size:14px}
+.scan-input{width:100%;min-height:56px;padding:12px 14px;border:2px solid var(--primary,#009B77);border-radius:14px;font:inherit;font-size:20px;letter-spacing:.02em;background:#fff;color:var(--ink)}
+.scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.scan-button{min-height:52px;font-size:16px;width:100%}
+.scan-video{width:100%;max-height:52vh;border-radius:14px;background:#000;object-fit:cover}
+.mobile-menu{display:grid;gap:10px}.mobile-tile{display:grid;gap:4px;min-height:72px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);text-decoration:none}
+.mobile-tile strong{font-size:18px}.mobile-tile small{color:var(--muted)}
+.mobile-card{display:grid;gap:6px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#fff;min-width:0}.mobile-card small{color:var(--muted)}
+.mobile-card-warning{border-color:#f5c2a8;background:#fff8f3}.mobile-big{font-size:20px;line-height:1.25;overflow-wrap:anywhere}
+.mobile-stock{display:grid;gap:0;margin:6px 0 0;padding:0;list-style:none}.mobile-stock li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #f0efee}
+.mobile-stock li>div:first-child{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}.mobile-qty{display:grid;justify-items:end;text-align:right;flex:none}.mobile-qty strong{font-size:22px}
+.mobile-form{display:grid;gap:10px}.mobile-form label{display:grid;gap:6px;font-weight:600;font-size:14px}.mobile-form input,.mobile-form select{min-height:48px;padding:10px 12px;border:1px solid #d6d3d1;border-radius:12px;font:inherit;font-size:16px;background:#fff}
+.mobile-form .check-label{display:flex;gap:10px;align-items:center;font-weight:500}.mobile-form .check-label input{min-height:auto;width:22px;height:22px}
+.mobile-checklist{display:grid;gap:4px;max-height:50vh;overflow-y:auto;padding:4px 2px}
+.mobile-card-ok{border-color:#a7dcc9;background:#f2fbf7}.mobile-next{border-width:2px;border-color:var(--primary,#009B77)}.mobile-next-qty{font-size:18px;font-weight:700}
+.mobile-line-done{opacity:.55}.mobile-pick-button{justify-self:start;margin-top:6px;min-height:44px;display:inline-flex;align-items:center}
+.mobile-receive{margin:0}.mobile-receive legend{padding:0 4px}.mobile-receive-row{display:grid;gap:10px;padding-top:10px;border-top:1px solid #f0efee}
+.mobile-receive-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mobile-receive-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mobile-receive-grid input{width:100%;min-width:0}.mobile-recount{padding-top:10px;border-top:1px solid #f0efee}
+.mobile-receive button,.mobile-form>button{min-height:48px}
+.expected-batch-cancelled{opacity:.55}.expected-batches td small{display:block;color:var(--muted)}.expected-batches td input[type=number]{width:72px;padding:4px 8px;border:1px solid #d6d3d1;border-radius:8px;font:inherit}
+.receiving-expiry-check{display:flex;gap:8px;align-items:center;grid-column:1/-1;font-weight:600}

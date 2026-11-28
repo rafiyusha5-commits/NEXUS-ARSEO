@@ -74,8 +74,8 @@ select public.issue_inventory_fifo('d8200000-0000-4000-8000-000000000002',wh,'pi
 -- ---------- 3. a blocked batch written off to zero stays blocked, and so does stock found later ----------
 select public.set_inventory_batch_status(pg_temp.batch('RST2-QUAR'),'blocked','Отзыв производителя');
 update rs set doc=public.create_inventory_operation_document('write_off',current_date,wh,null,'Отзыв','Утилизация отзыва','Кладовщик');
-select public.add_inventory_operation_line(doc,(select b.id from public.inventory_balances b where b.batch_id=pg_temp.batch('RST2-QUAR') and b.quantity_on_hand>0),
- null::uuid,7::numeric,null::text,null::text) from rs;
+select public.add_inventory_loss_line(doc,(select b.id from public.inventory_balances b where b.batch_id=pg_temp.batch('RST2-QUAR') and b.quantity_on_hand>0),
+ 7::numeric,null::text,'damaged',null::text) from rs;
 select public.post_inventory_operation_document(doc) from rs;
 do $$ begin
  assert (select status='blocked' and status_reason='Отзыв производителя' from public.inventory_batches where id=pg_temp.batch('RST2-QUAR')),

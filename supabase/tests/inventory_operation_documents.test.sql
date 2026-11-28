@@ -52,7 +52,7 @@ end $$;
 update inventory_document_context set write_off_id=public.create_inventory_operation_document(
  'write_off',current_date,source_warehouse,null,'ACT-TEST','Брак',null
 );
-select public.add_inventory_operation_line(write_off_id,balance_id,null,10,null,null) from inventory_document_context;
+select public.add_inventory_loss_line(write_off_id,balance_id,10,null,'damaged',null) from inventory_document_context;
 select public.post_inventory_operation_document(write_off_id) from inventory_document_context;
 do $$ declare c inventory_document_context%rowtype; begin
  select * into c from inventory_document_context;
