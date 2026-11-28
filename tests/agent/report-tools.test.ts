@@ -38,6 +38,19 @@ describe("assistant reports (get_report)", () => {
     assert.deepEqual(of("payables").permissions, ["finance.view"]);
   });
 
+  it("reports losses with their screen rights and passes the group as a fixed argument", async () => {
+    const of = (key: string) => REPORTS.find(report => report.key === key)!;
+    assert.deepEqual(of("losses").permissions, ["reports.view", "inventory.view"]);
+    assert.deepEqual(of("loss_risk").permissions, ["reports.view", "inventory.view"]);
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "losses", group: "reason", date: "2026-11-01", date_to: "2026-11-28" });
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "loss_risk" });
+    assert.deepEqual(calls, [
+      { rpc: "loss_report", args: { p_group: "reason", p_from: "2026-11-01", p_to: "2026-11-28" } },
+      { rpc: "loss_risk", args: { p_group: "bucket" } },
+    ]);
+  });
+
   it("flattens a report into rows, keeps identifiers as references and drops secrets", () => {
     const rows = flattenReport(priceList);
     assert.deepEqual(rows.map(row => row.part), ["итог", "types", "products", "products"]);
