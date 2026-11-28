@@ -38,6 +38,19 @@ describe("assistant reports (get_report)", () => {
     assert.deepEqual(of("payables").permissions, ["finance.view"]);
   });
 
+  it("reports losses with their screen rights and passes the group as a fixed argument", async () => {
+    const of = (key: string) => REPORTS.find(report => report.key === key)!;
+    assert.deepEqual(of("losses").permissions, ["reports.view", "inventory.view"]);
+    assert.deepEqual(of("loss_risk").permissions, ["reports.view", "inventory.view"]);
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "losses", group: "reason", date: "2026-11-01", date_to: "2026-11-28" });
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "loss_risk" });
+    assert.deepEqual(calls, [
+      { rpc: "loss_report", args: { p_group: "reason", p_from: "2026-11-01", p_to: "2026-11-28" } },
+      { rpc: "loss_risk", args: { p_group: "bucket" } },
+    ]);
+  });
+
   it("flattens a report into rows, keeps identifiers as references and drops secrets", () => {
     const rows = flattenReport(priceList);
     assert.deepEqual(rows.map(row => row.part), ["итог", "types", "products", "products"]);
@@ -66,6 +79,14 @@ describe("assistant reports (get_report)", () => {
     const statement = await tool.run(ctx(data({ rows: [] }, calls)), { report: "customer_statement", customer_id: CUSTOMER });
     assert.deepEqual(calls[0], { rpc: "customer_statement", args: { p_customer_id: CUSTOMER } });
     assert.equal(statement.rows.length, 0);
+  });
+
+  it("reads the journal of inventory counts with the rights of their screens, nothing to change", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    await tool.run(ctx(data({ counts: [{ number: "ИНВ-000001", status: "review", warehouse: "Алматы" }] }, calls)), { report: "inventory_counts" });
+    assert.deepEqual(calls[0], { rpc: "inventory_count_list", args: { p_limit: 100 } });
+    const of = (key: string) => REPORTS.find(report => report.key === key)!;
+    assert.deepEqual(of("inventory_counts").anyPermissions, ["inventory.view", "inventory.count.manage", "inventory.count.record", "inventory.count.approve"]);
   });
 
   it("passes the period and group of profitability as fixed argument names", async () => {
