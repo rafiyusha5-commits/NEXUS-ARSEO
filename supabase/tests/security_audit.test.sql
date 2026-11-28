@@ -103,8 +103,14 @@ select 'authenticated', unnest(array[
   'public.price_list_batch_margins', 'public.customer_margin_overview', 'public.set_customer_margin_threshold',
   'public.record_expense_payment', 'public.set_expense_due_date', 'public.payables_summary', 'public.payables_payee',
   'public.profitability_report', 'public.profitability_lines',
+  'public.set_inventory_loss_reason', 'public.add_inventory_loss_line', 'public.loss_report', 'public.loss_report_lines',
+  'public.loss_risk', 'public.loss_trend', 'public.unclassified_loss_lines',
+  'public.dashboard_rate_kzt', 'public.executive_dashboard_tile', 'public.executive_dashboard', 'public.cash_payables_due',
   'public.my_telegram_notifications', 'public.set_my_telegram_notifications', 'public.telegram_notification_overview',
   'public.record_advance_payment', 'public.apply_advance', 'public.record_payment_refund',
+  'public.save_cash_account', 'public.set_cash_account_active', 'public.cash_account_list', 'public.record_cash_balance', 'public.set_cash_gap_alert_days',
+  'public.set_expense_planned_payment_date', 'public.expense_payment_plans', 'public.cash_calendar', 'public.cash_calendar_items',
+  'public.cash_plan_fact',
   'public.reprice_customer_order_item', 'public.set_customer_order_item_price',
   'public.my_product_master_calculated_data',
   'public.set_order_prefix', 'public.remove_order_prefix', 'public.apply_order_workbook', 'public.create_distribution_orders', 'public.choose_shipment_workbook',
@@ -123,7 +129,8 @@ select 'service_role', unnest(array['public.generate_deadline_notifications', 'p
   'public.system_health_ping', 'public.record_system_health', 'public.system_health_jobs', 'public.claim_system_health_delivery', 'public.finish_system_health_delivery',
   'public.drive_catalog_sync_step', 'public.agent_reserve_run', 'public.agent_finish_run', 'public.telegram_request_link', 'public.telegram_employee',
   'public.telegram_authorize_delivery', 'public.telegram_unlink_chat', 'public.telegram_claim_update', 'public.telegram_update_status', 'public.telegram_update_progress', 'public.telegram_notification_batch', 'public.telegram_notification_result',
-  'public.run_document_checks', 'public.run_shelf_life_control', 'public.purge_expired_driver_documents']);
+  'public.run_document_checks', 'public.run_shelf_life_control', 'public.purge_expired_driver_documents',
+  'public.run_cash_gap_control']);
 
 do $$
 declare

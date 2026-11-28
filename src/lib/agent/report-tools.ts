@@ -1,6 +1,6 @@
 // Read-only reports of Nexus for the assistant (2026-11-21): the same database functions the screens use — price
-// list, customer conditions and margins, payables, receivables, profitability, document check, daily summary, shelf
-// life risks. Each function checks the employee's permissions itself; the report list, function names and argument
+// list, customer conditions and margins, payables, payment calendar, receivables, profitability, document check, daily
+// summary, shelf life risks. Each function checks the employee's permissions itself; the report list, function names and argument
 // names are fixed here and never come from the model. The result is flattened into rows of label–value text.
 import { maskDataText, maskOutgoing } from "./masking.ts";
 import type { AgentTool, ParamSchema, ShipmentRow, ToolField, ToolRow } from "./types.ts";
@@ -40,6 +40,8 @@ export const REPORTS: readonly ReportDefinition[] = [
     args: () => ({}), needs: "query — получатель" },
   { key: "payables_payee", title: "Кредиторка получателя: расходы, оплаты, авансы, переплаты", rpc: "payables_payee", permissions: ["finance.view"], anyPermissions: [],
     args: p => required({ p_payee_id: id(p, "counterparty_id") }, ["p_payee_id"]), needs: "counterparty_id — получатель" },
+  { key: "cash_calendar", title: "Платёжный календарь: остаток, поступления и выплаты по неделям, кассовый разрыв", rpc: "cash_calendar", permissions: ["finance.view"], anyPermissions: [],
+    args: () => ({ p_step: "week", p_periods: 13 }), needs: "query — валюта" },
   { key: "receivables", title: "Дебиторская задолженность клиентов", rpc: "customer_receivables", permissions: ["receivables.view"], anyPermissions: [],
     args: () => ({}), needs: "query — клиент" },
   { key: "customer_statement", title: "Выписка клиента: отгрузки, оплаты, сальдо", rpc: "customer_statement", permissions: ["receivables.view"], anyPermissions: [],
@@ -54,6 +56,14 @@ export const REPORTS: readonly ReportDefinition[] = [
     args: p => required({ p_shipment_id: id(p, "shipment_id") }, ["p_shipment_id"]), needs: "shipment_id" },
   { key: "daily_summary", title: "Сводка дня: поставки, заказы, склад, задачи", rpc: "operational_summary", permissions: [], anyPermissions: ["shipments.view", "sales.view", "inventory.view", "tasks.view", "reports.view"],
     args: () => ({}), needs: "—" },
+  { key: "losses", title: "Потери товара за период: списания, недостачи, списанные возвраты", rpc: "loss_report", permissions: ["reports.view", "inventory.view"], anyPermissions: [],
+    args: p => required({ p_group: typeof p.group === "string" ? p.group : null, p_from: date(p, "date"), p_to: date(p, "date_to") }, ["p_group", "p_from", "p_to"]),
+    needs: "group (reason, product, brand, warehouse, shipment, month); date и date_to — период" },
+  { key: "loss_risk", title: "Товар под риском по сроку годности в деньгах", rpc: "loss_risk", permissions: ["reports.view", "inventory.view"], anyPermissions: [],
+    args: p => ({ p_group: typeof p.group === "string" ? p.group : "bucket" }), needs: "group (bucket, warehouse, brand, supplier), по умолчанию bucket" },
+  { key: "executive_dashboard", title: "Дашборд руководителя: что требует внимания (выручка, долги, оплаты, разрыв, сроки, поставки, решения)",
+    rpc: "executive_dashboard", permissions: ["dashboard.executive.view"], anyPermissions: [],
+    args: p => ({ p_month: date(p, "date") }), needs: "date — любой день месяца (по умолчанию текущий)" },
   { key: "shelf_life_risks", title: "Сроки годности под риском", rpc: "shelf_life_risks", permissions: ["inventory.view", "products.view"], anyPermissions: [],
     args: p => ({ p_horizon_days: typeof p.days === "number" ? p.days : 30 }), needs: "days — горизонт в днях (по умолчанию 30)" },
 ];
@@ -130,7 +140,8 @@ const params: Record<string, ParamSchema> = {
   counterparty_id: { type: "uuid", optional: true, description: "Получатель платежей для payables_payee" },
   sale_id: { type: "uuid", optional: true, description: "Заказ покупателя" },
   shipment_id: { type: "uuid", optional: true, description: "Поставка" },
-  group: { type: "enum", values: ["shipment", "product", "customer"], optional: true, description: "Разрез прибыльности" },
+  group: { type: "enum", values: ["shipment", "product", "customer", "reason", "brand", "warehouse", "month", "bucket", "supplier"], optional: true,
+    description: "Разрез отчёта: прибыльность — shipment, product, customer; потери — reason, product, brand, warehouse, shipment, month; товар под риском — bucket, warehouse, brand, supplier" },
   date: { type: "date", optional: true, description: "Дата или начало периода YYYY-MM-DD" },
   date_to: { type: "date", optional: true, description: "Конец периода включительно YYYY-MM-DD" },
   days: { type: "integer", min: 1, max: 365, optional: true, description: "Горизонт в днях для shelf_life_risks" },

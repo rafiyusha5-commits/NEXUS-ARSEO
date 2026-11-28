@@ -17,6 +17,7 @@ describe("notification links", () => {
     assert.deepEqual(notificationLink({ entity_type: "shipment_document_check", entity_id: SHIPMENT, shipment_id: SHIPMENT }),
       { href: `/shipments/${SHIPMENT}?tab=documents#document-check`, label: "Открыть «Сверку»" });
     assert.deepEqual(notificationLink({ entity_type: "shelf_life_control", entity_id: null, shipment_id: null }), { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" });
+    assert.deepEqual(notificationLink({ entity_type: "cash_calendar", entity_id: null, shipment_id: null }), { href: "/finance/cash", label: "Открыть платёжный календарь" });
     assert.deepEqual(notificationLink({ entity_type: "sale", entity_id: TASK, shipment_id: null }), { href: `/sales/${TASK}?tab=shipping`, label: "Открыть заказ" });
     assert.equal(notificationLink({ entity_type: "sale", entity_id: "../admin", shipment_id: null }), null);
     assert.deepEqual(notificationLink({ entity_type: "price_review", entity_id: TASK, shipment_id: null }), { href: `/sales/prices?tab=list&product=${TASK}`, label: "Открыть прайс товара" });

@@ -36,6 +36,20 @@ describe("assistant reports (get_report)", () => {
     assert.deepEqual(of("profitability").permissions, ["prices.purchase.view", "reports.view"]);
     assert.deepEqual(of("receivables").permissions, ["receivables.view"]);
     assert.deepEqual(of("payables").permissions, ["finance.view"]);
+    assert.deepEqual(of("cash_calendar").permissions, ["finance.view"]);
+  });
+
+  it("reports losses with their screen rights and passes the group as a fixed argument", async () => {
+    const of = (key: string) => REPORTS.find(report => report.key === key)!;
+    assert.deepEqual(of("losses").permissions, ["reports.view", "inventory.view"]);
+    assert.deepEqual(of("loss_risk").permissions, ["reports.view", "inventory.view"]);
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "losses", group: "reason", date: "2026-11-01", date_to: "2026-11-28" });
+    await tool.run(ctx(data({ rows: [] }, calls)), { report: "loss_risk" });
+    assert.deepEqual(calls, [
+      { rpc: "loss_report", args: { p_group: "reason", p_from: "2026-11-01", p_to: "2026-11-28" } },
+      { rpc: "loss_risk", args: { p_group: "bucket" } },
+    ]);
   });
 
   it("flattens a report into rows, keeps identifiers as references and drops secrets", () => {
@@ -66,6 +80,26 @@ describe("assistant reports (get_report)", () => {
     const statement = await tool.run(ctx(data({ rows: [] }, calls)), { report: "customer_statement", customer_id: CUSTOMER });
     assert.deepEqual(calls[0], { rpc: "customer_statement", args: { p_customer_id: CUSTOMER } });
     assert.equal(statement.rows.length, 0);
+  });
+
+  it("reads the payment calendar by weeks: one row per currency and per week, nothing to change", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    const calendar = { step: "week", receivables: true, goods: false, currencies: [{ currency: "KZT", first_gap: "2026-12-07", periods: [{ start: "2026-11-23", closing: "-200000.00" }] }],
+      flat_periods: [{ currency: "KZT", start: "2026-11-23", out_payables: "300000.00", closing: "-200000.00", gap: true }] };
+    const result = await tool.run(ctx(data(calendar, calls)), { report: "cash_calendar" });
+    assert.deepEqual(calls, [{ rpc: "cash_calendar", args: { p_step: "week", p_periods: 13 } }]);
+    assert.deepEqual(result.rows.map(row => row.values.report_part), ["итог", "currencies", "flat_periods"]);
+    assert.match(String(result.rows[2].values.record_details), /currency: KZT[\s\S]*gap: да/);
+  });
+
+  it("reads the executive dashboard with its own right and the month as a fixed argument", async () => {
+    const calls: { rpc: string; args: Record<string, unknown> }[] = [];
+    const dashboard = { month: "2026-11-01", tiles: [{ tile: "cash", status: "ok", nearest: { currency: "EUR", date: "2026-12-12" } }, { tile: "shipments", status: "error" }] };
+    const result = await tool.run(ctx(data(dashboard, calls)), { report: "executive_dashboard" });
+    assert.deepEqual(calls[0], { rpc: "executive_dashboard", args: { p_month: null } });
+    assert.deepEqual(result.rows.map(row => row.values.report_part), ["итог", "tiles", "tiles"]);
+    assert.match(String(result.rows[2].values.record_details), /status: error/);
+    assert.deepEqual(REPORTS.find(report => report.key === "executive_dashboard")!.permissions, ["dashboard.executive.view"]);
   });
 
   it("passes the period and group of profitability as fixed argument names", async () => {

@@ -286,12 +286,20 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220400_order_workbook.sql" >/dev/null
 # Distribution orders grant their RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611220500_distribution_orders.sql" >/dev/null
+# The payment calendar re-defines the notification types and Telegram rules of 202611220300/202611170600 re-applied
+# above and grants its RPCs after the hardening. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280200_cash_calendar.sql" >/dev/null
 # The workbook choice grants its RPC after the hardening re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611230100_shipment_workbook_choice.sql" >/dev/null
 # The order workbook with the euro currency rule (202611250400) replaces 202611220400 re-applied above. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250400_order_workbook_currency.sql" >/dev/null
 # Receivables build each ledger once (202611250300): replaces the functions of 202609277600 re-applied above.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611250300_receivables_ledger_once.sql" >/dev/null
+# Losses (202611280100): the hardening re-applied above resets the grants of its RPCs; the reasons, the posting check and
+# the reports are idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
+# The executive dashboard grants its RPCs after the hardening; it reads the reports of 202611280100/0200. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280400_executive_dashboard.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"

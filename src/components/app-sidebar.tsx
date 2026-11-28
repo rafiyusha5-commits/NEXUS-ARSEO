@@ -12,6 +12,7 @@ type NavigationItem = { label: string; href: string; key: string; managerOnly?: 
 const navigationGroups: { label: string; items: NavigationItem[] }[] = [
   { label: "Главная", items: [
     { label: "Обзор", href: "/", key: "overview" },
+    { label: "Дашборд руководителя", href: "/dashboard", key: "dashboard" },
     { label: "Задачи", href: "/tasks", key: "tasks" },
     { label: "Уведомления", href: "/notifications", key: "notifications" },
     { label: "Ассистент", href: "/assistant", key: "assistant" },
@@ -50,6 +51,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Расходы и себестоимость", href: "/finance", key: "finance" },
     { label: "Дебиторка", href: "/finance/receivables", key: "receivables" },
     { label: "Кредиторка", href: "/finance/payables", key: "payables" },
+    { label: "Платёжный календарь", href: "/finance/cash", key: "cash" },
     { label: "Поступления из банка", href: "/finance/bank", key: "bank" },
   ] },
   { label: "Документы", items: [
@@ -60,6 +62,7 @@ const navigationGroups: { label: string; items: NavigationItem[] }[] = [
     { label: "Прогноз продаж", href: "/forecasts", key: "forecasts" },
     { label: "Аналитика", href: "/analytics", key: "analytics" },
     { label: "Прибыльность", href: "/analytics/profitability", key: "profitability" },
+    { label: "Потери по срокам", href: "/analytics/losses", key: "losses" },
   ] },
   { label: "Администрирование", items: [
     { label: "Состояние системы", href: "/admin/health", key: "health" },

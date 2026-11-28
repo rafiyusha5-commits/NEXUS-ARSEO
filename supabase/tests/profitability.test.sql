@@ -177,5 +177,30 @@ do $$begin
  assert not has_function_privilege('anon','public.profitability_report(text,date,date)','execute');
  assert not has_function_privilege('authenticated','private.profit_lines(date,date)','execute');
 end $$;
+-- 202611280400: the revenue tile of the executive dashboard is this report for the month and the month before.
+select set_config('request.jwt.claim.sub','d5000000-0000-4000-8000-000000000001',true);
+set local role authenticated;
+do $$
+declare
+  m date := date_trunc('month', current_date)::date;
+  t jsonb := public.executive_dashboard_tile('revenue');
+  r jsonb := public.profitability_report('customer', m, (m + interval '1 month')::date - 1)->'totals';
+  p jsonb := public.profitability_report('customer', (m - interval '1 month')::date, m - 1)->'totals';
+begin
+  assert t->>'status'='ok' and t->>'revenue_net'=r->>'revenue_net' and t->>'profit'=r->>'profit' and t->>'complete_revenue'=r->>'complete_revenue'
+     and (t->>'lines')::integer=(r->>'lines')::integer and (t->>'incomplete_lines')::integer=(r->>'incomplete_lines')::integer,'the month = the report';
+  assert t->'previous'->>'revenue_net'=p->>'revenue_net' and t->'previous'->>'profit'=p->>'profit','the month before = the report';
+  assert (t->>'margin_pct') is not distinct from (case when (r->>'complete_revenue')::numeric<>0
+           then round((r->>'profit')::numeric/(r->>'complete_revenue')::numeric*100,2)::text end),'margin: profit / revenue with full data';
+  assert (r->>'revenue_net')::numeric+(p->>'revenue_net')::numeric<>0,'the scenario has revenue in these two months';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub','d5000000-0000-4000-8000-000000000002',true);
+set local role authenticated;
+do $$begin
+  assert public.executive_dashboard_tile('revenue') is null,'without purchase prices: no revenue tile';
+  assert not exists (select 1 from jsonb_array_elements(public.executive_dashboard()->'tiles') x where x->>'tile'='revenue');
+end $$;
+reset role;
 rollback;
 \echo profitability: all checks passed
