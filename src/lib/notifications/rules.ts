@@ -10,6 +10,7 @@ export const notificationTypeLabel: Record<string, string> = {
   order_blocked: "Заказ нельзя отгрузить",
   price_review: "Проверьте цену",
   drive_new_files: "Новые файлы в папке Drive",
+  cash_gap: "Кассовый разрыв",
   approval_request: "Запрос согласования",
   approval_decision: "Согласование завершено",
   status_change: "Изменение статуса",
@@ -21,7 +22,7 @@ export const notificationTypeLabel: Record<string, string> = {
 };
 
 // Types that need attention get a warning colour.
-export const URGENT_NOTIFICATION_TYPES = new Set(["overdue", "stage_blocked", "approval_request", "order_blocked"]);
+export const URGENT_NOTIFICATION_TYPES = new Set(["overdue", "stage_blocked", "approval_request", "order_blocked", "cash_gap"]);
 
 export type NotificationTarget = { entity_type: string | null; entity_id: string | null; shipment_id: string | null };
 export type NotificationLink = { href: string; label: string };
@@ -57,6 +58,8 @@ export function notificationLink(target: NotificationTarget): NotificationLink |
   }
   // The daily summary of the «Контроль ОСГ» agent points to its screen, not to one object.
   if (target.entity_type === "shelf_life_control") return { href: "/inventory/shelf-life", label: "Открыть «Контроль ОСГ»" };
+  // A cash gap points to the payment calendar (202611280200), not to one object.
+  if (target.entity_type === "cash_calendar") return { href: "/finance/cash", label: "Открыть платёжный календарь" };
   return shipment ? { href: `/shipments/${shipment}`, label: "Открыть поставку" } : null;
 }
 

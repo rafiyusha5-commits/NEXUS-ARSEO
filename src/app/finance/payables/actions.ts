@@ -40,6 +40,18 @@ export async function setExpenseDueDate(data: FormData) {
   redirect(cardUrl(data, "success", "Срок оплаты сохранён."));
 }
 
+/** "Планируем оплатить" (202611280200): the date the payment calendar uses instead of the due date; an empty date returns to it. */
+export async function setExpensePlannedPaymentDate(data: FormData) {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.rpc("set_expense_planned_payment_date", {
+    p_expense_id: uuid(data, "expense_id"), p_date: day(data, "planned_payment_date"), p_reason: text(data, "reason"),
+  });
+  if (error) redirect(cardUrl(data, "error", ruleViolationMessage(error, "Не удалось изменить плановую дату оплаты.")));
+  revalidatePath("/finance/payables");
+  revalidatePath("/finance/cash");
+  redirect(cardUrl(data, "success", "Плановая дата оплаты сохранена. Платёжный календарь учитывает её вместо срока."));
+}
+
 /** An advance to a payee before the expense exists in Nexus (202611170700). */
 export async function recordAdvancePayment(data: FormData) {
   const { supabase } = await requireUser();
