@@ -297,6 +297,8 @@ echo "re-applying document migrations (idempotency check)"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280100_loss_report.sql" >/dev/null
 # Inventory counts grant their RPCs after the hardening and use the loss reasons of 202611280100. Idempotent.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280300_inventory_counts.sql" >/dev/null
+# Scanning grants its RPCs after the hardening re-applied above. Idempotent.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/202611280500_scan_codes.sql" >/dev/null
 
 for test_file in "$ROOT"/supabase/tests/*.test.sql; do
   echo "test: $(basename "$test_file")"
