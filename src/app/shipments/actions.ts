@@ -8,7 +8,7 @@ import { refreshLogistAfterChange } from "@/lib/logist/run";
 import { publicErrorMessage, ruleViolationMessage } from "@/lib/errors/public-message";
 import { createTransportArguments, readTransportForm, transportChanges } from "@/lib/shipments/transport-form";
 import { readReceivingLines } from "@/lib/shipments/receiving-lines";
-import { unboundAfterReceipt, type ShipmentExpected } from "@/lib/shipments/expected-batches";
+import { receiptLabelWarnings, type ShipmentExpected } from "@/lib/shipments/expected-batches";
 import { readDateChanges } from "@/lib/shipments/date-corrections";
 import { palletWeightColumn, validPalletWeight } from "@/lib/shipments/pallet-weight";
 
@@ -189,8 +189,8 @@ export async function receiveShipmentTransport(formData:FormData){
   revalidatePath("/");
   // Labels printed in advance that the receipt did not bind (202611280700) are named, so they are reprinted now.
   const {data:expected}=await supabase.rpc("shipment_expected_batches",{p_shipment_id:shipmentId});
-  const unbound=expected&&transportId?unboundAfterReceipt(expected as ShipmentExpected,transportId):[];
-  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Автомобиль принят. Партии и остатки зарегистрированы.${unbound.length?` Наклейки по упаковочному листу не привязаны: ${unbound.join(", ")} — напечатайте наклейки принятых партий.`:""}`)}`);
+  const labels=expected&&transportId?receiptLabelWarnings(expected as ShipmentExpected,transportId):"";
+  redirect(`/shipments/${shipmentId}?success=${encodeURIComponent(`Автомобиль принят. Партии и остатки зарегистрированы.${labels?` ${labels}`:""}`)}`);
 }
 
 // Real dates of an executed shipment (shipments.backdate): only changed days are sent, with a mandatory reason.

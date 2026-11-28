@@ -86,23 +86,28 @@ revoke all on function private.expected_batch_state(uuid) from public, anon, aut
 
 -- Binding at the receipt: every received line of an item (with its batch number) closes the expected batches of that
 -- item with the same number. Bound only when the batch was really received and the expiry agrees with the packing list.
+-- The order of the lines does not matter: a line that matches binds the label even after a line of the same number
+-- with another expiry (a batch that came with two expiries, mixed up with the packing list); a line that does not
+-- match marks only a batch still expected.
 create or replace function private.bind_expected_batches() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if nullif(btrim(coalesce(new.batch_number, '')), '') is null then
     return new;
   end if;
+  if new.inventory_batch_id is not null then
+    update public.expected_batches e
+       set status = 'received', batch_id = new.inventory_batch_id, receipt_item_id = new.id, result_note = null, resolved_at = clock_timestamp()
+     where e.shipment_item_id = new.shipment_item_id and e.status in ('expected', 'mismatch', 'not_received')
+       and upper(btrim(e.batch_number)) = upper(btrim(new.batch_number))
+       and (e.expiry_date is null or e.expiry_date = new.expiry_date);
+  end if;
   update public.expected_batches e
-     set status = case when new.inventory_batch_id is null then 'not_received'
-                       when e.expiry_date is not null and e.expiry_date is distinct from new.expiry_date then 'mismatch'
-                       else 'received' end,
-         batch_id = case when new.inventory_batch_id is not null and (e.expiry_date is null or e.expiry_date = new.expiry_date)
-                         then new.inventory_batch_id end,
+     set status = case when new.inventory_batch_id is null then 'not_received' else 'mismatch' end,
          receipt_item_id = new.id,
          result_note = case when new.inventory_batch_id is null then 'Партия не принята: принятое количество 0'
-                            when e.expiry_date is not null and e.expiry_date is distinct from new.expiry_date
-                              then format('Срок по упаковочному листу %s, при приёмке %s: наклейка не привязана',
-                                          to_char(e.expiry_date, 'DD.MM.YYYY'), coalesce(to_char(new.expiry_date, 'DD.MM.YYYY'), 'не указан')) end,
+                            else format('Срок по упаковочному листу %s, при приёмке %s: наклейка не привязана',
+                                        to_char(e.expiry_date, 'DD.MM.YYYY'), coalesce(to_char(new.expiry_date, 'DD.MM.YYYY'), 'не указан')) end,
          resolved_at = clock_timestamp()
    where e.shipment_item_id = new.shipment_item_id and e.status = 'expected'
      and upper(btrim(e.batch_number)) = upper(btrim(new.batch_number));
@@ -137,6 +142,12 @@ begin
                             'id', e.id, 'batch', e.batch_number, 'expiry_date', e.expiry_date, 'manufacture_date', e.manufacture_date,
                             'quantity', e.quantity::text, 'packages', e.packages, 'source', e.source, 'source_note', e.source_note,
                             'state', private.expected_batch_state(e.id), 'note', coalesce(e.result_note, e.cancel_reason), 'batch_id', e.batch_id,
+                            -- The same number received with other expiries: those boxes have no label of the list.
+                            'other_expiries', coalesce((select jsonb_agg(distinct ri.expiry_date)
+                                                          from public.shipment_transport_receipt_items ri
+                                                         where ri.shipment_item_id = e.shipment_item_id and ri.inventory_batch_id is not null
+                                                           and upper(btrim(ri.batch_number)) = upper(btrim(e.batch_number))
+                                                           and ri.inventory_batch_id is distinct from e.batch_id), '[]'::jsonb),
                             'label_code', (select l.code from public.scan_labels l where l.expected_batch_id = e.id),
                             'printed', exists (select 1 from public.scan_labels l join public.scan_label_prints x on x.label_id = l.id
                                                 where l.expected_batch_id = e.id))
@@ -384,7 +395,14 @@ begin
   if v_batch is not null then
     return jsonb_build_object('kind', 'batch', 'code', l.code,
       'batch', (select jsonb_build_object('id', b.id, 'batch', b.batch_number, 'expiry_date', b.expiry_date, 'status', b.status,
-                                          'product_id', p.id, 'sku', p.internal_sku, 'product', coalesce(p.name ->> 'ru', p.internal_sku))
+                                          'product_id', p.id, 'sku', p.internal_sku, 'product', coalesce(p.name ->> 'ru', p.internal_sku),
+                                          -- The same number with other expiries in stock: the box is compared with the label.
+                                          'other_expiries', coalesce((select jsonb_agg(o.expiry_date order by o.expiry_date)
+                                                                        from public.inventory_batches o
+                                                                       where o.product_id = b.product_id and o.id <> b.id
+                                                                         and upper(btrim(o.batch_number)) = upper(btrim(b.batch_number))
+                                                                         and exists (select 1 from public.inventory_balances x where x.batch_id = o.id and x.quantity_on_hand > 0)),
+                                                                     '[]'::jsonb))
                   from public.inventory_batches b join public.products p on p.id = b.product_id where b.id = v_batch),
       'stock', private.scan_stock(null, v_batch, null));
   end if;

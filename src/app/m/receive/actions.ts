@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/access";
 import { ruleViolationMessage } from "@/lib/errors/public-message";
 import { readReceivingLines } from "@/lib/shipments/receiving-lines";
-import { unboundAfterReceipt, type ShipmentExpected } from "@/lib/shipments/expected-batches";
+import { receiptLabelWarnings, type ShipmentExpected } from "@/lib/shipments/expected-batches";
 
 // Receiving from a phone: the same lines and the same receive_shipment_transport as the full version (202611010100);
 // every rule and right is checked by the database.
@@ -29,7 +29,6 @@ export async function receiveTransportMobile(data: FormData) {
   revalidatePath(`/shipments/${shipmentId}`); revalidatePath("/shipments"); revalidatePath("/inventory"); revalidatePath("/inventory/movements");
   // Labels printed in advance that the receipt did not bind (202611280700) are named, so they are reprinted now.
   const { data: expected } = await supabase.rpc("shipment_expected_batches", { p_shipment_id: shipmentId });
-  const unbound = expected ? unboundAfterReceipt(expected as ShipmentExpected, transportId) : [];
-  redirect(`/m/receive?success=${encodeURIComponent(`Приёмка проведена: товар на складе.${unbound.length
-    ? ` Наклейки по упаковочному листу не привязаны: ${unbound.join(", ")} — напечатайте наклейки принятых партий.` : ""}`)}`);
+  const labels = expected ? receiptLabelWarnings(expected as ShipmentExpected, transportId) : "";
+  redirect(`/m/receive?success=${encodeURIComponent(`Приёмка проведена: товар на складе.${labels ? ` ${labels}` : ""}`)}`);
 }

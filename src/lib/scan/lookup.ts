@@ -10,7 +10,8 @@ export type ScanProduct = { product_id: string; sku: string; product: string; id
 export type ScanResult =
   | { kind: "product"; code: string; products: ScanProduct[] }
   | { kind: "location"; code: string; location: { id: string; code: string; zone: string; status: string; warehouse_id: string; warehouse: string }; stock: StockRow[] }
-  | { kind: "batch"; code: string; batch: { id: string; batch: string; expiry_date: string | null; status: string; product_id: string; sku: string; product: string }; stock: StockRow[] }
+  | { kind: "batch"; code: string; batch: { id: string; batch: string; expiry_date: string | null; status: string; product_id: string; sku: string; product: string;
+      other_expiries?: string[] }; stock: StockRow[] }
   | { kind: "expected"; code: string; expected: ExpectedLabel }
   | { kind: "unknown"; code: string; can_bind: boolean };
 

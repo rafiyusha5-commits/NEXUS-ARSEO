@@ -58,6 +58,9 @@ function MatchCard({ list, match, code, batch, pickAction }: { list: PickList; m
       <small>Партия совпадает с резервом</small>
       <strong className="mobile-big">{line.sku} · партия {line.batch}</strong>
       <span>место {place(line)} · осталось взять {quantity(remaining(line))} {unit(line.uom)}</span>
+      <span>годен до <strong>{shortDate(line.expiry_date)}</strong> — сверьте с коробкой</span>
+      {!!match.other_expiries?.length && <p className="load-warning-text">Партия {line.batch} есть и со сроком {match.other_expiries.map(shortDate).join(", ")}:
+        возьмите коробки со сроком {shortDate(line.expiry_date)}.</p>}
       <form action={pickAction} className="mobile-form">
         <input type="hidden" name="sale_id" value={list.sale_id}/><input type="hidden" name="reservation_id" value={line.reservation_id}/>
         <input type="hidden" name="batch_id" value={line.batch_id}/><input type="hidden" name="location_id" value={line.location_id ?? ""}/>

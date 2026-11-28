@@ -7,7 +7,7 @@ import type { ExpectedState } from "../scan/lookup.ts";
 export type ExpectedBatch = {
   id: string; batch: string; expiry_date: string | null; manufacture_date: string | null; quantity: string | null; packages: number | null;
   source: "manual" | "packing_list"; source_note: string | null; state: ExpectedState; note: string | null; batch_id: string | null;
-  label_code: string | null; printed: boolean;
+  label_code: string | null; printed: boolean; other_expiries: string[];
 };
 export type ExpectedItem = {
   item_id: string; product_id: string; sku: string; product: string; uom: string; quantity: string; transport_id: string | null;
@@ -66,9 +66,18 @@ export function receivingRows(itemQuantity: number, batches: ExpectedBatch[]): R
   }));
 }
 
-/** What the receipt did with the labels printed in advance for one truck: the batches whose labels stay unbound. */
-export function unboundAfterReceipt(data: ShipmentExpected, transportId: string) {
-  return data.items.filter(item => item.transport_id === transportId)
-    .flatMap(item => item.batches.filter(batch => ["mismatch", "not_received", "missing"].includes(batch.state))
-      .map(batch => `${item.sku} ${batch.batch} (${expectedStateLabel[batch.state]})`));
+const day = (value: string) => value.split("-").reverse().join(".");
+
+/** What the receipt did with the labels printed in advance for one truck: the batches whose labels stay unbound, and the
+ *  batches that came with another expiry too (mixed up with the packing list) — those boxes must not carry its labels. */
+export function receiptLabelWarnings(data: ShipmentExpected, transportId: string) {
+  const items = data.items.filter(item => item.transport_id === transportId);
+  const unbound = items.flatMap(item => item.batches.filter(batch => ["mismatch", "not_received", "missing"].includes(batch.state))
+    .map(batch => `${item.sku} ${batch.batch} (${expectedStateLabel[batch.state]})`));
+  const mixed = items.flatMap(item => item.batches.filter(batch => batch.state !== "cancelled" && batch.other_expiries.length)
+    .map(batch => `${item.sku} ${batch.batch} — ещё со сроком ${batch.other_expiries.map(day).join(", ")}`));
+  return [
+    unbound.length ? `Наклейки по упаковочному листу не привязаны: ${unbound.join(", ")} — напечатайте наклейки принятых партий.` : "",
+    mixed.length ? `Пересорт по сроку: ${mixed.join("; ")}. На коробки с другим сроком наклейки из листа не клеить — напечатайте им свои.` : "",
+  ].filter(Boolean).join(" ");
 }

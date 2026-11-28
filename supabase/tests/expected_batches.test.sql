@@ -32,6 +32,8 @@ create function pg_temp.id(p text) returns uuid language sql stable as $$select 
 create function pg_temp.code(p_label uuid) returns text language sql stable security definer as $$select code from public.scan_labels where id=p_label$$;
 create function pg_temp.code_of(p_expected uuid) returns text language sql stable security definer as $$select code from public.scan_labels where expected_batch_id=p_expected$$;
 create function pg_temp.batch(p_number text) returns uuid language sql stable security definer as $$select id from public.inventory_batches where batch_number=p_number$$;
+create function pg_temp.batches(p_number text) returns table(id uuid, expiry_date date) language sql stable security definer as
+ $$select id,expiry_date from public.inventory_batches where batch_number=p_number$$;
 create function pg_temp.fails(p_sql text,p_pattern text) returns void language plpgsql as $$
 begin
  begin execute p_sql;exception when others then
@@ -64,7 +66,8 @@ insert into tests.pre values
  ('B',public.add_expected_batch(pg_temp.id('item1'),'LOT-B',current_date+350,null,30,2,'packing_list','Packing list 7781')),
  ('Z',public.add_expected_batch(pg_temp.id('item1'),'LOT-Z',current_date+300,null,10,1,'packing_list',null)),
  ('Q',public.add_expected_batch(pg_temp.id('item1'),'LOT-Q',current_date+300,null,null,null,'manual',null)),
- ('C',public.add_expected_batch(pg_temp.id('item2'),'LOT-C',null,null,50,null,'packing_list',null)),
+ ('C',public.add_expected_batch(pg_temp.id('item2'),'LOT-C',null,null,20,null,'packing_list',null)),
+ ('S',public.add_expected_batch(pg_temp.id('item2'),'LOT-S',current_date+450,null,30,2,'packing_list',null)),
  ('X',public.add_expected_batch(pg_temp.id('item2'),'LOT-X',current_date+200,null,null,null,'manual',null)),
  ('R',public.add_expected_batch(pg_temp.id('item3'),'LOT-R',current_date+200,null,null,null,'manual',null));
 select pg_temp.fails($q$select public.add_expected_batch(pg_temp.id('item1'),'lot-a',null,null,null,null,'manual',null)$q$,'Партия LOT-A уже есть у этой позиции');
@@ -102,15 +105,15 @@ end $$;
 select set_config('request.jwt.claim.sub','eb000000-0000-4000-8000-000000000002',true);
 set local role authenticated;
 do $$
-declare v jsonb := public.ensure_scan_labels('expected_batch',array[pg_temp.id('A'),pg_temp.id('B'),pg_temp.id('C'),pg_temp.id('Z'),pg_temp.id('Q'),pg_temp.id('A')]);
+declare v jsonb := public.ensure_scan_labels('expected_batch',array[pg_temp.id('A'),pg_temp.id('B'),pg_temp.id('C'),pg_temp.id('Z'),pg_temp.id('Q'),pg_temp.id('A'),pg_temp.id('S')]);
         w jsonb;
 begin
- assert jsonb_array_length(v)=5,'one label per batch, duplicates of the request ignored';
+ assert jsonb_array_length(v)=6,'one label per batch, duplicates of the request ignored';
  assert v->0->>'title'='PRE-1 · LOT-A' and v->0->>'subtitle'='Шоколад · до '||to_char(current_date+400,'DD.MM.YYYY') and (v->0->>'code') ~ '^NX-[0-9A-HJKMNP-TV-Z]{8}$';
  assert v->2->>'title'='PRE-2 · LOT-C' and v->2->>'subtitle'='Вафли','no expiry in the list, none on the label';
  w := public.ensure_scan_labels('expected_batch',array[pg_temp.id('A')]);
  assert w->0->>'code'=v->0->>'code','the code never changes';
- assert public.record_label_print((select array_agg((x->>'label_id')::uuid) from jsonb_array_elements(v) x),'thermal',3)=5;
+ assert public.record_label_print((select array_agg((x->>'label_id')::uuid) from jsonb_array_elements(v) x),'thermal',3)=6;
  insert into tests.pre values ('labelA',(v->0->>'label_id')::uuid),('labelB',(v->1->>'label_id')::uuid),('labelZ',(v->3->>'label_id')::uuid),
                               ('labelQ',(v->4->>'label_id')::uuid),('labelC',(v->2->>'label_id')::uuid);
 end $$;
@@ -152,7 +155,10 @@ select public.receive_shipment_transport(pg_temp.id('truck'),'eb300000-0000-4000
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',60,'accepted_quantity',60,'damaged_quantity',0,'batch_number','LOT-A','expiry_date',(current_date+400)::text),
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',30,'accepted_quantity',30,'damaged_quantity',0,'batch_number','LOT-B','expiry_date',(current_date+351)::text),
   jsonb_build_object('item_id',pg_temp.id('item1'),'expected_quantity',10,'accepted_quantity',0,'damaged_quantity',0,'batch_number','LOT-Z','expiry_date',(current_date+300)::text,'discrepancy_reason','Не пришла'),
-  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',50,'accepted_quantity',50,'damaged_quantity',0,'batch_number','lot-c','expiry_date',(current_date+500)::text)),
+  -- LOT-S came with two expiries, the one of the packing list second: the label still binds to it.
+  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',20,'accepted_quantity',20,'damaged_quantity',0,'batch_number','LOT-S','expiry_date',(current_date+460)::text),
+  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',10,'accepted_quantity',10,'damaged_quantity',0,'batch_number','LOT-S','expiry_date',(current_date+450)::text),
+  jsonb_build_object('item_id',pg_temp.id('item2'),'expected_quantity',20,'accepted_quantity',20,'damaged_quantity',0,'batch_number','lot-c','expiry_date',(current_date+500)::text)),
   'Prelabel Receiver',null);
 select pg_temp.fails($q$select public.add_expected_batch(pg_temp.id('item1'),'LOT-LATE',null,null,null,null,'manual',null)$q$,'уже принята');
 select pg_temp.fails($q$select public.cancel_expected_batch(pg_temp.id('A'),'поздно')$q$,'только ожидаемую');
@@ -167,6 +173,10 @@ begin
  assert s->'LOT-Z'->>'state'='not_received' and s->'LOT-Z'->>'note' like 'Партия не принята%';
  assert s->'LOT-Q'->>'state'='missing','listed, but not in the receipt';
  assert s->'LOT-C'->>'state'='received','the number in other letters, no expiry in the list to compare';
+ assert s->'LOT-S'->>'state'='received' and s->'LOT-S'->>'batch_id'=(select id::text from pg_temp.batches('LOT-S') x where x.expiry_date=current_date+450),
+   'mixed expiries: the label binds to the part with the expiry of the packing list, whatever the order of the lines';
+ assert s->'LOT-S'->'other_expiries'=jsonb_build_array(current_date+460),'the part with another expiry is named: it has no label of the list';
+ assert s->'LOT-A'->'other_expiries'='[]'::jsonb;
  assert s->'LOT-R'->>'state'='expected','the item on no truck yet stays expected';
 end $$;
 
@@ -175,11 +185,15 @@ do $$
 declare a jsonb := public.scan_lookup(pg_temp.code(pg_temp.id('labelA')));
         b jsonb := public.scan_lookup(pg_temp.code(pg_temp.id('labelB')));
         q jsonb := public.scan_lookup(pg_temp.code(pg_temp.id('labelQ')));
+        sl jsonb := public.scan_lookup(pg_temp.code_of(pg_temp.id('S')));
         l jsonb;
 begin
  assert a->>'kind'='batch' and a->'batch'->>'batch'='LOT-A' and (a->'stock'->0->>'on_hand')::numeric=60 and a->'stock'->0->>'location'='PRE-RCV';
  assert b->>'kind'='expected' and b->'expected'->>'state'='mismatch' and b->'expected'->>'note' like 'Срок по упаковочному листу%';
  assert q->>'kind'='expected' and q->'expected'->>'state'='missing';
+ assert sl->>'kind'='batch' and (sl->'batch'->>'expiry_date')::date=current_date+450
+   and sl->'batch'->'other_expiries'=jsonb_build_array(current_date+460),'scanning the label warns: the same number has another expiry in stock';
+ assert a->'batch'->'other_expiries'='[]'::jsonb;
  l := public.ensure_scan_labels('batch',array[pg_temp.batch('LOT-A')]);
  assert jsonb_array_length(l)=1 and l->0->>'label_id'=pg_temp.id('labelA')::text and l->0->>'title'='PRE-1 · LOT-A',
    'the label printed in advance is the batch label: no second code';

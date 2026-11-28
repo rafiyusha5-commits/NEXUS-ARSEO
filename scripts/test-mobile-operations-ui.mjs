@@ -136,6 +136,15 @@ try {
         assert.match(await page.getByRole('status').innerText(), /партия 2611-01-08 — строка 2, проверьте количество и срок/);
         await scan(page, 'Сканируйте коробку: партия и срок подставятся', 'NX-0000ZZZZ');
         assert.match(await page.getByRole('status').innerText(), /Наклейка не из упаковочного листа этой машины/);
+        // A box of the same batch with another expiry than the packing list: a mix-up by expiry is said aloud.
+        await scan(page, 'Сканируйте коробку: партия и срок подставятся', '(01)04601234567893(10)2611-01-07(17)270531');
+        assert.match(await page.getByRole('status').innerText(),
+          /на коробке партии 2611-01-07 срок 31\.05\.2027, а в строке по листу — 30\.11\.2027\. Пересорт по сроку\? Добавлена отдельная строка[\s\S]*Наклейку NX-4WQ7M2KD на эти коробки не клеить/);
+        assert.equal(await item.getByLabel('Годен до').nth(2).inputValue(), '2027-05-31', 'a row of its own for the other expiry');
+        assert.equal(await item.getByLabel('Номер партии').nth(2).inputValue(), '2611-01-07');
+        await scan(page, 'Сканируйте коробку: партия и срок подставятся', '(01)04601234567893(10)2611-01-07(17)271130');
+        assert.match(await page.getByRole('status').innerText(), /срок 30\.11\.2027 — уже в строке/);
+        await item.getByRole('button', { name: 'Убрать партию 3' }).click();
         await item.getByLabel('Принято').first().fill('1190');
         await item.getByLabel('Причина расхождения').first().fill('Недостача 10');
         await item.getByLabel('Годен до').nth(1).fill('2027-12-15');
@@ -176,6 +185,7 @@ try {
     const text = await page.locator('main').innerText();
     assert.match(text, /Партия 2611-01-09 · HAZELNUT KERNELS 13-15/);
     assert.match(text, /A-5502[\s\S]*не совпала с листом[\s\S]*Срок по упаковочному листу 30\.11\.2027/);
+    assert.match(text, /A-5501[\s\S]*Пересорт по сроку: пришла ещё со сроком 31\.05\.2027/);
     assert.equal(await page.getByLabel('Позиция поставки').inputValue(), 'i1', 'the only truck not received is chosen');
     assert.equal(await page.getByRole('checkbox', { name: 'Печатать наклейку партии 2611-01-99' }).count(), 0, 'a cancelled batch is not printed');
     assert.equal(await page.getByRole('checkbox', { name: 'Печатать наклейку партии 2611-01-08' }).isChecked(), true, 'not yet printed: offered');

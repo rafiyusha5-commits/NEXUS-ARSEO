@@ -24,6 +24,8 @@ export function ScanResultView({ result, today, params, bindAction }: { result: 
       {result.kind === "batch" && <section className="mobile-card">
         <strong className="mobile-big">{result.batch.product}</strong>
         <small>{result.batch.sku} · партия {result.batch.batch} · годен до {shortDate(result.batch.expiry_date)}</small>
+        {!!result.batch.other_expiries?.length && <p className="load-warning-text">Партия с этим номером есть и со сроком {result.batch.other_expiries.map(shortDate).join(", ")}:
+          сверьте срок на коробке со сроком на этикетке.</p>}
         <Stock rows={result.stock} today={today}/>
       </section>}
       {result.kind === "expected" && <section className={`mobile-card${result.expected.state === "expected" ? "" : " mobile-card-warning"}`}>

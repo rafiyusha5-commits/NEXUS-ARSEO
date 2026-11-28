@@ -51,7 +51,9 @@ export function ExpectedBatchesView({ shipment, lots, message, addAction, cancel
             <td>{shortDate(batch.expiry_date)}</td><td>{shortDate(batch.manufacture_date)}</td>
             <td>{batch.quantity ? quantity(batch.quantity) : "—"}</td>
             <td>{canPrint ? <input name={`copies_${batch.id}`} form="print-labels" type="number" min={1} max={100} defaultValue={batch.packages ?? 1} aria-label={`Наклеек партии ${batch.batch}`}/> : "—"}</td>
-            <td>{expectedStateLabel[batch.state]}{batch.note ? <small>{batch.note}</small> : null}</td>
+            <td>{expectedStateLabel[batch.state]}{batch.note ? <small>{batch.note}</small> : null}
+              {batch.other_expiries.length > 0 && <small className="load-warning-text">Пересорт по сроку: пришла ещё со сроком {batch.other_expiries.map(shortDate).join(", ")} —
+                на эти коробки наклейки из листа не клеить</small>}</td>
             <td>{batch.label_code ?? "—"}{batch.label_code && <small>{batch.printed ? "напечатана" : "не печаталась"}</small>}</td>
             <td>{shipment.can_manage && batch.state === "expected" && <details><summary>Отменить</summary><form action={cancelAction} className="inline-action">
               <input type="hidden" name="shipment_id" value={shipment.shipment_id}/><input type="hidden" name="expected_batch_id" value={batch.id}/>

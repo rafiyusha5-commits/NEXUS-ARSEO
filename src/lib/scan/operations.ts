@@ -25,7 +25,7 @@ export function scannedBatches(result: ScanResult | null, batchNumber?: string |
 }
 
 export type PickMatch =
-  | { kind: "pick"; line: PickLine }
+  | { kind: "pick"; line: PickLine; other_expiries?: string[] }
   | { kind: "done"; line: PickLine }
   | { kind: "foreign"; batch: string | null; expected: PickLine | null }
   | { kind: "need_batch"; product: string }
@@ -48,7 +48,9 @@ export function matchPick(list: PickList, result: ScanResult | null, batchNumber
     return { kind: "foreign", batch: batchNumber ?? null, expected };
   }
   const open = list.lines.find(line => batches.includes(line.batch_id) && remaining(line) > 0);
-  if (open) return { kind: "pick", line: open };
+  // The same number with another expiry in stock (a batch mixed up by expiry): the box is compared with the label.
+  const others = result.kind === "batch" ? result.batch.other_expiries ?? [] : [];
+  if (open) return others.length ? { kind: "pick", line: open, other_expiries: others } : { kind: "pick", line: open };
   const done = list.lines.find(line => batches.includes(line.batch_id));
   if (done) return { kind: "done", line: done };
   const name = result.kind === "batch" ? result.batch.batch : batchNumber ?? null;

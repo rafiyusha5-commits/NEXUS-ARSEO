@@ -40,13 +40,14 @@ const sheet: CountSheet = {
     supersedes_entry_id: null, superseded: false }], recount: null, book: null };
 
 const expectedBatch = (id: string, batch: string, extra: Partial<ExpectedBatch> = {}): ExpectedBatch => ({ id, batch, expiry_date: "2027-11-30", manufacture_date: null,
-  quantity: "1200", packages: 6, source: "packing_list", source_note: "Packing list 7781", state: "expected", note: null, batch_id: null, label_code: null, printed: false, ...extra });
+  quantity: "1200", packages: 6, source: "packing_list", source_note: "Packing list 7781", state: "expected", note: null, batch_id: null, label_code: null, printed: false,
+  other_expiries: [], ...extra });
 const shipmentBatches: ShipmentExpected = { shipment_id: "sh", shipment_number: "NAR-2026-0118", status: "in_transit", can_manage: true, orphans: [], items: [
   { item_id: "i1", product_id: "p1", sku: "NUT-13", product: "Фундук ядро 13–15", uom: "piece", quantity: "2000", transport_id: "t2", transport_no: 2, transport_status: "in_transit",
     received: false, batches: [expectedBatch("e1", "2611-01-07", { label_code: "NX-4WQ7M2KD", printed: true }), expectedBatch("e2", "2611-01-08", { quantity: "800", packages: 4 }),
       expectedBatch("e3", "2611-01-99", { state: "cancelled", note: "Нет в упаковочном листе", source: "manual", packages: null })] },
   { item_id: "i2", product_id: "p2", sku: "ALM-27", product: "Миндаль 27–30", uom: "piece", quantity: "500", transport_id: "t1", transport_no: 1, transport_status: "arrived",
-    received: true, batches: [expectedBatch("e4", "A-5501", { state: "received", batch_id: "b4", label_code: "NX-7T02EZ1X", printed: true, quantity: "300" }),
+    received: true, batches: [expectedBatch("e4", "A-5501", { state: "received", batch_id: "b4", label_code: "NX-7T02EZ1X", printed: true, quantity: "300", other_expiries: ["2027-05-31"] }),
       expectedBatch("e5", "A-5502", { state: "mismatch", note: "Срок по упаковочному листу 30.11.2027, при приёмке 15.12.2027: наклейка не привязана", label_code: "NX-3HD8WQ1C", printed: true })] }] };
 
 const view = new URLSearchParams(location.search).get("view") ?? "pick";
@@ -72,7 +73,7 @@ function Body() {
       shipment: "NAR-2026-0118", transport_no: 2 } }}/></>;
   if (view === "receive-expected") return <><h1 className="mobile-title">NAR-2026-0118 · машина №2</h1>
     <MobileReceiveForm shipmentId="sh" transportId="tr" performer="Синтетический кладовщик" action={record} locations={[{ id: "l5", code: "R-01", zone: "receiving" }]}
-      items={[{ item_id: "i1", title: "NUT-13 · Фундук ядро 13–15", expected: 2000, unit: "кг", codes: [], batches: [
+      items={[{ item_id: "i1", title: "NUT-13 · Фундук ядро 13–15", expected: 2000, unit: "кг", codes: ["4601234567893"], batches: [
         { expected: "1200", batch: "2611-01-07", expiry: "2027-11-30", manufactured: "", code: "NX-4WQ7M2KD" },
         { expected: "800", batch: "2611-01-08", expiry: "", manufactured: "", code: "NX-9HT3B6RE" }] }]}/></>;
   return <><h1 className="mobile-title">ПСТ-2026-118 · машина №2</h1>

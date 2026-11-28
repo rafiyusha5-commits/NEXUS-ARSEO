@@ -54,12 +54,22 @@ export function MobileReceiveForm({ shipmentId, transportId, items, locations, p
     const expiry = gs1?.ok ? gs1.expiry : null;
     if (!batch && !expiry) { setNotice({ ok: true, text: `${item.title}: введите партию и срок`, at, item: item.item_id }); focus(item.item_id); return; }
     const lines = rows[item.item_id];
-    const same = batch ? lines.find(row => row.batch === batch) : undefined;
+    const sameBatch = batch ? lines.filter(row => row.batch.trim().toUpperCase() === batch.toUpperCase()) : [];
+    // The same batch with the same expiry, or with none yet; another expiry on the box is a mix-up with the list.
+    const same = sameBatch.find(row => !expiry || row.expiry === expiry) ?? sameBatch.find(row => !row.expiry);
+    const conflict = !same && expiry ? sameBatch.find(row => row.expiry && row.expiry !== expiry) : undefined;
     const empty = lines.find(row => !row.batch && !row.expiry);
     const filled = `${batch ? `партия ${batch}` : ""}${batch && expiry ? ", " : ""}${expiry ? `срок ${shortDate(expiry)}` : ""}`;
     if (same) {
       if (expiry && !same.expiry) update(item.item_id, same.key, { expiry });
-      setNotice({ ok: true, text: `${item.title}: ${filled} — уже в строке`, at, item: item.item_id });
+      setNotice({ ok: true, text: `${item.title}: ${filled} — ${same.expiry ? "уже в строке" : "срок подставлен"}`, at, item: item.item_id });
+    } else if (conflict) {
+      const key = next;
+      setNext(key + 1);
+      setRows(current => ({ ...current, [item.item_id]: [...current[item.item_id],
+        { key, expected: "", accepted: "", damaged: "0", batch: batch ?? "", manufactured: "", expiry: expiry ?? "", reason: "" }] }));
+      setNotice({ ok: false, item: item.item_id, at, text: `${item.title}: на коробке партии ${batch} срок ${shortDate(expiry!)}, а в строке${conflict.code ? " по листу" : ""} — ${shortDate(conflict.expiry)}. `
+        + `Пересорт по сроку? Добавлена отдельная строка: разделите количество по срокам. Наклейку ${conflict.code ?? "из листа"} на эти коробки не клеить.` });
     } else if (empty) {
       update(item.item_id, empty.key, { batch: batch ?? "", expiry: expiry ?? "" });
       setNotice({ ok: true, text: `${item.title}: ${filled} подставлены`, at, item: item.item_id });
